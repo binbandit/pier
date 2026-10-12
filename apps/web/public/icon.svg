@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#000"/>
+  <!-- The pier: a deck over the water, with signal lights along it. -->
+  <rect x="96" y="232" width="320" height="20" rx="4" fill="#cccccc"/>
+  <rect x="132" y="252" width="14" height="120" rx="3" fill="#505050"/>
+  <rect x="249" y="252" width="14" height="120" rx="3" fill="#505050"/>
+  <rect x="366" y="252" width="14" height="120" rx="3" fill="#505050"/>
+  <rect x="132" y="168" width="10" height="44" rx="2" fill="#89ad72"/>
+  <rect x="200" y="168" width="10" height="44" rx="2" fill="#89ad72"/>
+  <rect x="268" y="168" width="10" height="44" rx="2" fill="#d4a84e"/>
+  <rect x="336" y="168" width="10" height="44" rx="2" fill="none" stroke="#3c3c3c" stroke-width="3"/>
+  <rect x="96" y="392" width="320" height="4" rx="2" fill="#1e1e1e"/>
+</svg>

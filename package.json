@@ -1,0 +1,32 @@
+{
+  "name": "pier",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --filter '@pier/daemon' dev & bun run --filter '@pier/web' dev",
+    "build": "bun run --filter '@pier/web' build && bun run --filter '@pier/daemon' build",
+    "test": "bun test",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "typecheck": "bun run --filter '*' typecheck",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.3",
+    "lefthook": "2.2.1",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2004",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "bun@1.4.2",
+  "trustedDependencies": [
+    "lefthook"
+  ]
+}

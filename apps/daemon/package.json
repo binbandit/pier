@@ -1,0 +1,23 @@
+{
+  "name": "@pier/daemon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/main.ts serve --dev",
+    "build": "bun run scripts/build.ts",
+    "codegen": "graphql-codegen --config codegen.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "schema": "curl -fsSL https://docs.github.com/public/fpt/schema.docs.graphql -o schema/github.graphql && bun run codegen"
+  },
+  "dependencies": {
+    "@pier/core": "workspace:*",
+    "arktype": "2.2.8"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "7.4.6",
+    "@graphql-codegen/client-preset": "6.2.3",
+    "@graphql-typed-document-node/core": "^3.2.0",
+    "@octokit/openapi-types": "29.0.1",
+    "graphql": "17.0.2"
+  }
+}

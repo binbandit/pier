@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+/test-results/
+/playwright-report/
+# local corpora built from real (non-sandbox) GitHub data never get committed
+**/fixtures/local/

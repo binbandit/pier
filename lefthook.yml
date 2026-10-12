@@ -1,0 +1,22 @@
+pre-commit:
+  parallel: false
+  jobs:
+    - name: lint staged code
+      glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
+      run: bunx --bun oxlint --fix {staged_files}
+      stage_fixed: true
+    - name: format staged files
+      run: bunx --bun oxfmt --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    format:
+      run: bun run format:check
+    lint:
+      run: bun run lint
+    types:
+      run: bun run typecheck
+    test:
+      run: bun test
