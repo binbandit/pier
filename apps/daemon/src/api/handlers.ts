@@ -14,7 +14,38 @@ export function createHandlers(app: App): Handlers {
     inbox: ({ split }) => app.views.inbox(split),
     counts: () => app.views.counts(),
     group: ({ key }) => app.views.group(key),
-    pr: ({ repo, number }) => app.prView(repo, number),
+    pr: ({ repo, number }) => app.review.view(repo, number),
+    prDiff: ({ repo, number, range, ignoreWhitespace }) =>
+      app.review.diff(repo, number, range, ignoreWhitespace ?? false),
+    saveDraft(input) {
+      const id = app.review.saveDraft({
+        id: input.id,
+        prId: input.prId,
+        path: input.path,
+        side: input.side,
+        line: input.line,
+        startLine: input.startLine ?? null,
+        body: input.body,
+      });
+      app.events.emit(["pr"]);
+      return { id };
+    },
+    deleteDraft({ id }) {
+      app.review.deleteDraft(id);
+      app.events.emit(["pr"]);
+      return { ok: true };
+    },
+    async submitReview({ prId, event, body }) {
+      return { commandIds: await app.review.submit(prId, event, body) };
+    },
+    reply: ({ prId, threadId, body }) => ({ commandIds: app.review.reply(prId, threadId, body) }),
+    resolveThread: ({ prId, threadId, resolved }) => ({
+      commandIds: app.review.resolve(prId, threadId, resolved),
+    }),
+    setViewed: ({ prId, path, viewed }) => ({
+      commandIds: app.review.setViewed(prId, path, viewed),
+    }),
+    comment: ({ prId, body }) => ({ commandIds: app.review.comment(prId, body) }),
     flight: () => app.views.flight(),
     log: ({ limit }) => app.outbox.log(limit ?? 100),
 

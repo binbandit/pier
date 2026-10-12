@@ -1,6 +1,6 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 
-import { PrCanvas } from "@/features/pr";
+import { PrCanvas } from "@/features/pr/canvas";
 
 // Same path as github.com, so swapping the host on any PR link opens it here.
 export const Route = createFileRoute("/$owner/$repo/pull/$number")({

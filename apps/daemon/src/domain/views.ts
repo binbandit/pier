@@ -161,7 +161,9 @@ export class Views {
   private build(): Snapshot {
     const { model, outbox, registry, settings, now } = this.ctx;
     const policy = settings.get("policy");
-    const accounts = new Set(this.ctx.accounts());
+    // Linked accounts are all you; in sandbox mode they're separate people reviewing each other.
+    const linked = settings.get("identity").linked;
+    const all = new Set(this.ctx.accounts());
     const approving = outbox.approvingPrIds();
     const t = now();
 
@@ -214,7 +216,7 @@ export class Views {
         continue;
       }
 
-      const item = this.prItem(record, accounts);
+      const item = this.prItem(record, linked ? all : new Set([record.reader]));
       if (item?.split === "review") review.push(item.item);
       else if (item?.split === "mine") mine.push(item.item);
       else if (item?.flight) flight.push(this.flightItem(record, item.flight));

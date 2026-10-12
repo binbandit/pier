@@ -325,7 +325,7 @@ Grounded in Brayden's achroma OLED ramp and Eventide's rule that "nothing scream
 --accent:#9d7cd8 (cursor bar, focus ring, selection only)
 --ok:#89ad72; --bad:#cc7b7b; --warn:#d4a84e; --info:#7294ba; --auto:#6aadad (bot/queued/covered)
 merged/closed = --text-faint (finished items fade)
---add-row:#131810; --del-row:#1d1111; --add-word:#2f3b27; --del-word:#452a2a; 2px gutter bar in --ok/--bad
+--add-row:#131810; --del-row:#1d1111; --add-word:#263020; --del-word:#3a2323; 2px gutter bar in --ok/--bad
 syntax: achroma mono by default (keyword #e6e6e6 w500, fn #cccccc, ident #b8b8b8, string #a4a4a4,
         comment #7a7a7a italic); optional "pop" mode uses violet/teal/amber/blue, never green or red
 ```

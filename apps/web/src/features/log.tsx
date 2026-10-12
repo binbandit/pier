@@ -18,7 +18,17 @@ const STATE: Record<OutboxState, { text: string; tone: Tone }> = {
   cancelled: { text: "Cancelled", tone: "faint" },
 };
 
-const KIND: Record<LogEntry["kind"], string> = { approve: "Approve", "bot-command": "Bot command" };
+const KIND: Record<LogEntry["kind"], string> = {
+  approve: "Approve",
+  "bot-command": "Bot command",
+  review: "Review",
+  reply: "Reply",
+  comment: "Comment",
+  resolve: "Resolve thread",
+  unresolve: "Reopen thread",
+  viewed: "Mark viewed",
+  unviewed: "Mark unviewed",
+};
 
 export function Log() {
   const { data: entries = [] } = useQuery(q("log", { limit: 300 }));

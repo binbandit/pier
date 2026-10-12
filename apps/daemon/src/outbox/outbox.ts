@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import { GitHubError } from "@/github/client";
-import type { GitHubPort } from "@/github/port";
+import type { DraftThreadInput, GitHubPort, ReviewEvent } from "@/github/port";
 import type { CommandKind, LogEntry, OutboxState, PendingWrite } from "@pier/core/wire";
 
 // Every write to GitHub is a persisted command. Its lifecycle:
@@ -15,7 +15,24 @@ import type { CommandKind, LogEntry, OutboxState, PendingWrite } from "@pier/cor
 // silent double-send: on restart, claimed commands become `unknown` and are resolved by reading
 // GitHub (did the approval land?) rather than by retrying blindly.
 
-export type CommandPayload = { body?: string };
+export type CommandPayload = {
+  body?: string;
+  event?: ReviewEvent;
+  threads?: DraftThreadInput[];
+  /** Drafts this review carries; cleared once GitHub accepts it. */
+  draftIds?: string[];
+  threadId?: string;
+  path?: string;
+};
+
+/** Kinds that create content on GitHub and so count against its 500-per-hour limit. */
+const CONTENT_KINDS = new Set<CommandKind>([
+  "approve",
+  "review",
+  "reply",
+  "comment",
+  "bot-command",
+]);
 
 export type Command = {
   id: string;
@@ -91,6 +108,7 @@ export class Outbox {
   private busy = new Set<string>();
   private pausedUntil = new Map<string, number>();
   private listeners = new Set<(prIds: string[]) => void>();
+  private ackListeners = new Set<(command: Command) => void>();
   version = 0;
 
   constructor(
@@ -102,6 +120,12 @@ export class Outbox {
   onChange(listener: (prIds: string[]) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Called after GitHub accepts a write (including ones confirmed by a probe). */
+  onAcked(listener: (command: Command) => void): () => void {
+    this.ackListeners.add(listener);
+    return () => this.ackListeners.delete(listener);
   }
 
   enqueue(commands: NewCommand[], holdMs: number): string[] {
@@ -170,6 +194,24 @@ export class Outbox {
     return row
       ? { commandId: row.id, kind: row.kind, state: row.state, sendAt: row.send_at }
       : null;
+  }
+
+  /** Unresolved writes for one PR, for showing pending replies, resolves and viewed marks. */
+  pendingFor(
+    prId: string,
+  ): { commandId: string; kind: CommandKind; state: OutboxState; payload: CommandPayload }[] {
+    return this.db
+      .query<{ id: string; kind: CommandKind; state: OutboxState; payload: string }, [string]>(
+        `SELECT id, kind, state, payload FROM outbox
+         WHERE pr_id = ? AND state IN ('held', 'queued', 'claimed', 'unknown') ORDER BY created_at`,
+      )
+      .all(prId)
+      .map((row) => ({
+        commandId: row.id,
+        kind: row.kind,
+        state: row.state,
+        payload: JSON.parse(row.payload) as CommandPayload,
+      }));
   }
 
   /** PR ids with an approval that's queued, in flight, or just landed (until the next sync shows it). */
@@ -317,10 +359,7 @@ export class Outbox {
 
     try {
       const result = await send(port, command);
-      this.db
-        .query("INSERT INTO write_ledger (account, at) VALUES (?, ?)")
-        .run(command.account, new Date().toISOString());
-      this.update(command, "acked", null, result);
+      this.acked(command, null, result);
     } catch (error) {
       this.handleError(command, error);
     }
@@ -357,28 +396,42 @@ export class Outbox {
 
   /** Decides what happened to a write whose outcome we never saw. */
   private async probe(port: GitHubPort, command: Command): Promise<void> {
-    if (command.kind === "approve") {
-      const since = Date.parse(command.claimedAt ?? command.createdAt) - 5 * 60_000;
+    const since = Date.parse(command.claimedAt ?? command.createdAt) - 5 * 60_000;
+    if (command.kind === "approve" || command.kind === "review") {
+      const wanted =
+        command.kind === "approve" ? "APPROVED" : REVIEW_STATES[command.payload.event ?? "COMMENT"];
       const reviews = await port.reviewsBy(command.prId, command.account);
       const landed = reviews.find(
         (r) =>
-          r.state === "APPROVED" &&
+          r.state === wanted &&
           r.commitOid === command.expectedHead &&
           Date.parse(r.submittedAt ?? "") >= since,
       );
-      if (landed) {
-        this.db
-          .query("INSERT INTO write_ledger (account, at) VALUES (?, ?)")
-          .run(command.account, new Date().toISOString());
-        this.update(command, "acked", "Confirmed on GitHub after an interrupted send", landed);
-      } else {
-        // No approval exists, so sending again can't duplicate one.
-        this.update(command, "queued", "Not found on GitHub; sending again");
-      }
+      // Not there, so sending again can't duplicate it.
+      if (landed) this.acked(command, "Confirmed on GitHub after an interrupted send", landed);
+      else this.update(command, "queued", "Not found on GitHub; sending again");
       return;
     }
-    // A comment can't be matched reliably, so a person decides.
-    this.update(command, "failed", "May or may not have posted. Check the PR before retrying.");
+    if (CONTENT_KINDS.has(command.kind)) {
+      const body = (command.payload.body ?? "").trim();
+      const comments = await port.recentComments(command.prId);
+      const landed = comments.find((c) => c.author === command.account && c.body.trim() === body);
+      if (landed) this.acked(command, "Confirmed on GitHub after an interrupted send", landed);
+      else this.update(command, "queued", "Not found on GitHub; sending again");
+      return;
+    }
+    // Resolving and marking viewed are idempotent: just send again.
+    this.update(command, "queued", "Sending again");
+  }
+
+  private acked(command: Command, detail: string | null, result: unknown): void {
+    if (CONTENT_KINDS.has(command.kind)) {
+      this.db
+        .query("INSERT INTO write_ledger (account, at) VALUES (?, ?)")
+        .run(command.account, new Date().toISOString());
+    }
+    this.update(command, "acked", detail, result);
+    for (const listener of this.ackListeners) listener(command);
   }
 
   private update(
@@ -408,10 +461,39 @@ export class Outbox {
 }
 
 function send(port: GitHubPort, command: Command): Promise<unknown> {
-  if (command.kind === "approve")
-    return port.approve(command.prId, command.expectedHead, command.payload.body);
-  return port.comment(command.prId, command.payload.body ?? "");
+  const { payload } = command;
+  switch (command.kind) {
+    case "approve":
+      return port.approve(command.prId, command.expectedHead, payload.body);
+    case "review":
+      return port.submitReview({
+        prId: command.prId,
+        commitOid: command.expectedHead,
+        event: payload.event ?? "COMMENT",
+        body: payload.body ?? "",
+        threads: payload.threads ?? [],
+      });
+    case "reply":
+      return port.reply(payload.threadId ?? "", payload.body ?? "");
+    case "comment":
+    case "bot-command":
+      return port.comment(command.prId, payload.body ?? "");
+    case "resolve":
+    case "unresolve":
+      return port.setResolved(payload.threadId ?? "", command.kind === "resolve");
+    case "viewed":
+    case "unviewed":
+      return port.setViewed(command.prId, payload.path ?? "", command.kind === "viewed");
+    default:
+      return Promise.reject(new Error(`unknown command kind ${String(command.kind)}`));
+  }
 }
+
+const REVIEW_STATES: Record<ReviewEvent, string> = {
+  APPROVE: "APPROVED",
+  COMMENT: "COMMENTED",
+  REQUEST_CHANGES: "CHANGES_REQUESTED",
+};
 
 function fromRow(row: Row): Command {
   return {

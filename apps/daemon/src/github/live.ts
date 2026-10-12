@@ -7,10 +7,18 @@ import { GitHubError } from "./client";
 import {
   ApproveMutation,
   CommentMutation,
+  CommentsByQuery,
   HydrateQuery,
+  MarkViewedMutation,
+  PrDetailQuery,
+  ReplyMutation,
+  ResolveThreadMutation,
   ReviewsByAuthorQuery,
   SearchPullsQuery,
+  SubmitReviewMutation,
   SweepQuery,
+  UnmarkViewedMutation,
+  UnresolveThreadMutation,
   ViewerQuery,
 } from "./ops";
 import type {
@@ -19,7 +27,9 @@ import type {
   NotificationThread,
   ReviewSummary,
   SearchHit,
+  SubmitReviewInput,
 } from "./port";
+import { isDetailNode, toPrDetail } from "./pr-detail";
 import { isHydrated, isSwept, toPrDoc, toVolatile } from "./pr-doc";
 
 type RestThread = components["schemas"]["thread"];
@@ -160,6 +170,100 @@ export class LiveGitHub implements GitHubPort {
             },
           ]
         : [],
+    );
+  }
+
+  async detail(prId: string) {
+    const data = await this.client.graphql(PrDetailQuery, { id: prId }, "interactive");
+    return isDetailNode(data.node) ? toPrDetail(data.node) : null;
+  }
+
+  async mergeBase(repo: string, base: string, head: string): Promise<string | null> {
+    try {
+      const response = await this.client.rest<components["schemas"]["commit-comparison"]>({
+        // per_page=1 keeps the response small; only the merge base is needed.
+        path: `/repos/${repo}/compare/${encodeURIComponent(base)}...${head}?per_page=1`,
+        cache: true,
+        priority: "interactive",
+      });
+      return response.data.merge_base_commit.sha;
+    } catch (error) {
+      if (error instanceof GitHubError && error.kind === "not-found") return null;
+      throw error;
+    }
+  }
+
+  async fileText(repo: string, oid: string, path: string): Promise<string | null> {
+    try {
+      const response = await this.client.rest<components["schemas"]["content-file"]>({
+        path: `/repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${oid}`,
+        cache: true,
+        priority: "interactive",
+      });
+      if (Array.isArray(response.data) || response.data.type !== "file") return null;
+      return Buffer.from(response.data.content, "base64").toString("utf8");
+    } catch (error) {
+      if (error instanceof GitHubError && error.kind === "not-found") return null;
+      throw error;
+    }
+  }
+
+  async submitReview(input: SubmitReviewInput): Promise<ReviewSummary> {
+    const data = await this.client.graphql(
+      SubmitReviewMutation,
+      {
+        prId: input.prId,
+        commit: input.commitOid,
+        event: input.event,
+        body: input.body || null,
+        threads: input.threads.map((t) => ({
+          path: t.path,
+          line: t.line,
+          side: t.side,
+          startLine: t.startLine ?? null,
+          startSide: t.startSide ?? null,
+          body: t.body,
+        })),
+      },
+      "interactive",
+    );
+    const review = data.addPullRequestReview?.pullRequestReview;
+    if (!review) throw new GitHubError("review returned nothing", "graphql", null);
+    return {
+      id: review.id,
+      state: review.state,
+      commitOid: review.commit?.oid ?? null,
+      submittedAt: review.submittedAt ?? null,
+    };
+  }
+
+  async reply(threadId: string, body: string) {
+    const data = await this.client.graphql(ReplyMutation, { threadId, body }, "interactive");
+    const comment = data.addPullRequestReviewThreadReply?.comment;
+    if (!comment) throw new GitHubError("reply returned nothing", "graphql", null);
+    return { id: comment.id };
+  }
+
+  async setResolved(threadId: string, resolved: boolean): Promise<void> {
+    if (resolved) await this.client.graphql(ResolveThreadMutation, { threadId }, "interactive");
+    else await this.client.graphql(UnresolveThreadMutation, { threadId }, "interactive");
+  }
+
+  async setViewed(prId: string, path: string, viewed: boolean): Promise<void> {
+    if (viewed) await this.client.graphql(MarkViewedMutation, { prId, path }, "interactive");
+    else await this.client.graphql(UnmarkViewedMutation, { prId, path }, "interactive");
+  }
+
+  async recentComments(prId: string) {
+    const data = await this.client.graphql(CommentsByQuery, { prId }, "interactive");
+    const node = data.node;
+    if (!node || !("comments" in node)) return [];
+    const flat = [
+      ...(node.comments.nodes ?? []),
+      ...(node.reviewThreads.nodes ?? []).flatMap((t) => t?.comments.nodes ?? []),
+    ];
+    return flat.flatMap((c) =>
+      c ? [{ id: c.id, body: c.body, author: c.author?.login ?? null }] : [],
     );
   }
 

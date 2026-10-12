@@ -8,6 +8,10 @@ pre-commit:
     - name: format staged files
       run: bunx --bun oxfmt --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true
+    # Codegen keys its types by the exact query text, so it has to run after formatting reflows it.
+    - name: regenerate GraphQL types
+      glob: "apps/daemon/src/github/ops.ts"
+      run: cd apps/daemon && bun run codegen && git add src/github/gql
 
 pre-push:
   parallel: true

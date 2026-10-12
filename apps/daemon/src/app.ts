@@ -1,7 +1,10 @@
 import { type Account, OPTIONAL_SCOPES, REQUIRED_SCOPES, missingScopes } from "@/accounts/gh";
 import { VERSION } from "@/config";
 import { DoneItems, Verdicts } from "@/domain/decisions";
+import { Details } from "@/domain/details";
+import { Drafts } from "@/domain/drafts";
 import { Model } from "@/domain/model";
+import { type InterdiffSource, ReviewService } from "@/domain/review";
 import { SettingsStore, type Settings, defaultPolicy, defaultScopes } from "@/domain/settings";
 import { Views } from "@/domain/views";
 import type { RateWindow } from "@/github/client";
@@ -13,7 +16,7 @@ import { ReleaseRegistry } from "@/registry/release";
 import type { Stores } from "@/store/db";
 import { SyncEngine } from "@/sync/engine";
 import type { Topic } from "@pier/core/contract";
-import type { AccountStatus, PrView } from "@pier/core/wire";
+import type { AccountStatus } from "@pier/core/wire";
 
 // Composition root: builds every part of the daemon from its stores and one GitHub port per
 // account, and routes change notifications from the model and outbox to open windows.
@@ -25,6 +28,8 @@ export type AppOptions = {
   /** Overrides applied on first run (e.g. sandbox scopes in E2E). */
   defaults?: Partial<Settings>;
   fetcher?: typeof fetch;
+  /** The local git store for diffs and interdiffs. Optional so tests can run without git. */
+  git?: InterdiffSource & { ensure(repo: string, account: string, oids: string[]): Promise<void> };
 };
 
 export type App = ReturnType<typeof createApp>;
@@ -60,8 +65,13 @@ export function createApp(options: AppOptions) {
   const preflight: Preflight = (command) => {
     const record = model.get(command.prId);
     if (!record) return { ok: false, state: "failed", detail: "PR is no longer tracked" };
-    if (record.doc.state !== "OPEN")
+    // Replies, resolves and viewed marks don't depend on the head; verdicts on the code do.
+    if (command.kind !== "approve" && command.kind !== "review" && command.kind !== "bot-command") {
+      return { ok: true };
+    }
+    if (record.doc.state !== "OPEN") {
       return { ok: false, state: "cancelled", detail: `PR was ${record.doc.state.toLowerCase()}` };
+    }
     if (record.doc.headRefOid !== command.expectedHead) {
       return {
         ok: false,
@@ -69,14 +79,21 @@ export function createApp(options: AppOptions) {
         detail: "New commits arrived after you decided; review it again",
       };
     }
-    const skip = planner.guard(record, command.kind === "approve" ? "approve" : "rebase", {
-      ignoreQueued: true,
-    });
+    const approving =
+      command.kind === "approve" ||
+      (command.kind === "review" && command.payload.event === "APPROVE");
+    const action = command.kind === "bot-command" ? "rebase" : "approve";
+    const skip =
+      approving || command.kind === "bot-command"
+        ? planner.guard(record, action, { ignoreQueued: true })
+        : null;
     return skip ? { ok: false, state: "cancelled", detail: skip } : { ok: true };
   };
 
   const outbox = new Outbox(stores.state, () => ports, preflight);
   planner = new Planner({ model, outbox, verdicts, settings, accounts: logins });
+  const drafts = new Drafts(stores.state);
+  const details = new Details(stores.cache);
   const views = new Views({
     model,
     outbox,
@@ -89,12 +106,46 @@ export function createApp(options: AppOptions) {
   });
   const sync = new SyncEngine(model, () => ports, settings, registry, stores.cache);
   const events = new EventHub();
+  const review = new ReviewService({
+    model,
+    ports,
+    outbox,
+    drafts,
+    details,
+    sync,
+    planner,
+    git: () => options.git ?? null,
+  });
 
   const VIEW_TOPICS: Topic[] = ["inbox", "counts", "group", "flight", "status"];
-  model.onChange(() => events.emit(VIEW_TOPICS));
+  model.onChange((ids) => {
+    events.emit([...VIEW_TOPICS, "pr"]);
+    fetchHumanHeads(ids);
+  });
+
+  // Every head of a human PR is fetched into the git store as soon as it's seen: once the author
+  // force-pushes, GitHub may stop serving the old one, and "since your last review" needs it.
+  const fetchedHeads = new Set<string>();
+  function fetchHumanHeads(ids: string[]) {
+    const git = options.git;
+    if (!git) return;
+    for (const id of ids) {
+      const record = model.get(id);
+      if (!record || record.bot || record.doc.state !== "OPEN") continue;
+      const key = `${record.doc.repo}@${record.doc.headRefOid}`;
+      if (fetchedHeads.has(key)) continue;
+      fetchedHeads.add(key);
+      git
+        .ensure(record.doc.repo, record.reader, [record.doc.headRefOid])
+        .catch((error: unknown) => {
+          fetchedHeads.delete(key);
+          console.warn(`git fetch ${key}: ${String(error)}`);
+        });
+    }
+  }
   outbox.onChange((prIds) => {
     sync.nudge(prIds);
-    events.emit([...VIEW_TOPICS, "log"]);
+    events.emit([...VIEW_TOPICS, "log", "pr"]);
   });
   sync.onStatus(() => events.emit(["status"]));
   let lastRegistryVersion = registry.version;
@@ -145,6 +196,7 @@ export function createApp(options: AppOptions) {
       );
       outbox.start();
       sync.start();
+      fetchHumanHeads([...model.all()].map((r) => r.doc.id));
     },
     stop() {
       sync.stop();
@@ -152,45 +204,7 @@ export function createApp(options: AppOptions) {
       events.close();
       clearInterval(registryWatch);
     },
-    /** A single PR for its canvas; loads its files the first time it's opened. */
-    async prView(repo: string, number: number): Promise<PrView | null> {
-      const record = [...model.all()].find((r) => r.doc.repo === repo && r.doc.number === number);
-      if (!record) return null;
-      const doc = record.doc;
-      if (record.files === null && doc.filesTotal <= 3000) {
-        const port = ports.get(record.reader);
-        if (port) model.setFiles(doc.id, doc.headRefOid, await port.files(doc.repo, doc.number));
-      }
-      sync.nudge([doc.id]);
-      const review = record.viewers.get(record.reader)?.latestReview;
-      return {
-        id: doc.id,
-        repo: doc.repo,
-        number: doc.number,
-        title: doc.title,
-        url: doc.url,
-        body: doc.body,
-        author: doc.author,
-        state: doc.state,
-        isDraft: doc.isDraft,
-        baseRefName: doc.baseRefName,
-        headRefName: doc.headRefName,
-        headRefOid: doc.headRefOid,
-        additions: doc.additions,
-        deletions: doc.deletions,
-        changedFiles: doc.changedFiles,
-        createdAt: doc.createdAt,
-        updatedAt: doc.updatedAt,
-        checks: doc.checks,
-        reviewDecision: doc.reviewDecision,
-        mergeable: doc.mergeable,
-        labels: doc.labels,
-        account: record.reader,
-        approvedByYou: review?.state === "APPROVED" && review.commitOid === doc.headRefOid,
-        pending: outbox.pending(doc.id),
-        files: model.get(doc.id)?.files ?? null,
-      };
-    },
+    review,
     status() {
       const s = sync.getStatus();
       return {

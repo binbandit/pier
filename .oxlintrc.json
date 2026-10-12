@@ -20,6 +20,7 @@
     "typescript/no-unsafe-type-assertion": "off",
     "jsx-a11y/prefer-tag-over-role": "off",
     "eslint/no-await-in-loop": "off",
+    "oxc/no-map-spread": "off",
     "eslint/no-underscore-dangle": ["warn", { "allow": ["__typename", "_splat"] }]
   }
 }

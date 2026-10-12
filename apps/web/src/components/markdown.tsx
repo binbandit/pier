@@ -27,29 +27,38 @@ function configure() {
   });
 }
 
-export function renderMarkdown(source: string): string {
+const FORBID_TAGS = [
+  "style",
+  "form",
+  "input",
+  "button",
+  "textarea",
+  "select",
+  "iframe",
+  "object",
+  "embed",
+  "svg",
+  "math",
+];
+
+/** Sanitises HTML from anywhere untrusted, including GitHub's own rendered bodies. */
+export function sanitize(html: string): string {
   configure();
-  const html = marked.parse(source, { async: false, gfm: true, breaks: false });
-  return DOMPurify.sanitize(html, {
-    FORBID_TAGS: [
-      "style",
-      "form",
-      "input",
-      "button",
-      "textarea",
-      "select",
-      "iframe",
-      "object",
-      "embed",
-      "svg",
-      "math",
-    ],
-    FORBID_ATTR: ["style", "class", "id"],
-  });
+  return DOMPurify.sanitize(html, { FORBID_TAGS, FORBID_ATTR: ["style", "class", "id"] });
+}
+
+export function renderMarkdown(source: string): string {
+  return sanitize(marked.parse(source, { async: false, gfm: true, breaks: false }));
 }
 
 export function Markdown({ source, className }: { source: string; className?: string }) {
   const html = useMemo(() => renderMarkdown(source), [source]);
   // Sanitised above; this is the one place pier renders HTML it didn't write.
   return <div className={className ?? "prose-pier"} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/** HTML GitHub already rendered (mentions and references resolved), sanitised again here. */
+export function Html({ html, className }: { html: string; className?: string }) {
+  const clean = useMemo(() => sanitize(html), [html]);
+  return <div className={className ?? "prose-pier"} dangerouslySetInnerHTML={{ __html: clean }} />;
 }

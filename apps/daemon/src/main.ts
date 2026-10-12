@@ -5,6 +5,7 @@ import { discoverAccounts, readToken } from "@/accounts/gh";
 import { createHandlers } from "@/api/handlers";
 import { createApp } from "@/app";
 import { ORIGIN, paths } from "@/config";
+import { GitStore, gitVersionOk } from "@/git/store";
 import { GitHubClient } from "@/github/client";
 import { LiveGitHub } from "@/github/live";
 import type { GitHubPort } from "@/github/port";
@@ -39,7 +40,12 @@ async function runServe(dev: boolean) {
     ]),
   );
 
-  const app = createApp({ stores, accounts, ports });
+  const git = (await gitVersionOk()) ? new GitStore(paths.git, readToken) : null;
+  if (!git)
+    console.warn(
+      "  git 2.40 or newer not found: diffs come from GitHub, without 'since your last review'",
+    );
+  const app = createApp({ stores, accounts, ports, ...(git ? { git } : {}) });
   const sandboxOwner = process.env.PIER_SANDBOX;
   if (sandboxOwner) applySandbox(app, sandboxOwner);
   const webDir = process.env.PIER_WEB_DIR ?? join(import.meta.dir, "../../web/dist");

@@ -17,7 +17,7 @@ export type Command = {
   scope: Scope;
   run: () => void;
   /** Short label shown in the status line while this command's scope is on top. */
-  hint?: string;
+  hint?: string | undefined;
   /** Section in the palette and cheatsheet. */
   group?: string;
   /** Fire even while typing in an input (Escape, Cmd+Enter). */

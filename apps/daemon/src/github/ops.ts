@@ -278,3 +278,362 @@ export const RateLimitQuery = graphql(`
     }
   }
 `);
+
+/** Everything the PR canvas shows beyond the queue fields: threads, reviews, conversation, history. */
+export const PrDetailQuery = graphql(`
+  query PrDetail($id: ID!) {
+    node(id: $id) {
+      ... on PullRequest {
+        id
+        headRefOid
+        bodyHTML
+        viewerLatestReview {
+          state
+          submittedAt
+          commit {
+            oid
+          }
+        }
+        pendingReviews: reviews(states: PENDING, first: 1) {
+          nodes {
+            id
+            commit {
+              oid
+            }
+            comments(first: 100) {
+              nodes {
+                id
+                body
+                path
+                line
+                startLine
+                originalLine
+                diffHunk
+              }
+            }
+          }
+        }
+        reviewThreads(first: 100) {
+          nodes {
+            id
+            isResolved
+            isOutdated
+            path
+            line
+            startLine
+            originalLine
+            originalStartLine
+            diffSide
+            startDiffSide
+            subjectType
+            viewerCanResolve
+            viewerCanUnresolve
+            viewerCanReply
+            resolvedBy {
+              login
+            }
+            comments(first: 50) {
+              nodes {
+                id
+                body
+                bodyHTML
+                createdAt
+                lastEditedAt
+                diffHunk
+                state
+                author {
+                  login
+                  avatarUrl(size: 64)
+                }
+                originalCommit {
+                  oid
+                }
+              }
+            }
+          }
+        }
+        reviews(last: 50) {
+          nodes {
+            id
+            state
+            bodyHTML
+            body
+            submittedAt
+            author {
+              login
+              avatarUrl(size: 64)
+            }
+            commit {
+              oid
+            }
+          }
+        }
+        comments(last: 100) {
+          nodes {
+            id
+            body
+            bodyHTML
+            createdAt
+            lastEditedAt
+            author {
+              login
+              avatarUrl(size: 64)
+            }
+          }
+        }
+        allCommits: commits(last: 100) {
+          totalCount
+          nodes {
+            commit {
+              oid
+              messageHeadline
+              committedDate
+              author {
+                name
+                user {
+                  login
+                }
+              }
+              statusCheckRollup {
+                state
+              }
+            }
+          }
+        }
+        timelineItems(
+          last: 100
+          itemTypes: [
+            HEAD_REF_FORCE_PUSHED_EVENT
+            REVIEW_REQUESTED_EVENT
+            READY_FOR_REVIEW_EVENT
+            CONVERT_TO_DRAFT_EVENT
+            MERGED_EVENT
+            CLOSED_EVENT
+            REOPENED_EVENT
+            LABELED_EVENT
+            UNLABELED_EVENT
+            RENAMED_TITLE_EVENT
+            REVIEW_DISMISSED_EVENT
+            BASE_REF_FORCE_PUSHED_EVENT
+          ]
+        ) {
+          nodes {
+            __typename
+            ... on HeadRefForcePushedEvent {
+              createdAt
+              actor {
+                login
+              }
+              beforeCommit {
+                oid
+              }
+              afterCommit {
+                oid
+              }
+            }
+            ... on ReviewRequestedEvent {
+              createdAt
+              actor {
+                login
+              }
+              requestedReviewer {
+                __typename
+                ... on User {
+                  login
+                }
+                ... on Team {
+                  slug
+                }
+              }
+            }
+            ... on ReadyForReviewEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on ConvertToDraftEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on MergedEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on ClosedEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on ReopenedEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on LabeledEvent {
+              createdAt
+              actor {
+                login
+              }
+              label {
+                name
+              }
+            }
+            ... on UnlabeledEvent {
+              createdAt
+              actor {
+                login
+              }
+              label {
+                name
+              }
+            }
+            ... on RenamedTitleEvent {
+              createdAt
+              actor {
+                login
+              }
+              previousTitle
+              currentTitle
+            }
+            ... on ReviewDismissedEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on BaseRefForcePushedEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+          }
+        }
+        files(first: 100) {
+          nodes {
+            path
+            viewerViewedState
+          }
+        }
+      }
+    }
+  }
+`);
+
+/** Submits a whole review in one write: the verdict, its body, and every new inline thread. */
+export const SubmitReviewMutation = graphql(`
+  mutation SubmitReview(
+    $prId: ID!
+    $commit: GitObjectID!
+    $event: PullRequestReviewEvent!
+    $body: String
+    $threads: [DraftPullRequestReviewThread!]
+  ) {
+    addPullRequestReview(
+      input: {
+        pullRequestId: $prId
+        commitOID: $commit
+        event: $event
+        body: $body
+        threads: $threads
+      }
+    ) {
+      pullRequestReview {
+        id
+        state
+        submittedAt
+        commit {
+          oid
+        }
+      }
+    }
+  }
+`);
+
+export const ReplyMutation = graphql(`
+  mutation Reply($threadId: ID!, $body: String!) {
+    addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) {
+      comment {
+        id
+        createdAt
+      }
+    }
+  }
+`);
+
+export const ResolveThreadMutation = graphql(`
+  mutation ResolveThread($threadId: ID!) {
+    resolveReviewThread(input: { threadId: $threadId }) {
+      thread {
+        id
+        isResolved
+      }
+    }
+  }
+`);
+
+export const UnresolveThreadMutation = graphql(`
+  mutation UnresolveThread($threadId: ID!) {
+    unresolveReviewThread(input: { threadId: $threadId }) {
+      thread {
+        id
+        isResolved
+      }
+    }
+  }
+`);
+
+export const MarkViewedMutation = graphql(`
+  mutation MarkViewed($prId: ID!, $path: String!) {
+    markFileAsViewed(input: { pullRequestId: $prId, path: $path }) {
+      clientMutationId
+    }
+  }
+`);
+
+export const UnmarkViewedMutation = graphql(`
+  mutation UnmarkViewed($prId: ID!, $path: String!) {
+    unmarkFileAsViewed(input: { pullRequestId: $prId, path: $path }) {
+      clientMutationId
+    }
+  }
+`);
+
+/** Recent comments by one author, used to find out whether an interrupted reply or comment landed. */
+export const CommentsByQuery = graphql(`
+  query CommentsBy($prId: ID!) {
+    node(id: $prId) {
+      ... on PullRequest {
+        comments(last: 30) {
+          nodes {
+            id
+            body
+            author {
+              login
+            }
+          }
+        }
+        reviewThreads(last: 50) {
+          nodes {
+            comments(last: 10) {
+              nodes {
+                id
+                body
+                author {
+                  login
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`);

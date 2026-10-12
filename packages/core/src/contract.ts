@@ -6,6 +6,7 @@ import type {
   GroupView,
   LogEntry,
   PlanPreview,
+  PrDiff,
   PrView,
   QueueItem,
   SplitCounts,
@@ -22,6 +23,31 @@ export const inputs = {
   counts: type({}),
   group: type({ key: "string" }),
   pr: type({ repo: "string", number: "number.integer > 0" }),
+  prDiff: type({
+    repo: "string",
+    number: "number.integer > 0",
+    range: "'all' | 'since-review'",
+    "ignoreWhitespace?": "boolean",
+  }),
+  saveDraft: type({
+    "id?": "string",
+    prId: "string",
+    path: "string",
+    side: "'LEFT' | 'RIGHT'",
+    line: "number.integer > 0",
+    "startLine?": "number.integer > 0 | null",
+    body: "string > 0",
+  }),
+  deleteDraft: type({ id: "string" }),
+  submitReview: type({
+    prId: "string",
+    event: "'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'",
+    body: "string",
+  }),
+  reply: type({ prId: "string", threadId: "string", body: "string > 0" }),
+  resolveThread: type({ prId: "string", threadId: "string", resolved: "boolean" }),
+  setViewed: type({ prId: "string", path: "string", viewed: "boolean" }),
+  comment: type({ prId: "string", body: "string > 0" }),
   flight: type({}),
   log: type({ "limit?": "1 <= number.integer <= 500" }),
   planAction: type({
@@ -42,6 +68,14 @@ export type Outputs = {
   counts: SplitCounts;
   group: GroupView | null;
   pr: PrView | null;
+  prDiff: PrDiff | null;
+  saveDraft: { id: string };
+  deleteDraft: { ok: true };
+  submitReview: { commandIds: string[] };
+  reply: { commandIds: string[] };
+  resolveThread: { commandIds: string[] };
+  setViewed: { commandIds: string[] };
+  comment: { commandIds: string[] };
   flight: FlightItem[];
   log: LogEntry[];
   planAction: PlanPreview;

@@ -1,6 +1,7 @@
 import type { DiffFile } from "@pier/core/wire";
 
 import type { RateWindow } from "./client";
+import type { PrDetail } from "./pr-detail";
 import type { PrDoc, PrState, PrViewer, VolatileState } from "./pr-doc";
 
 // The only way the rest of the daemon talks to GitHub, one instance per account.
@@ -30,6 +31,25 @@ export type ReviewSummary = {
   submittedAt: string | null;
 };
 
+export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+
+export type DraftThreadInput = {
+  path: string;
+  line: number;
+  side: "LEFT" | "RIGHT";
+  startLine?: number;
+  startSide?: "LEFT" | "RIGHT";
+  body: string;
+};
+
+export type SubmitReviewInput = {
+  prId: string;
+  commitOid: string;
+  event: ReviewEvent;
+  body: string;
+  threads: DraftThreadInput[];
+};
+
 export interface GitHubPort {
   readonly login: string;
   viewer(): Promise<{ login: string; avatarUrl: string }>;
@@ -43,6 +63,18 @@ export interface GitHubPort {
   approve(prId: string, commitOid: string, body?: string): Promise<ReviewSummary>;
   comment(subjectId: string, body: string): Promise<{ id: string }>;
   reviewsBy(prId: string, author: string): Promise<ReviewSummary[]>;
+  /** Threads, reviews, conversation and history for one PR, as this account sees it. */
+  detail(prId: string): Promise<PrDetail | null>;
+  /** The merge base of `head` with `base` (a branch or commit), via the compare API. */
+  mergeBase(repo: string, base: string, head: string): Promise<string | null>;
+  /** A file's contents at a commit, or null if it doesn't exist there (or is binary). */
+  fileText(repo: string, oid: string, path: string): Promise<string | null>;
+  submitReview(input: SubmitReviewInput): Promise<ReviewSummary>;
+  reply(threadId: string, body: string): Promise<{ id: string }>;
+  setResolved(threadId: string, resolved: boolean): Promise<void>;
+  setViewed(prId: string, path: string, viewed: boolean): Promise<void>;
+  /** Recent conversation and thread comments, for checking whether an interrupted post landed. */
+  recentComments(prId: string): Promise<{ id: string; body: string; author: string | null }[]>;
   /** When a GitHub release was published, or null if the tag has no release. */
   releaseDate(repo: string, tag: string): Promise<string | null>;
   rates(): { graphql: RateWindow | null; core: RateWindow | null };

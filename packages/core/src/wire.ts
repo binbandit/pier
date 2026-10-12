@@ -91,7 +91,16 @@ export type PendingWrite = {
   sendAt: string;
 };
 
-export type CommandKind = "approve" | "bot-command";
+export type CommandKind =
+  | "approve"
+  | "bot-command"
+  | "review"
+  | "reply"
+  | "comment"
+  | "resolve"
+  | "unresolve"
+  | "viewed"
+  | "unviewed";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -256,6 +265,74 @@ export type CheckRun = {
   state: "success" | "failure" | "pending" | "neutral" | "skipped";
 };
 
+export type Side = "LEFT" | "RIGHT";
+
+export type ThreadComment = {
+  id: string;
+  author: Actor | null;
+  body: string;
+  bodyHTML: string;
+  createdAt: string;
+  edited: boolean;
+};
+
+export type Thread = {
+  id: string;
+  path: string;
+  side: Side;
+  /** Current position; null when the thread is outdated (its lines no longer exist). */
+  line: number | null;
+  startLine: number | null;
+  originalLine: number | null;
+  subject: "line" | "file";
+  resolved: boolean;
+  outdated: boolean;
+  resolvedBy: string | null;
+  canResolve: boolean;
+  canReply: boolean;
+  /** The hunk the thread was written against, for showing outdated threads in context. */
+  diffHunk: string;
+  comments: ThreadComment[];
+  /** A reply or resolve that hasn't reached GitHub yet. */
+  pending: PendingWrite | null;
+};
+
+/** A new inline comment that lives only in pier until the review is submitted. */
+export type Draft = {
+  id: string;
+  path: string;
+  side: Side;
+  line: number;
+  startLine: number | null;
+  body: string;
+  /** The head commit the draft was written against. */
+  headOid: string;
+  createdAt: string;
+};
+
+export type TimelineEntry =
+  | { kind: "comment"; id: string; author: Actor | null; bodyHTML: string; at: string }
+  | {
+      kind: "review";
+      id: string;
+      author: Actor | null;
+      state: string;
+      bodyHTML: string;
+      at: string;
+      commitOid: string | null;
+    }
+  | { kind: "commit"; oid: string; headline: string; author: string | null; at: string }
+  | {
+      kind: "force-push";
+      before: string | null;
+      after: string | null;
+      actor: string | null;
+      at: string;
+    }
+  | { kind: "event"; text: string; actor: string | null; at: string };
+
+export type ViewedState = "viewed" | "unviewed" | "changed";
+
 export type PrView = {
   id: string;
   repo: string;
@@ -263,6 +340,8 @@ export type PrView = {
   title: string;
   url: string;
   body: string;
+  /** GitHub's rendered body (mentions and references resolved). Sanitised again on render. */
+  bodyHTML: string | null;
   author: Actor | null;
   state: "OPEN" | "CLOSED" | "MERGED";
   isDraft: boolean;
@@ -278,11 +357,35 @@ export type PrView = {
   reviewDecision: ReviewDecision;
   mergeable: Mergeable;
   labels: { name: string; color: string }[];
+  /** `state` is "requested" for a pending request, else the review state (APPROVED, …). */
+  reviewers: { login: string; kind: "user" | "team" | "bot"; state: string }[];
   account: string;
   approvedByYou: boolean;
+  /** The commit your last review was against, if you've reviewed before. */
+  lastReviewedOid: string | null;
   pending: PendingWrite | null;
   /** Null until fetched; the first open of a PR loads them. */
   files: DiffFile[] | null;
+  threads: Thread[];
+  drafts: Draft[];
+  timeline: TimelineEntry[];
+  viewed: Record<string, ViewedState>;
+  /** A review started on github.com that hasn't been submitted; submitting here continues it. */
+  pendingReviewId: string | null;
+  /** Detail (threads, timeline) has loaded at least once. */
+  detailLoaded: boolean;
+};
+
+/** "All changes", or only what changed since you last reviewed. */
+export type DiffRange = "all" | "since-review";
+
+export type PrDiff = {
+  range: DiffRange;
+  files: DiffFile[];
+  /** Set when the requested range couldn't be computed and the full diff was returned instead. */
+  fallback: string | null;
+  fromOid: string | null;
+  toOid: string;
 };
 
 // ---------------------------------------------------------------------------

@@ -22,8 +22,8 @@ const UNSAFE_CSS = /* css */ `
   [data-title] { color: #cccccc; font-family: var(--diffs-font-family); }
   [data-line-type="change-addition"] { background-color: #131810; }
   [data-line-type="change-deletion"] { background-color: #1d1111; }
-  [data-line-type="change-addition"] [data-diff-span] { background-color: #2f3b27; }
-  [data-line-type="change-deletion"] [data-diff-span] { background-color: #452a2a; }
+  [data-line-type="change-addition"] [data-diff-span] { background-color: #263020; }
+  [data-line-type="change-deletion"] [data-diff-span] { background-color: #3a2323; }
   [data-separator],
   [data-separator-wrapper],
   [data-separator-content] {
@@ -36,7 +36,7 @@ const UNSAFE_CSS = /* css */ `
     font-size: 12px;
   }
 `;
-const OPTIONS = {
+export const DIFF_OPTIONS = {
   theme: THEME,
   themeType: "dark",
   diffStyle: "unified",
@@ -47,7 +47,7 @@ const OPTIONS = {
   unsafeCSS: UNSAFE_CSS,
 } as const;
 
-const LOCKFILE =
+export const LOCKFILE =
   /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|go\.sum|poetry\.lock|uv\.lock|Gemfile\.lock|composer\.lock)$/;
 
 export function DiffFiles({ files }: { files: DiffFile[] }) {
@@ -84,11 +84,11 @@ function DiffFileView({ file }: { file: DiffFile }) {
       </div>
     );
   }
-  return <PatchDiff patch={toPatch(file)} options={OPTIONS} />;
+  return <PatchDiff patch={toPatch(file)} options={DIFF_OPTIONS} />;
 }
 
 /** GitHub gives hunks only; the renderer wants a full git-style file patch. */
-function toPatch(file: DiffFile): string {
+export function toPatch(file: DiffFile): string {
   const before = file.status === "added" ? "/dev/null" : `a/${file.previousPath ?? file.path}`;
   const after = file.status === "removed" ? "/dev/null" : `b/${file.path}`;
   return `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n--- ${before}\n+++ ${after}\n${file.patch ?? ""}\n`;

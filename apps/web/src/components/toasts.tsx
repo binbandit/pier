@@ -31,7 +31,7 @@ export function Toasts() {
   if (toasts.length === 0) return null;
   return (
     <div
-      className="pointer-events-none fixed right-4 bottom-10 z-40 flex flex-col items-end gap-2"
+      className="pointer-events-none fixed bottom-10 left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-2"
       aria-live="polite"
     >
       {toasts.map((t) => (

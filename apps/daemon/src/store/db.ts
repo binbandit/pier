@@ -5,12 +5,14 @@ import { join } from "node:path";
 import { paths } from "@/config";
 
 import cache001 from "./migrations/cache/001-init.sql" with { type: "text" };
+import cache002 from "./migrations/cache/002-detail.sql" with { type: "text" };
 import state001 from "./migrations/state/001-init.sql" with { type: "text" };
+import state002 from "./migrations/state/002-drafts.sql" with { type: "text" };
 
 // Migrations are applied in order; `PRAGMA user_version` records how many have run.
 // Append new files to these lists, never edit or reorder existing ones.
-const CACHE_MIGRATIONS = [cache001];
-const STATE_MIGRATIONS = [state001];
+const CACHE_MIGRATIONS = [cache001, cache002];
+const STATE_MIGRATIONS = [state001, state002];
 
 export type Stores = { cache: Database; state: Database };
 
