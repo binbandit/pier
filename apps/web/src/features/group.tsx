@@ -11,7 +11,7 @@ import { useCommands } from "@/keys/registry";
 import { plural, since } from "@/lib/format";
 import { q } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
-import { Avatar } from "@/ui/avatar";
+import { AccountAvatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
 import type { Cohort, GateResult, GroupRow, GroupView } from "@pier/core/wire";
 
@@ -88,7 +88,10 @@ function Loaded({ view }: { view: GroupView }) {
           title: chosen ? "Approve selected" : "Approve the clear cohort",
           keys: ["a"],
           scope: "surface",
-          hint: chosen ? `approve ${chosen.length}` : `approve ${clear.length} clear`,
+          // Once the clear cohort is all approved there's nothing to hint at.
+          ...(chosen || clear.length > 0
+            ? { hint: chosen ? `approve ${chosen.length}` : `approve ${clear.length} clear` }
+            : {}),
           group: "Decide",
           run: () => {
             const ids = (chosen ?? clear)
@@ -206,9 +209,13 @@ function Loaded({ view }: { view: GroupView }) {
                 ? `${since(release.publishedAt)}, ${new Date(release.publishedAt).toLocaleDateString()}`
                 : "Unknown"}
             </dd>
-            {release?.links.slice(0, 2).map((link) => (
-              <LinkRow key={link.url} label={link.label} url={link.url} />
-            ))}
+            {/* Registries often list the repo as both source and homepage; show it once. */}
+            {release?.links
+              .filter((link, i, all) => all.findIndex((other) => other.url === link.url) === i)
+              .slice(0, 2)
+              .map((link) => (
+                <LinkRow key={link.url} label={link.label} url={link.url} />
+              ))}
           </dl>
         </header>
 
@@ -266,19 +273,23 @@ function Loaded({ view }: { view: GroupView }) {
                 </span>
                 <span className="text-ui text-faint">{members.length}</span>
               </h2>
-              <p className="mb-2 text-meta text-faint">{COHORT_HELP[cohort]}</p>
+              <p className="mb-2 text-meta text-faint">
+                {members.every((m) => m.approvedByYou || m.pending)
+                  ? "Approved. Waiting for them to merge."
+                  : COHORT_HELP[cohort]}
+              </p>
               <ul>
                 {members.map((row) => {
                   const index = rows.indexOf(row);
                   const own = row.reasons.filter((r) => !shared.has(r));
                   return (
-                    <li key={row.prId} data-row={index} className="-mx-3">
+                    <li key={row.prId} data-row={index} className="-mx-6">
                       <Row
                         active={index === list.index}
                         selected={list.selectedKeys.includes(row.prId)}
                         onSelect={() => list.move(index)}
                         onOpen={() => openOnGitHub(row.url)}
-                        className="grid h-9 grid-cols-[minmax(0,1fr)_80px_130px_24px] gap-x-4 rounded-sm px-3"
+                        className="grid h-9 grid-cols-[minmax(0,1fr)_80px_130px_24px] gap-x-4 rounded-sm px-6"
                       >
                         <span className="flex min-w-0 items-baseline gap-2">
                           <span
@@ -294,13 +305,23 @@ function Loaded({ view }: { view: GroupView }) {
                             <span className="font-code text-meta text-faint">{row.directory}</span>
                           )}
                           {row.differs && <span className="text-meta text-warn">differs</span>}
+                          {row.otherBumps.length > 0 && (
+                            <span
+                              className="shrink-0 text-meta text-faint"
+                              title={row.otherBumps
+                                .map((b) => `${b.pkg} ${b.from ?? "?"} → ${b.to}`)
+                                .join("\n")}
+                            >
+                              +{plural(row.otherBumps.length, "other bump")}
+                            </span>
+                          )}
                           {own.length > 0 && (
                             <span className="truncate text-meta text-muted">{own.join("; ")}</span>
                           )}
                         </span>
                         <span className="font-code text-meta text-faint">{row.from ?? ""}</span>
                         <RowState row={row} />
-                        <Avatar login={row.account} size={16} />
+                        <AccountAvatar login={row.account} size={16} />
                       </Row>
                     </li>
                   );
@@ -392,12 +413,17 @@ function RowState({ row }: { row: GroupRow }) {
   );
 }
 
+// deps.dev names its links in its own vocabulary; anything else (GitHub's) is already readable.
+const LINK_LABELS: Record<string, string> = {
+  SOURCE_REPO: "Source",
+  HOMEPAGE: "Homepage",
+  ORIGIN: "Registry",
+};
+
 function LinkRow({ label, url }: { label: string; url: string }) {
   return (
     <>
-      <dt className="text-faint">
-        {label === "SOURCE_REPO" ? "Source" : label === "HOMEPAGE" ? "Homepage" : label}
-      </dt>
+      <dt className="text-faint">{LINK_LABELS[label] ?? label}</dt>
       <dd>
         <a
           href={url}

@@ -1,4 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
+
+import { q } from "@/lib/rpc";
 
 /** GitHub avatar at a fixed size; falls back to the login's first letter while loading. */
 export function Avatar({
@@ -27,4 +30,11 @@ export function Avatar({
       className={clsx("shrink-0 rounded-full bg-press", className)}
     />
   );
+}
+
+/** One of your gh accounts, with the picture the daemon read for it. */
+export function AccountAvatar({ login, size = 18 }: { login: string; size?: number }) {
+  const { data: status } = useQuery(q("status", {}));
+  const url = status?.accounts.find((account) => account.login === login)?.avatarUrl ?? null;
+  return <Avatar login={login} url={url} size={size} />;
 }

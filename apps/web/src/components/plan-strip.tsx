@@ -106,7 +106,7 @@ export function PlanStrip({ preview, label }: { preview: PlanPreview; label: str
             {preview.perAccount
               .map(
                 (a) =>
-                  `${plural(a.writes, "write")} as ${a.account}, ${Math.round(a.hourShare * 100)}% of this hour`,
+                  `${plural(a.writes, "write")} as ${a.account}, ${hourShare(a.hourShare)} of this hour`,
               )
               .join("; ")}
             . About {duration(preview.etaSeconds)}.
@@ -156,4 +156,10 @@ export function PlanStrip({ preview, label }: { preview: PlanPreview; label: str
       )}
     </Dock>
   );
+}
+
+// Any write takes some of the hour, so a small share reads "under 1%", never "0%".
+function hourShare(share: number): string {
+  const percent = Math.round(share * 100);
+  return percent === 0 && share > 0 ? "under 1%" : `${percent}%`;
 }

@@ -5,7 +5,7 @@ import { openOnGitHub } from "@/features/actions";
 import { ago, shortRepo } from "@/lib/format";
 import { q } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
-import { Avatar } from "@/ui/avatar";
+import { AccountAvatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
 import type { FlightItem } from "@pier/core/wire";
 
@@ -59,7 +59,7 @@ export function Flight() {
               </span>
               <span className="truncate text-meta text-muted">{item.waitingOn}</span>
               <span className="text-right text-meta text-faint">{ago(item.updatedAt)}</span>
-              <Avatar login={item.account} size={16} />
+              <AccountAvatar login={item.account} size={16} />
             </div>
           )}
         />

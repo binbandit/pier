@@ -9,7 +9,7 @@ import type { Command } from "@/keys/registry";
 import { ago, plural, shortRepo } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
-import { Avatar } from "@/ui/avatar";
+import { AccountAvatar, Avatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
 import type { GroupItem, PrItem, QueueItem, Split } from "@pier/core/wire";
@@ -185,7 +185,7 @@ function GroupLine({ item }: { item: GroupItem }) {
       <span className="text-right text-meta text-faint">{ago(item.updatedAt)}</span>
       <span className="flex justify-end -space-x-1">
         {item.accounts.slice(0, 2).map((login) => (
-          <Avatar key={login} login={login} size={16} />
+          <AccountAvatar key={login} login={login} size={16} />
         ))}
       </span>
     </div>
