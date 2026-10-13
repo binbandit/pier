@@ -10,7 +10,7 @@ import { clsx } from "clsx";
 import { ShieldCheck } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
-import { DIFF_OPTIONS, LOCKFILE, toPatch } from "@/diff/adapter";
+import { DIFF_OPTIONS, LOCKFILE, toPatch, useDiffTheme } from "@/diff/adapter";
 import { codeBetween, patchLines } from "@/diff/lines";
 import { errorText } from "@/features/actions";
 import { rpc } from "@/lib/rpc";
@@ -201,9 +201,11 @@ export function ReviewFile(props: Props) {
     callbacks.current = { onSelect, onCompose };
   });
   const path = file.path;
+  const theme = useDiffTheme();
   const options = useMemo(
     () => ({
       ...DIFF_OPTIONS,
+      theme,
       // pier draws its own header (with Viewed). `disableFileHeader: true` stops @pierre/diffs 1.5.2
       // from rendering any lines at all, so its header is hidden with CSS instead.
       unsafeCSS: `${DIFF_OPTIONS.unsafeCSS}\n[data-diffs-header] { display: none; }`,
@@ -231,7 +233,7 @@ export function ReviewFile(props: Props) {
           : { oldFile: { name: meta.prevName ?? path, contents: before }, newFile };
       },
     }),
-    [path, anchors, split, prId, range.from, range.to],
+    [path, anchors, split, prId, range.from, range.to, theme],
   );
   const patch = useMemo(() => toPatch(shown), [shown]);
   // Renamed with nothing to show: git has no text diff for it either.

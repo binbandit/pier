@@ -374,7 +374,7 @@ export class ReviewService {
     if (!git)
       return all(
         range === "since-review"
-          ? "Changes since your last review need the local git store, which isn't ready yet"
+          ? "Showing everything: changes since your last review need the local git store, which isn't running"
           : null,
       );
 

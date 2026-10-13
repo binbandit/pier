@@ -140,3 +140,4 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | APP-PWA | Installable window with dock badge | M1a | built |
 | APP-LINKS | github.com PR links (and `/files#diff-…` line links, and `/pulls`) open in pier: `pier extension` writes a Chrome extension that redirects them. `?pier=0` (Shift+O) and links followed on github.com itself stay there. PR links inside comments open in pier directly. | M1a | sandbox |
 | APP-OFFLINE | Says "daemon offline" instead of a browser error | M1a | built |
+| APP-CONTRAST | Night contrast: from 20:00 to 07:00 text and diff colours sit a tenth lower (black stays black); palette pins day or night | M3 | built |

@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { useCommands, useKeyDispatcher } from "@/keys/registry";
 import { useServerEvents } from "@/lib/events";
 import { q } from "@/lib/rpc";
+import { useContrastSchedule } from "@/stores/contrast";
+import { usePrefs } from "@/stores/prefs";
 import { useUi } from "@/stores/ui";
 
 import { Cheatsheet } from "./cheatsheet";
@@ -28,6 +30,8 @@ const SPLITS = [
 export function Shell({ children }: { children: ReactNode }) {
   useKeyDispatcher();
   useServerEvents();
+  useContrastSchedule();
+  const setContrast = usePrefs((s) => s.setContrast);
   const navigate = useNavigate();
   const panel = useUi((s) => s.panel);
   const openPanel = useUi((s) => s.openPanel);
@@ -82,6 +86,19 @@ export function Shell({ children }: { children: ReactNode }) {
       inInputs: true,
       run: () => openPanel({ kind: "palette" }),
     },
+    ...(
+      [
+        ["auto", "Contrast: dim text from 20:00 to 07:00"],
+        ["day", "Contrast: always day"],
+        ["night", "Contrast: always night"],
+      ] as const
+    ).map(([choice, title]) => ({
+      id: `contrast.${choice}`,
+      title,
+      scope: "global" as const,
+      group: "View",
+      run: () => setContrast(choice),
+    })),
     {
       id: "cheatsheet",
       title: "Keyboard shortcuts",

@@ -94,6 +94,15 @@
     --diffs-gap-block: 0px;
   }
 
+  /* Night contrast (stores/contrast.ts): each grey of text a tenth lower. */
+  :root[data-contrast="night"] {
+    --color-strong: #cfcfcf;
+    --color-fg: #b8b8b8;
+    --color-muted: #949494;
+    --color-faint: #6e6e6e;
+    --color-off: #484848;
+  }
+
   html,
   body,
   #root {

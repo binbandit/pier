@@ -164,6 +164,8 @@ function Loaded({ pr }: { pr: PrView }) {
     enabled: !fromGitHub,
   });
   const files = fromGitHub ? (pr.files ?? []) : (diff?.files ?? []);
+  // What's on screen: the daemon sends everything when it can't narrow to what was asked for.
+  const shown: DiffView = diff?.range === "all" && view.range !== "all" ? { range: "all" } : view;
   // GitHub's own patches run from where the PR branched to its head.
   const range = fromGitHub
     ? { from: null, to: pr.headRefOid }
@@ -806,7 +808,7 @@ function Loaded({ pr }: { pr: PrView }) {
           <div className="px-8 pt-8 pb-24">
             <Header pr={pr} />
             <Checks pr={pr} />
-            <TurnLine pr={pr} view={view} fallback={diff?.fallback ?? null} />
+            <TurnLine pr={pr} view={shown} fallback={diff?.fallback ?? null} />
             <section className="mt-6 border-t border-line pt-6">
               <Writing
                 prId={pr.id}
@@ -832,11 +834,11 @@ function Loaded({ pr }: { pr: PrView }) {
             <section className="mt-10">
               <h2 className="mb-3 flex items-baseline gap-3">
                 <span className="text-section font-semibold text-strong">
-                  {describeView(view, pr)}
+                  {describeView(shown, pr)}
                 </span>
-                {view.range === "commits" && view.from === view.to && (
+                {shown.range === "commits" && shown.from === shown.to && (
                   <span className="min-w-0 truncate text-ui text-muted">
-                    {pr.commits.find((c) => c.oid === view.to)?.headline}
+                    {pr.commits.find((c) => c.oid === shown.to)?.headline}
                   </span>
                 )}
                 <span className="shrink-0 text-ui text-faint">

@@ -339,7 +339,7 @@ syntax: achroma mono by default (keyword #e6e6e6 w500, fn #cccccc, ident #b8b8b8
   - No fades over large areas (they smear on OLED).
   - Reduced motion turns all motion off.
 - **Focus**: the keyboard cursor is `--fill-cursor` plus a 2px accent bar. Hover only changes the fill. Status uses 6px dots with muted labels; badges are for counts only. No modals where an inline panel works.
-- **Contrast schedule** (after M1b): ported from achroma's `adaptive_contrast`. At night `--text` becomes #b8b8b8.
+- **Contrast schedule**: ported from achroma's `adaptive_contrast`. From 20:00 to 07:00 every text grey, and the diff syntax theme, is scaled to 90% (`--text` #cccccc becomes #b8b8b8); black stays black. The palette pins day or night (`stores/contrast.ts`).
 - **Dock badge**: counts human PRs where it's your turn only. Bumps are batched chores, not interruptions.
 
 ## Parity

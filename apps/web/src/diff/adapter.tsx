@@ -1,10 +1,11 @@
 import { PatchDiff } from "@pierre/diffs/react";
 import { clsx } from "clsx";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { useContrast } from "@/stores/contrast";
 import type { DiffFile } from "@pier/core/wire";
 
-import { THEME, registerTheme } from "./theme";
+import { THEMES, registerTheme } from "./theme";
 
 // The only place pier touches @pierre/diffs. Its API is young and moving, so everything else in
 // the app talks to these components instead. It renders inside a shadow DOM, so styling goes
@@ -19,7 +20,7 @@ const UNSAFE_CSS = /* css */ `
     border-bottom: 1px solid #1e1e1e;
     font-size: 13px;
   }
-  [data-title] { color: #cccccc; font-family: var(--diffs-font-family); }
+  [data-title] { color: var(--color-fg); font-family: var(--diffs-font-family); }
   [data-line-type="change-addition"] { background-color: #131810; }
   [data-line-type="change-deletion"] { background-color: #1d1111; }
   [data-line-type="change-addition"] [data-diff-span] { background-color: #263020; }
@@ -28,24 +29,25 @@ const UNSAFE_CSS = /* css */ `
   [data-separator-wrapper],
   [data-separator-content] {
     background: #000;
-    color: #7a7a7a;
+    color: var(--color-faint);
   }
   [data-separator] {
     border-block: 1px solid #1e1e1e;
     font-family: var(--diffs-header-font-family);
     font-size: 12px;
   }
-  /* Showing more context: the chevron is a cell of the line-number column, flush with it. */
-  [data-separator-wrapper] {
-    padding-inline: 0;
-    grid-template-columns: var(--diffs-column-number-width) auto;
-  }
+  /* Showing more context: a quiet row, chevron flush left; the whole row lights on hover. */
+  [data-separator-wrapper] { padding-inline: 0; }
   [data-expand-button] {
     border-radius: 0;
     border-right: 0;
+    background: transparent;
+  }
+  [data-expand-index] [data-separator-wrapper]:hover,
+  [data-expand-index] [data-separator-wrapper]:hover [data-separator-content] {
     background: #121212;
   }
-  [data-expand-button]:hover { background: #1e1e1e; color: #cccccc; }
+  [data-expand-button]:hover { color: var(--color-fg); }
   /* OLED: the space beside a split's one-sided lines and under a thread stays true black. */
   [data-content-buffer] { background-image: none; }
   [data-line-annotation],
@@ -56,7 +58,7 @@ const UNSAFE_CSS = /* css */ `
   [data-line-type][data-selected-line] { background-color: #1d1729; }
 `;
 export const DIFF_OPTIONS = {
-  theme: THEME,
+  theme: THEMES.day,
   themeType: "dark",
   diffStyle: "unified",
   diffIndicators: "bars",
@@ -65,6 +67,11 @@ export const DIFF_OPTIONS = {
   overflow: "scroll",
   unsafeCSS: UNSAFE_CSS,
 } as const;
+
+/** The syntax theme for the time of day (see stores/contrast.ts). */
+export function useDiffTheme(): string {
+  return THEMES[useContrast((s) => s.mode)];
+}
 
 export const LOCKFILE =
   /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|go\.sum|poetry\.lock|uv\.lock|Gemfile\.lock|composer\.lock)$/;
@@ -82,6 +89,8 @@ export function DiffFiles({ files }: { files: DiffFile[] }) {
 function DiffFileView({ file }: { file: DiffFile }) {
   const isLockfile = LOCKFILE.test(file.path);
   const [open, setOpen] = useState(!isLockfile);
+  const theme = useDiffTheme();
+  const options = useMemo(() => ({ ...DIFF_OPTIONS, theme }), [theme]);
 
   if (file.patch === null || !open) {
     return (
@@ -103,7 +112,7 @@ function DiffFileView({ file }: { file: DiffFile }) {
       </div>
     );
   }
-  return <PatchDiff patch={toPatch(file)} options={DIFF_OPTIONS} />;
+  return <PatchDiff patch={toPatch(file)} options={options} />;
 }
 
 /**
