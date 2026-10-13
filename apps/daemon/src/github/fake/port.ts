@@ -163,6 +163,22 @@ export class FakeGitHub implements GitHubPort {
     return this.call("branchHead", "core", () => this.world.branchHead(repo, branch));
   }
 
+  rawDiff(repo: string, number: number, format: "diff" | "patch"): Promise<string> {
+    return this.call("rawDiff", "core", () => {
+      const pr = this.world.prByNumber(repo, number);
+      if (!pr || !this.canSee(pr)) throw new GitHubError("404 Not Found", "not-found", 404);
+      const diff = pr.files
+        .map(
+          (f) =>
+            `diff --git a/${f.path} b/${f.path}\n--- a/${f.path}\n+++ b/${f.path}\n${f.patch ?? ""}\n`,
+        )
+        .join("");
+      if (format === "diff") return diff;
+      const head = this.world.head(pr);
+      return `From ${head} Mon Sep 17 00:00:00 2001\nFrom: ${pr.author}\nSubject: [PATCH] ${pr.title}\n\n---\n${diff}`;
+    });
+  }
+
   codeOwners(repo: string, _ref: string): Promise<string | null> {
     return this.call("codeOwners", "graphql", () =>
       this.canSeeRepo(repo) ? (this.world.repos.get(repo)?.codeOwners ?? null) : null,

@@ -1,3 +1,4 @@
+import { GitHubError } from "@/github/client";
 import type { DraftThreadInput, GitHubPort, MetadataField, ReviewEvent } from "@/github/port";
 import type { PrDetail } from "@/github/pr-detail";
 import type { CommandPayload, NewCommand, Outbox } from "@/outbox/outbox";
@@ -68,6 +69,8 @@ export type InterdiffSource = {
     account: string,
     commits: { mergeBase: string; base: string; head: string },
   ): Promise<string[]>;
+  /** A file's text at a commit; null when it isn't there or isn't text. */
+  show(repo: string, account: string, oid: string, path: string): Promise<string | null>;
 };
 
 export type ReviewDeps = {
@@ -379,6 +382,44 @@ export class ReviewService {
       fromOid: oldHead,
       toOid: doc.headRefOid,
     };
+  }
+
+  /**
+   * A file's whole text on both sides of a diff, for showing the lines around its hunks. Without
+   * `from`, the old side is where the PR branched from its base.
+   */
+  async fileContents(input: {
+    prId: string;
+    path: string;
+    previousPath: string | null;
+    from: string | null;
+    to: string | null;
+  }): Promise<{ before: string | null; after: string | null }> {
+    const record = this.require(input.prId);
+    const { doc } = record;
+    const port = this.deps.ports.get(record.reader);
+    if (!port) return { before: null, after: null };
+    const to = input.to ?? doc.headRefOid;
+    const from = input.from ?? (await port.mergeBase(doc.repo, doc.baseRefName, to));
+    const git = this.deps.git();
+    const read = (oid: string, path: string) =>
+      git ? git.show(doc.repo, record.reader, oid, path) : port.fileText(doc.repo, oid, path);
+    const [before, after] = await Promise.all([
+      from ? read(from, input.previousPath ?? input.path) : Promise.resolve(null),
+      read(to, input.path),
+    ]);
+    return { before, after };
+  }
+
+  /** github.com's .diff and .patch for a PR, read with the account that reads it. */
+  async rawDiff(repo: string, number: number, format: "diff" | "patch"): Promise<string | null> {
+    const record = this.find(repo, number) ?? (await this.track(repo, number));
+    const port = record && this.deps.ports.get(record.reader);
+    if (!port) return null;
+    return port.rawDiff(repo, number, format).catch((error: unknown) => {
+      if (error instanceof GitHubError && error.kind === "not-found") return null;
+      throw error;
+    });
   }
 
   saveDraft(input: {

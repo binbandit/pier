@@ -25,7 +25,11 @@ export type ServerOptions = {
   webDir: string | null;
   dev: boolean;
   port?: number;
+  /** github.com's /owner/repo/pull/N.diff and .patch, served the same way here. */
+  rawDiff: (repo: string, number: number, format: "diff" | "patch") => Promise<string | null>;
 };
+
+const RAW_DIFF = /^\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\.(diff|patch)$/;
 
 export function serve(options: ServerOptions) {
   const port = options.port ?? PORT;
@@ -63,6 +67,23 @@ export function serve(options: ServerOptions) {
 
       const host = checkHost(req, config);
       if (!host.ok) return deny(host.status, host.reason);
+      const raw = RAW_DIFF.exec(url.pathname);
+      if (raw) {
+        const [, owner, repo, number, format] = raw;
+        const text = await options.rawDiff(
+          `${owner}/${repo}`,
+          Number(number),
+          format === "patch" ? "patch" : "diff",
+        );
+        return text === null
+          ? new Response("None of your accounts can see that PR.", { status: 404 })
+          : new Response(text, {
+              headers: {
+                "content-type": "text/plain; charset=utf-8",
+                "x-content-type-options": "nosniff",
+              },
+            });
+      }
       return asset(options.webDir, url.pathname);
     },
     error(error) {

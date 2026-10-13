@@ -47,6 +47,8 @@ export type RestRequest = {
   path: string;
   body?: unknown;
   accept?: string;
+  /** The body as text rather than JSON (diffs and patches). */
+  text?: boolean;
   /** Revalidate with the cached validator and return the cached body on 304. GET only. */
   cache?: boolean;
   /** Send `If-Modified-Since` with this value instead of the cached one (notifications). */
@@ -173,7 +175,7 @@ export class GitHubClient implements GitHubTransport {
         response = await send(false);
       }
       const text = await response.text();
-      const data = (text ? JSON.parse(text) : null) as T;
+      const data = (request.text ? text : text ? JSON.parse(text) : null) as T;
       if (method === "GET" && request.cache) {
         this.storeResponse(
           cacheKey,

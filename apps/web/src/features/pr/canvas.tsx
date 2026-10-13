@@ -17,7 +17,9 @@ import { useEffect, useRef, useState } from "react";
 import { errorText, markDone, openOnGitHub } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
 import { plural, since } from "@/lib/format";
+import { fileAnchor, lineLink, parseLink } from "@/lib/permalink";
 import { q, qLive, rpc } from "@/lib/rpc";
+import { usePrefs } from "@/stores/prefs";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
@@ -112,7 +114,10 @@ function Loaded({ pr }: { pr: PrView }) {
   const streamRef = useRef<HTMLDivElement>(null);
 
   const reReview = pr.lastReviewedOid !== null && pr.lastReviewedOid !== pr.headRefOid;
-  const [picked, setPicked] = useState<DiffView>({ range: reReview ? "since-review" : "all" });
+  // A link to lines points into the whole diff, as github.com's /files links do.
+  const [picked, setPicked] = useState<DiffView>(() => ({
+    range: reReview && !parseLink(window.location.hash) ? "since-review" : "all",
+  }));
   // Commits a force-push took away can't be shown any more; everything can.
   const view: DiffView =
     picked.range === "commits" && !pr.commits.some((c) => c.oid === picked.from)
@@ -121,6 +126,8 @@ function Loaded({ pr }: { pr: PrView }) {
   const anchors = anchorsOf(view, pr.headRefOid);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [filter, setFilter] = useState<FileFilter>(NO_FILTER);
+  const split = usePrefs((s) => s.split);
+  const toggleSplit = usePrefs((s) => s.toggleSplit);
   const [rail, setRail] = useState(() => window.innerWidth >= WIDE);
   const [raised, setRaised] = useState<Raised | null>(null);
   const lower = () => setRaised(null);
@@ -143,7 +150,12 @@ function Loaded({ pr }: { pr: PrView }) {
     ...q("prDiff", { repo: pr.repo, number: pr.number, ...view, ignoreWhitespace }),
     enabled: view.range !== "all" || ignoreWhitespace,
   });
-  const files = view.range === "all" && !ignoreWhitespace ? (pr.files ?? []) : (diff?.files ?? []);
+  const fromGitHub = view.range === "all" && !ignoreWhitespace;
+  const files = fromGitHub ? (pr.files ?? []) : (diff?.files ?? []);
+  // GitHub's own patches run from where the PR branched to its head.
+  const range = fromGitHub
+    ? { from: null, to: pr.headRefOid }
+    : { from: diff?.fromOid ?? null, to: diff?.toOid ?? pr.headRefOid };
   const ownership = ownershipOf(pr.codeOwners);
   const suggestions = applicableSuggestions(pr);
   const applicable = new Set(suggestions.map((s) => s.comment.id));
@@ -196,6 +208,49 @@ function Loaded({ pr }: { pr: PrView }) {
       ?.querySelector(`[data-file="${CSS.escape(path)}"]`)
       ?.scrollIntoView({ block: "start" });
   };
+  // A link to lines (copied with `y`, or from github.com) opens with them selected, in view.
+  const linked = useRef(false);
+  useEffect(() => {
+    const target = parseLink(window.location.hash);
+    if (!target || linked.current || ordered.length === 0) return;
+    linked.current = true;
+    void (async () => {
+      for (const file of ordered) {
+        if ((await fileAnchor(file.path)) !== target.anchor) continue;
+        const section = streamRef.current?.querySelector(`[data-file="${CSS.escape(file.path)}"]`);
+        setCurrent(file.path);
+        section?.scrollIntoView({ block: "start" });
+        const { lines } = target;
+        if (!lines) return;
+        const side = lines.side === "LEFT" ? ("deletions" as const) : ("additions" as const);
+        setSelection({ path: file.path, range: { start: lines.start, end: lines.end, side } });
+        // The diff draws its lines a moment after the jump.
+        setTimeout(() => {
+          section
+            ?.querySelector("diffs-container")
+            ?.shadowRoot?.querySelector(`[data-column-number="${lines.start}"]`)
+            ?.scrollIntoView({ block: "center" });
+        }, 150);
+        return;
+      }
+    })();
+  }, [ordered]);
+
+  /** Copies github.com's link to the selected lines, or to the PR. */
+  const copyLink = async () => {
+    const lines = selection ? fromRange(selection.path, selection.range) : null;
+    const url = lines
+      ? await lineLink(pr.repo, pr.number, lines.path, lines)
+      : `https://github.com/${pr.repo}/pull/${pr.number}`;
+    await navigator.clipboard.writeText(url);
+    toast({
+      text: lines
+        ? `Copied a link to ${lines.path}:${lines.start === lines.end ? lines.start : `${lines.start}-${lines.end}`}`
+        : `Copied a link to ${pr.repo.split("/")[1]}#${pr.number}`,
+      tone: "ok",
+    });
+  };
+
   const jumpThread = (direction: 1 | -1) => {
     if (openThreads.length === 0) return;
     const at = openThreads.findIndex((t) => t.id === focusedThread);
@@ -434,6 +489,47 @@ function Loaded({ pr }: { pr: PrView }) {
       run: () => setRaised({ kind: "filter" }),
     },
     {
+      id: "pr.copy-link",
+      title: selection ? "Copy a link to these lines" : "Copy a link to this PR",
+      keys: ["y"],
+      scope: "surface",
+      group: "Go to",
+      run: () => void copyLink(),
+    },
+    {
+      id: "pr.copy-branch",
+      title: "Copy the branch name",
+      keys: ["shift+y"],
+      scope: "surface",
+      group: "Go to",
+      run: () =>
+        void navigator.clipboard
+          .writeText(pr.headRefName)
+          .then(() => toast({ text: `Copied ${pr.headRefName}`, tone: "ok" })),
+    },
+    {
+      id: "pr.diff",
+      title: "Open as a .diff",
+      scope: "surface",
+      group: "Go to",
+      run: () => window.open(`/${pr.repo}/pull/${pr.number}.diff`, "_blank", "noopener"),
+    },
+    {
+      id: "pr.patch",
+      title: "Open as a .patch",
+      scope: "surface",
+      group: "Go to",
+      run: () => window.open(`/${pr.repo}/pull/${pr.number}.patch`, "_blank", "noopener"),
+    },
+    {
+      id: "pr.split",
+      title: split ? "Show changes in one column" : "Show changes side by side",
+      keys: ["d s"],
+      scope: "surface",
+      group: "Display",
+      run: toggleSplit,
+    },
+    {
       id: "pr.whitespace",
       title: ignoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes",
       keys: ["d w"],
@@ -640,7 +736,7 @@ function Loaded({ pr }: { pr: PrView }) {
               <div className="space-y-8">
                 {ordered.map((file) => (
                   <ReviewFile
-                    key={`${viewKey(view)}:${ignoreWhitespace}:${file.path}`}
+                    key={`${viewKey(view)}:${ignoreWhitespace}:${split}:${file.path}`}
                     prId={pr.id}
                     headOid={pr.headRefOid}
                     file={file}
@@ -657,6 +753,8 @@ function Loaded({ pr }: { pr: PrView }) {
                     anchors={anchors}
                     ownership={ownership?.(file.path) ?? null}
                     applicable={applicable}
+                    split={split}
+                    range={range}
                     onApply={applySuggestion}
                     onCompose={compose}
                   />

@@ -145,6 +145,14 @@ export const inputs = {
   milestones: type({ repo: "string" }),
   flight: type({}),
   log: type({ "limit?": "1 <= number.integer <= 500" }),
+  /** A file's whole text before and after, for expanding the context around its hunks. */
+  fileContents: type({
+    prId: "string",
+    path: "string",
+    previousPath: "string | null",
+    from: "string | null",
+    to: "string | null",
+  }),
   search: type({ q: "string", "limit?": "0 <= number.integer <= 1000" }),
   /** The same search, asked of GitHub (for PRs pier doesn't track). */
   searchGitHub: type({ q: "string > 0" }),
@@ -229,6 +237,7 @@ export type Outputs = {
   seenLog: { ok: true };
   applySuggestions: { commandIds: string[] };
   search: SearchResult;
+  fileContents: { before: string | null; after: string | null };
   views: SavedView[];
   searchGitHub: RemoteSearch;
   saveView: { id: string };

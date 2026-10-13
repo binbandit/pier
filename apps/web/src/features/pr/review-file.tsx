@@ -1,4 +1,9 @@
-import type { DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
+import type {
+  DiffLineAnnotation,
+  FileDiffLoadedFiles,
+  FileDiffMetadata,
+  SelectedLineRange,
+} from "@pierre/diffs";
 import { PatchDiff } from "@pierre/diffs/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
@@ -63,6 +68,9 @@ type Props = {
   anchors: Anchors;
   /** Who owns the file under CODEOWNERS, when the repo has one. */
   ownership: { owners: string[]; yours: boolean } | null;
+  /** The commits this diff runs between (`from` null: where the PR branched), and its layout. */
+  range: { from: string | null; to: string | null };
+  split: boolean;
   /** Comments whose suggestion can be committed, and how to start committing one. */
   applicable: ReadonlySet<string>;
   onApply: (commentId: string) => void;
@@ -90,6 +98,8 @@ export function ReviewFile(props: Props) {
     onApply,
     onSelect,
     onCompose,
+    range,
+    split,
   } = props;
   const client = useQueryClient();
   const toast = useUi((s) => s.toast);
@@ -168,11 +178,29 @@ export function ReviewFile(props: Props) {
       unsafeCSS: `${DIFF_OPTIONS.unsafeCSS}\n[data-diffs-header] { display: none; }`,
       enableLineSelection: anchors !== "none",
       enableGutterUtility: anchors !== "none",
-      onLineSelected: (range: SelectedLineRange | null) => callbacks.current.onSelect(path, range),
-      onGutterUtilityClick: (range: SelectedLineRange) =>
-        callbacks.current.onCompose(fromRange(path, range)),
+      onLineSelected: (selected: SelectedLineRange | null) =>
+        callbacks.current.onSelect(path, selected),
+      onGutterUtilityClick: (selected: SelectedLineRange) =>
+        callbacks.current.onCompose(fromRange(path, selected)),
+      diffStyle: split ? ("split" as const) : ("unified" as const),
+      // The lines around each hunk, read only when you ask for them.
+      hunkSeparators: "line-info" as const,
+      loadDiffFiles: async (meta: FileDiffMetadata): Promise<FileDiffLoadedFiles> => {
+        const { before, after } = await rpc("fileContents", {
+          prId,
+          path,
+          previousPath: meta.prevName ?? null,
+          from: range.from,
+          to: range.to,
+        });
+        if (after === null) throw new Error(`${path} can't be read at this commit`);
+        const newFile = { name: path, contents: after };
+        return before === null
+          ? { oldFile: null, newFile }
+          : { oldFile: { name: meta.prevName ?? path, contents: before }, newFile };
+      },
     }),
-    [path, anchors],
+    [path, anchors, split, prId, range.from, range.to],
   );
   const patch = useMemo(() => toPatch(file), [file]);
 

@@ -35,6 +35,14 @@ const UNSAFE_CSS = /* css */ `
     font-family: var(--diffs-header-font-family);
     font-size: 12px;
   }
+  /* OLED: the space beside a split's one-sided lines and under a thread stays true black. */
+  [data-content-buffer] { background-image: none; }
+  [data-line-annotation],
+  [data-gutter-buffer="annotation"] { --diffs-annotation-bg: #000; }
+  [data-gutter-buffer] { background: #000; }
+  /* Selected lines (for a comment, or opened from a link) read as selected over add/remove. */
+  [data-line][data-selected-line],
+  [data-line-type][data-selected-line] { background-color: #1d1729; }
 `;
 export const DIFF_OPTIONS = {
   theme: THEME,

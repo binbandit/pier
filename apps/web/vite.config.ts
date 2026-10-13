@@ -27,6 +27,11 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": { target: `http://127.0.0.1:${daemonPort}`, changeOrigin: false },
+      // github.com-style .diff and .patch links are served by the daemon too.
+      "^/[^/]+/[^/]+/pull/\\d+\\.(diff|patch)$": {
+        target: `http://127.0.0.1:${daemonPort}`,
+        changeOrigin: false,
+      },
     },
   },
   build: {

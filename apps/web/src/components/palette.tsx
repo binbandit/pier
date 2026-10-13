@@ -29,12 +29,12 @@ export function Palette() {
     new Map([...commands].filter(([, c]) => c.scope !== "panel")),
   ).filter((c) => !c.hidden);
   const entries: Entry[] = [];
-  const link = githubPath(query);
+  const link = githubLink(query);
   if (link)
     entries.push({
       id: "open-link",
-      title: `Open ${link.slice(1)}`,
-      run: () => void navigate({ to: link }),
+      title: `Open ${link.path.slice(1)}${link.hash ? " at the linked lines" : ""}`,
+      run: () => void navigate({ to: link.path, hash: link.hash }),
     });
   entries.push(
     ...rank(available, query).map((c) => ({
@@ -142,10 +142,16 @@ export function Palette() {
 
 /** `https://github.com/o/r/pull/12/files#x` → `/o/r/pull/12`. */
 export function githubPath(text: string): string | null {
-  const m = /^\s*(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/i.exec(
-    text,
-  );
-  return m ? `/${m[1]}/${m[2]}/pull/${m[3]}` : null;
+  return githubLink(text)?.path ?? null;
+}
+
+/** A github.com PR link as a pier path, keeping a line anchor (`#diff-…R12`) when it has one. */
+export function githubLink(text: string): { path: string; hash: string } | null {
+  const m =
+    /^\s*(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)[^#\s]*(?:#(\S*))?/i.exec(
+      text,
+    );
+  return m ? { path: `/${m[1]}/${m[2]}/pull/${m[3]}`, hash: m[4] ?? "" } : null;
 }
 
 /** Subsequence match, preferring matches at word starts and earlier positions. */

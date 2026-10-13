@@ -61,6 +61,7 @@ async function runServe(dev: boolean) {
     events: app.events,
     webDir: !dev && existsSync(webDir) ? webDir : null,
     dev,
+    rawDiff: (repo, number, format) => app.review.rawDiff(repo, number, format),
   });
   await app.start();
 

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { expect, type Page, test } from "@playwright/test";
 
 // The flows a reviewer runs all day, driven by keys the way they'd use them. Each test works on
@@ -317,4 +319,16 @@ test("a PR can be watched from the keyboard", async ({ page }) => {
   await page.keyboard.press("!");
   await expect(toast(page, "Watching: sandbox-web#8")).toBeVisible();
   await expect(page.locator("header").first()).toContainText("Watching");
+});
+
+test("a github.com link to lines opens the PR with them selected", async ({ page }) => {
+  // GitHub names a file's anchor after the SHA-256 of its path.
+  const anchor = createHash("sha256").update("src/routes/events.ts").digest("hex");
+  await page.goto(`/WastedHippie/sandbox-web/pull/7/files#diff-${anchor}R13-R16`);
+  await expect(page).toHaveURL(/\/pull\/7#diff-/);
+  const selected = page.locator('[data-file="src/routes/events.ts"] [data-selected-line]');
+  await expect(selected.first()).toBeAttached();
+  await expect(
+    page.getByRole("heading", { level: 2 }).filter({ hasText: /^Changes/ }),
+  ).toBeVisible();
 });

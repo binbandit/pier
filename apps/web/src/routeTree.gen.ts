@@ -18,6 +18,7 @@ import { Route as InboxSplitRouteImport } from './routes/inbox.$split'
 import { Route as VIdRouteImport } from './routes/v.$id'
 import { Route as OwnerRepoPullsRouteImport } from './routes/$owner.$repo.pulls'
 import { Route as OwnerRepoPullNumberRouteImport } from './routes/$owner.$repo.pull.$number'
+import { Route as OwnerRepoPullNumberFilesRouteImport } from './routes/$owner.$repo.pull.$number_.files'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -64,6 +65,12 @@ const OwnerRepoPullNumberRoute = OwnerRepoPullNumberRouteImport.update({
   path: '/$owner/$repo/pull/$number',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OwnerRepoPullNumberFilesRoute =
+  OwnerRepoPullNumberFilesRouteImport.update({
+    id: '/$owner/$repo/pull/$number_/files',
+    path: '/$owner/$repo/pull/$number/files',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/v/$id': typeof VIdRoute
   '/$owner/$repo/pulls': typeof OwnerRepoPullsRoute
   '/$owner/$repo/pull/$number': typeof OwnerRepoPullNumberRoute
+  '/$owner/$repo/pull/$number/files': typeof OwnerRepoPullNumberFilesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +94,7 @@ export interface FileRoutesByTo {
   '/v/$id': typeof VIdRoute
   '/$owner/$repo/pulls': typeof OwnerRepoPullsRoute
   '/$owner/$repo/pull/$number': typeof OwnerRepoPullNumberRoute
+  '/$owner/$repo/pull/$number/files': typeof OwnerRepoPullNumberFilesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +107,7 @@ export interface FileRoutesById {
   '/v/$id': typeof VIdRoute
   '/$owner/$repo/pulls': typeof OwnerRepoPullsRoute
   '/$owner/$repo/pull/$number': typeof OwnerRepoPullNumberRoute
+  '/$owner/$repo/pull/$number_/files': typeof OwnerRepoPullNumberFilesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
     | '/v/$id'
     | '/$owner/$repo/pulls'
     | '/$owner/$repo/pull/$number'
+    | '/$owner/$repo/pull/$number/files'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
     | '/v/$id'
     | '/$owner/$repo/pulls'
     | '/$owner/$repo/pull/$number'
+    | '/$owner/$repo/pull/$number/files'
   id:
     | '__root__'
     | '/'
@@ -133,6 +145,7 @@ export interface FileRouteTypes {
     | '/v/$id'
     | '/$owner/$repo/pulls'
     | '/$owner/$repo/pull/$number'
+    | '/$owner/$repo/pull/$number_/files'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +158,7 @@ export interface RootRouteChildren {
   VIdRoute: typeof VIdRoute
   OwnerRepoPullsRoute: typeof OwnerRepoPullsRoute
   OwnerRepoPullNumberRoute: typeof OwnerRepoPullNumberRoute
+  OwnerRepoPullNumberFilesRoute: typeof OwnerRepoPullNumberFilesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,6 +226,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRepoPullNumberRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$owner/$repo/pull/$number_/files': {
+      id: '/$owner/$repo/pull/$number_/files'
+      path: '/$owner/$repo/pull/$number/files'
+      fullPath: '/$owner/$repo/pull/$number/files'
+      preLoaderRoute: typeof OwnerRepoPullNumberFilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,6 +246,7 @@ const rootRouteChildren: RootRouteChildren = {
   VIdRoute: VIdRoute,
   OwnerRepoPullsRoute: OwnerRepoPullsRoute,
   OwnerRepoPullNumberRoute: OwnerRepoPullNumberRoute,
+  OwnerRepoPullNumberFilesRoute: OwnerRepoPullNumberFilesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

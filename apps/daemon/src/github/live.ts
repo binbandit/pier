@@ -356,6 +356,16 @@ export class LiveGitHub implements GitHubPort {
     }
   }
 
+  async rawDiff(repo: string, number: number, format: "diff" | "patch"): Promise<string> {
+    const response = await this.client.rest<string>({
+      path: `/repos/${repo}/pulls/${number}`,
+      accept: `application/vnd.github.${format}`,
+      text: true,
+      priority: "interactive",
+    });
+    return response.data;
+  }
+
   async codeOwners(repo: string, ref: string): Promise<string | null> {
     const [owner = "", name = ""] = repo.split("/");
     const data = await this.client.graphql(CodeOwnersQuery, {
