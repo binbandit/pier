@@ -101,6 +101,8 @@ const HYDRATE_BATCH = 25;
 // 10-second limit (502). 50 keeps each sweep well under it for the same point cost.
 const SWEEP_BATCH = 50;
 
+const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
+
 export class LiveGitHub implements GitHubPort {
   constructor(private readonly client: GitHubTransport) {}
 
@@ -401,7 +403,12 @@ export class LiveGitHub implements GitHubPort {
         response.data.encoding !== "base64"
       )
         return null;
-      return Buffer.from(response.data.content, "base64").toString("utf8");
+      // Only text that is UTF-8 throughout: anything else would come back altered if written.
+      try {
+        return STRICT_UTF8.decode(Buffer.from(response.data.content, "base64"));
+      } catch {
+        return null;
+      }
     } catch (error) {
       if (error instanceof GitHubError && error.kind === "not-found") return null;
       throw error;
@@ -570,6 +577,7 @@ export class LiveGitHub implements GitHubPort {
             : [];
         return {
           id: Number(run.id),
+          workflowId: run.workflow_id,
           name: run.name ?? run.display_title,
           event: run.event,
           state: checkRunState(run.status ?? "queued", run.conclusion),

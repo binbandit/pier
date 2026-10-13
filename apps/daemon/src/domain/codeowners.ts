@@ -25,10 +25,23 @@ export class CodeOwnersCache {
         const text = await port.codeOwners(repo, base);
         return text === null ? null : parseCodeOwners(text);
       }),
-      this.read(this.teams, account, TEAMS_TTL_MS, [], () => port.teams()),
+      this.teamsOf(account),
     ]);
     if (!rules) return null;
     return { rules, you: [`@${account}`, ...teams.map((team) => `@${team}`)] };
+  }
+
+  /** The teams an account is in (cached for an hour), as "org/slug". */
+  teamsOf(account: string): Promise<string[]> {
+    const port = this.ports.get(account);
+    return port
+      ? this.read(this.teams, account, TEAMS_TTL_MS, [], () => port.teams())
+      : Promise.resolve([]);
+  }
+
+  /** Every team any account is in, as far as has been read so far. */
+  knownTeams(): string[] {
+    return [...this.teams.values()].flatMap((cached) => cached.value);
   }
 
   private async read<T>(

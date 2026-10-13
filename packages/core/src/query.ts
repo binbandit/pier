@@ -99,42 +99,46 @@ function unquote(value: string): string {
 export type Range = { min: number; max: number };
 
 /**
- * A number or date range: `>5`, `<=10`, `3..8`, `2026-01-01..2026-02-01`. A relative date is a
- * moment, so `updated:>7d` is "after seven days ago": the last week. `parse` turns one end into a
- * number; null when it isn't one.
+ * A number or date range: `>5`, `<=10`, `3..8`, `2026-01-01..2026-02-01`. `parse` reads one end
+ * as the span it covers (a whole day for a date, one value for a number), so `>2026-01-01` starts
+ * the next day and `..2026-01-31` runs to that day's end, as on GitHub. A relative date is a
+ * moment: `updated:>7d` is "after seven days ago", the last week. Null when an end isn't one.
  */
-export function parseRange(value: string, parse: (end: string) => number | null): Range | null {
+export function parseRange(value: string, parse: (end: string) => Range | null): Range | null {
   const between = /^(.+)\.\.(.+)$/.exec(value);
   if (between) {
-    const min = between[1] === "*" ? -Infinity : parse(between[1] ?? "");
-    const max = between[2] === "*" ? Infinity : parse(between[2] ?? "");
-    return min === null || max === null ? null : { min, max };
+    const from = between[1] === "*" ? { min: -Infinity, max: -Infinity } : parse(between[1] ?? "");
+    const to = between[2] === "*" ? { min: Infinity, max: Infinity } : parse(between[2] ?? "");
+    return from === null || to === null ? null : { min: from.min, max: to.max };
   }
   const compare = /^(>=|<=|>|<)?(.+)$/.exec(value);
   const at = parse(compare?.[2] ?? "");
   if (at === null) return null;
   switch (compare?.[1]) {
     case ">":
-      return { min: at + Number.EPSILON, max: Infinity };
+      return { min: at.max + 1, max: Infinity };
     case ">=":
-      return { min: at, max: Infinity };
+      return { min: at.min, max: Infinity };
     case "<":
-      return { min: -Infinity, max: at - Number.EPSILON };
+      return { min: -Infinity, max: at.min - 1 };
     case "<=":
-      return { min: -Infinity, max: at };
+      return { min: -Infinity, max: at.max };
     default:
-      return { min: at, max: at };
+      return at;
   }
 }
 
 /** pier's own qualifiers, which GitHub's search doesn't have. */
 const PIER_ONLY = new Set<QualifierKey>(["turn", "size", "acct", "bot", "semver", "cohort"]);
+/** `no:` values GitHub knows. */
+const GITHUB_NO = new Set(["label", "milestone", "assignee", "project"]);
 
 /**
- * The same search for GitHub: pier's own qualifiers left out (and named, so the app can say so),
- * `checks:` asked as GitHub's `status:`.
+ * The same search for GitHub's advanced search: pier's own qualifiers (and values GitHub lacks)
+ * left out and named so the app can say so, `checks:` asked as `status:`, relative dates made
+ * absolute, and `key:a,b` (which GitHub only reads for labels) spelled `(key:a OR key:b)`.
  */
-export function toGitHubQuery(query: Query): { text: string; dropped: string[] } {
+export function toGitHubQuery(query: Query, now: number): { text: string; dropped: string[] } {
   const dropped: string[] = [];
   const parts = ["is:pr"];
   for (const term of query.terms) {
@@ -143,15 +147,35 @@ export function toGitHubQuery(query: Query): { text: string; dropped: string[] }
       parts.push(sign + (/\s/.test(term.text) ? `"${term.text}"` : term.text));
       continue;
     }
-    const key = term.key === "checks" ? "status" : term.key;
-    const values = term.key === "checks" ? term.values.filter((v) => v !== "none") : term.values;
-    if (PIER_ONLY.has(term.key) || values.length === 0) {
+    if (PIER_ONLY.has(term.key)) {
       dropped.push(`${term.key}:`);
       continue;
     }
-    const value = values.map((v) => (/\s/.test(v) ? `"${v}"` : v)).join(",");
-    parts.push(`${sign}${key}:${value}`);
+    const key = term.key === "checks" ? "status" : term.key;
+    const values = term.values
+      .filter((v) => {
+        const known =
+          (term.key !== "checks" || v !== "none") && (term.key !== "no" || GITHUB_NO.has(v));
+        if (!known) dropped.push(`${term.key}:${v}`);
+        return known;
+      })
+      .map((v) => (key === "created" || key === "updated" ? absoluteDates(v, now) : v))
+      .map((v) => (/\s/.test(v) ? `"${v}"` : v));
+    if (values.length === 0) continue;
+    if (key === "label" || values.length === 1) parts.push(`${sign}${key}:${values.join(",")}`);
+    // Not any of them is none of them; any of them is an OR.
+    else if (term.negated) parts.push(...values.map((v) => `-${key}:${v}`));
+    else parts.push(`(${values.map((v) => `${key}:${v}`).join(" OR ")})`);
   }
   parts.push(`sort:${query.sort.field}-${query.sort.direction}`);
   return { text: parts.join(" "), dropped: [...new Set(dropped)] };
+}
+
+/** `>7d` → `>2026-10-06T12:00:00+00:00`: GitHub only reads dates and times. */
+function absoluteDates(value: string, now: number): string {
+  return value.replace(/(\d+)([dhw])(?![\w-])/g, (_, count: string, unit: string) => {
+    const hours = unit === "h" ? 1 : unit === "w" ? 168 : 24;
+    const at = new Date(now - Number(count) * hours * 3_600_000);
+    return `${at.toISOString().slice(0, 19)}+00:00`;
+  });
 }

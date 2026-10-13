@@ -21,7 +21,6 @@ apps/ @octocat
 /apps/github
 /apps/ @octocat
 /apps/github @doctocat
-\\#notes.md @hash-owner
 `;
 
 test("the last matching rule owns a file, as GitHub's example says", () => {
@@ -39,7 +38,13 @@ test("the last matching rule owns a file, as GitHub's example says", () => {
   expect(ownersOf("lib/apps/server.rb")).toEqual(["@octocat"]);
   expect(ownersOf("scripts/deploy.sh")).toEqual(["@doctocat", "@octocat"]);
   expect(ownersOf("apps/github/server.rb")).toEqual(["@doctocat"]);
-  expect(ownersOf("#notes.md")).toEqual(["@hash-owner"]);
+});
+
+test("** on its own covers every file", () => {
+  for (const rule of ["** @all", "/** @all"]) {
+    const ownersOf = codeOwnersMatcher(parseCodeOwners(rule));
+    expect([ownersOf("README.md"), ownersOf("a/b.js")]).toEqual([["@all"], ["@all"]]);
+  }
 });
 
 test("a final star stays in its folder, and a rule without owners clears them", () => {

@@ -51,7 +51,19 @@ export function Search({
     const timer = setTimeout(() => setApplied(text), 120);
     return () => clearTimeout(timer);
   }, [text]);
-  useEffect(() => onQuery?.(applied), [applied, onQuery]);
+  // What this page last put in the address bar; anything else arriving there is a new search
+  // (the sidebar's Search, `g s`), and starts over from it.
+  const written = useRef(initial);
+  useEffect(() => {
+    written.current = applied;
+    onQuery?.(applied);
+  }, [applied, onQuery]);
+  useEffect(() => {
+    if (initial === written.current) return;
+    written.current = initial;
+    setText(initial);
+    setApplied(initial);
+  }, [initial]);
   useEffect(() => {
     if (!initial) input.current?.focus();
   }, [initial]);
@@ -137,7 +149,7 @@ export function Search({
       run: () => input.current?.focus(),
     },
     {
-      id: "search.github",
+      id: "search.ask-github",
       title: "Search GitHub too",
       keys: ["mod+enter"],
       scope: "surface",

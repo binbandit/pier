@@ -5,7 +5,7 @@ import type { CommandPayload, NewCommand, Outbox } from "@/outbox/outbox";
 import type { Planner } from "@/outbox/planner";
 import type { SyncEngine } from "@/sync/engine";
 import { codeOwnersMatcher } from "@pier/core/codeowners";
-import { suggestionIn } from "@pier/core/suggestion";
+import { visibleSuggestion } from "@pier/core/suggestion";
 import type {
   Annotation,
   CheckLog,
@@ -246,6 +246,7 @@ export class ReviewService {
       linkedIssues: detail?.linkedIssues ?? [],
       requiredChecks: detail?.requiredChecks ?? [],
       commits: detail?.commits ?? [],
+      commitsTotal: Math.max(doc.commitsTotal, detail?.commits.length ?? 0),
       codeOwners,
       subscription:
         writes.findLast((w) => w.kind === "subscription")?.payload.subscription ??
@@ -859,23 +860,28 @@ export class ReviewService {
       const comment = thread?.comments.find((c) => c.id === id);
       if (!thread || !comment) throw new SuggestionError("A suggestion was deleted; look again");
       const label = `${thread.path}:${thread.line ?? thread.originalLine ?? "?"}`;
-      const lines = suggestionIn(comment.body);
-      if (!lines) throw new SuggestionError(`${label} doesn't hold exactly one suggestion`);
+      const lines = comment.minimized ? null : visibleSuggestion(comment.body, comment.bodyHTML);
+      if (!lines) throw new SuggestionError(`${label} doesn't show exactly one suggestion`);
       if (thread.resolved) throw new SuggestionError(`${label} is resolved`);
       if (thread.outdated || thread.line === null || thread.side !== "RIGHT") {
         throw new SuggestionError(`The code under ${label} has changed since it was suggested`);
       }
+      // Both ends must be on the new code; a range that starts on removed lines can't be spliced.
+      if (thread.startLine !== null && thread.startSide !== "RIGHT") {
+        throw new SuggestionError(`${label} starts on removed lines, so it can't be applied here`);
+      }
       const start = thread.startLine ?? thread.line;
+      // Without the lines it was written on, there's no telling the code is still the same.
+      const expected = hunkLines(thread.diffHunk, thread.line - start + 1);
+      if (!expected) {
+        throw new SuggestionError(
+          `pier can't confirm the code under ${label} is what was suggested on`,
+        );
+      }
       return {
         thread,
         author: comment.author?.login ?? null,
-        splice: {
-          start,
-          end: thread.line,
-          lines,
-          expected: hunkLines(thread.diffHunk, thread.line - start + 1),
-          label,
-        },
+        splice: { start, end: thread.line, lines, expected, label },
       };
     });
 

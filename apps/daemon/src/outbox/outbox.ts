@@ -573,9 +573,13 @@ export class Outbox {
       if (
         head?.parents.includes(command.expectedHead) &&
         head.message.startsWith(command.payload.headline ?? "")
-      )
+      ) {
+        // It landed, but the threads it answers may not have been resolved before the break.
+        for (const threadId of command.payload.threadIds ?? []) {
+          await port.setResolved(threadId, true).catch(() => undefined);
+        }
         this.acked(command, "Confirmed on GitHub after an interrupted send", { oid: head.oid });
-      else if (head?.oid === command.expectedHead)
+      } else if (head?.oid === command.expectedHead)
         this.update(command, "queued", "Not found on GitHub; sending again");
       else this.update(command, "failed", "The branch moved; check whether the suggestions landed");
       return;

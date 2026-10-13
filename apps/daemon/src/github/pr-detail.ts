@@ -126,6 +126,12 @@ export function toPrDetail(node: Node): PrDetail {
         side,
         line: thread.line ?? null,
         startLine: thread.startLine ?? null,
+        startSide:
+          thread.startLine === null || thread.startLine === undefined
+            ? null
+            : thread.startDiffSide === "LEFT"
+              ? ("LEFT" as const)
+              : ("RIGHT" as const),
         originalLine: thread.originalLine ?? null,
         subject: thread.subjectType === "FILE" ? ("file" as const) : ("line" as const),
         resolved: thread.isResolved,

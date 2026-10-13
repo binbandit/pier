@@ -4,12 +4,16 @@ import { Model } from "@/domain/model";
 import { searchRecords } from "@/domain/search";
 import { createFakePorts, generateScenario } from "@/github/fake/scenario";
 import { memoryStores } from "@/store/db";
-import { parseQuery } from "@pier/core/query";
+import { parseQuery, parseRange, toGitHubQuery } from "@pier/core/query";
 
 const NOW = Date.parse("2026-10-13T12:00:00Z");
 
-async function setup() {
-  const world = generateScenario({ preset: "sandbox", clock: "manual", start: NOW });
+function setup() {
+  return setupFrom(generateScenario({ preset: "sandbox", clock: "manual", start: NOW }));
+}
+
+/** The replica as binbandit reads `world` now, and a search over it. */
+async function setupFrom(world: ReturnType<typeof generateScenario>) {
   const you = createFakePorts(world).get("binbandit")!;
   const model = new Model(memoryStores().cache);
   for (const { doc, viewer } of await you.hydrate([...world.prs.keys()])) {
@@ -19,6 +23,7 @@ async function setup() {
   const find = (q: string) =>
     searchRecords(records, parseQuery(q), {
       you: ["binbandit"],
+      teams: ["WastedHippie/reviewers"],
       turn: new Set(),
       bots: new Map(),
       now: NOW,
@@ -68,4 +73,43 @@ test("what doesn't parse is said, not ignored", () => {
     { kind: "qualifier", key: "label", values: ["needs review", "bug"], negated: false },
     { kind: "qualifier", key: "is", values: ["draft"], negated: true },
   ]);
+});
+
+const number = (end: string) => ({ min: Number(end), max: Number(end) });
+const day = (end: string) => {
+  const at = Date.parse(end);
+  return { min: at, max: at + 86_400_000 - 1 };
+};
+
+test("ranges keep GitHub's edges: > is strictly after, and a bare date is the whole day", () => {
+  expect(parseRange(">100", number)).toEqual({ min: 101, max: Infinity });
+  expect(parseRange("<100", number)).toEqual({ min: -Infinity, max: 99 });
+  const jan1 = Date.parse("2026-01-01");
+  expect(parseRange(">2026-01-01", day)?.min).toBe(jan1 + 86_400_000);
+  expect(parseRange("<=2026-01-01", day)?.max).toBe(jan1 + 86_400_000 - 1);
+  expect(parseRange("2026-01-01..2026-01-31", day)?.max).toBe(
+    Date.parse("2026-01-31") + 86_400_000 - 1,
+  );
+});
+
+test("review-requested:@me counts requests to your teams", async () => {
+  const world = generateScenario({ preset: "sandbox", clock: "manual", start: NOW });
+  const pr = [...world.prs.values()].find(
+    (p) => p.state === "OPEN" && p.requested.size === 0 && p.repo.fullName.endsWith("api"),
+  )!;
+  world.addTeam("WastedHippie", "reviewers", ["binbandit"]);
+  world.requestReview(pr.id, "WastedHippie/reviewers");
+  const { find } = await setupFrom(world);
+  expect(find("review-requested:@me").map((d) => d.id)).toContain(pr.id);
+});
+
+test("a search asked of GitHub uses only syntax GitHub reads", () => {
+  const { text, dropped } = toGitHubQuery(
+    parseQuery("author:alice,bob -label:wip,blocked updated:>7d no:reviewer turn:me cursor"),
+    Date.parse("2026-10-13T12:00:00Z"),
+  );
+  expect(text).toBe(
+    "is:pr (author:alice OR author:bob) -label:wip,blocked updated:>2026-10-06T12:00:00+00:00 cursor sort:updated-desc",
+  );
+  expect(dropped).toEqual(["no:reviewer", "turn:"]);
 });

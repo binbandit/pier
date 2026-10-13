@@ -18,7 +18,7 @@ export async function searchGitHub(
   ports: Map<string, GitHubPort>,
   model: Model,
 ): Promise<RemoteSearch> {
-  const { text: query, dropped } = toGitHubQuery(parseQuery(text));
+  const { text: query, dropped } = toGitHubQuery(parseQuery(text), Date.now());
   const asked = await Promise.allSettled(
     [...ports].map(async ([account, port]) => {
       const hits = await port.searchFirst(query, PER_ACCOUNT);

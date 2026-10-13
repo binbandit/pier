@@ -3,8 +3,9 @@ import { expect, test } from "bun:test";
 import { latestRuns } from "@/domain/checks";
 import type { CheckRunView, WorkflowRunView } from "@pier/core/wire";
 
-const workflow = (id: number, name: string, event: string): WorkflowRunView => ({
+const workflow = (id: number, name: string, event: string, workflowId = 0): WorkflowRunView => ({
   id,
+  workflowId: workflowId || name.length,
   name,
   event,
   state: "success",
@@ -52,4 +53,13 @@ test("a workflow run again for the same trigger replaces its earlier run", () =>
     [4, "ci", "pull_request"],
     [5, null, null],
   ]);
+});
+
+test("two workflow files with the same name both keep their runs", () => {
+  const view = latestRuns({
+    workflows: [workflow(20, "Test", "pull_request", 7), workflow(21, "Test", "pull_request", 8)],
+    runs: [job(1, "unit", 20), job(2, "e2e", 21)],
+    deployments: [],
+  });
+  expect(view.runs.map((r) => r.id)).toEqual([1, 2]);
 });

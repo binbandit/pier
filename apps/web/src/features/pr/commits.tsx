@@ -144,7 +144,11 @@ export function CommitPicker({
               <li key={row.kind === "commit" ? row.commit.oid : row.kind}>
                 {i === firstCommit && i > 0 && (
                   <p className="mt-2 mb-1 px-3 text-meta text-faint">
-                    {pr.commits.length === 1 ? "The commit" : `${pr.commits.length} commits`}
+                    {pr.commits.length === 1
+                      ? "The commit"
+                      : pr.commitsTotal > pr.commits.length
+                        ? `The last ${pr.commits.length} of ${pr.commitsTotal} commits`
+                        : `${pr.commits.length} commits`}
                   </p>
                 )}
                 <button
@@ -168,9 +172,7 @@ export function CommitPicker({
                       <span className="w-[88px] shrink-0" />
                       <span>Everything</span>
                       <span className="text-meta text-faint">
-                        {pr.commits.length === 1
-                          ? "the commit"
-                          : `all ${pr.commits.length} commits`}{" "}
+                        {pr.commits.length === 1 ? "the commit" : `all ${pr.commitsTotal} commits`}{" "}
                         against {pr.baseRefName}
                       </span>
                     </>
@@ -215,12 +217,14 @@ function CommitRow({ commit }: { commit: CommitView }) {
 }
 
 /** What the Changes heading says about the view, and the commits it covers. */
-export function describeView(view: DiffView, commits: CommitView[]): string {
+export function describeView(view: DiffView, pr: Pick<PrView, "commits" | "commitsTotal">): string {
   if (view.range === "all") return "Changes";
   if (view.range === "since-review") return "Since your review";
-  const from = commits.findIndex((c) => c.oid === view.from) + 1;
-  const to = commits.findIndex((c) => c.oid === view.to) + 1;
+  // Only the last commits are listed; number them by their place in the whole PR.
+  const skipped = pr.commitsTotal - pr.commits.length;
+  const from = skipped + pr.commits.findIndex((c) => c.oid === view.from) + 1;
+  const to = skipped + pr.commits.findIndex((c) => c.oid === view.to) + 1;
   return from === to
-    ? `Commit ${to} of ${commits.length}`
-    : `Commits ${from} to ${to} of ${commits.length}`;
+    ? `Commit ${to} of ${pr.commitsTotal}`
+    : `Commits ${from} to ${to} of ${pr.commitsTotal}`;
 }

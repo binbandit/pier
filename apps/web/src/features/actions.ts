@@ -42,6 +42,23 @@ export async function markDone(client: QueryClient, keys: string[], label: strin
   });
 }
 
+/**
+ * Takes back writes still waiting out their few seconds, and says whether that worked: an undo
+ * pressed just as the wait ran out is too late, and saying nothing would hide that it went.
+ */
+export async function takeBack(commandIds: string[], what: string): Promise<void> {
+  const { toast } = useUi.getState();
+  try {
+    const { cancelled } = await rpc("cancelCommands", { commandIds });
+    toast({
+      text: cancelled > 0 ? `${what} taken back` : `Too late: ${what.toLowerCase()} already went`,
+      tone: cancelled > 0 ? "neutral" : "bad",
+    });
+  } catch (error) {
+    toast({ text: errorText(error), tone: "bad" });
+  }
+}
+
 export function openOnGitHub(url: string): void {
   useUi.getState().openPanel({ kind: "escape", url });
 }

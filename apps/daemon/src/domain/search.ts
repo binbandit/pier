@@ -1,4 +1,4 @@
-import { type Query, type Term, parseRange } from "@pier/core/query";
+import { type Query, type Range, type Term, parseRange } from "@pier/core/query";
 import type { Cohort } from "@pier/core/wire";
 
 import type { PrRecord } from "./model";
@@ -9,6 +9,8 @@ import type { PrRecord } from "./model";
 export type SearchContext = {
   /** Your logins; `@me` is any of them. */
   you: string[];
+  /** Your teams ("org/slug"); a request to one of them is a request to you. */
+  teams: string[];
   /** PRs where it's your turn (Review and Mine). */
   turn: ReadonlySet<string>;
   /** Bump PRs' semver classes and cohort. */
@@ -93,7 +95,10 @@ function matchesTerm(term: Term, record: PrRecord, ctx: SearchContext, scope: st
     case "review-requested":
       return any((v) =>
         doc.reviewRequests.some((r) =>
-          r.kind === "team" ? lower(r.login) === v : isPerson(r.login, v),
+          r.kind === "team"
+            ? lower(r.login) === v ||
+              (v === "@me" && ctx.teams.some((t) => lower(t) === lower(r.login)))
+            : isPerson(r.login, v),
         ),
       );
     case "reviewed-by":
@@ -147,26 +152,24 @@ function matchesTerm(term: Term, record: PrRecord, ctx: SearchContext, scope: st
   }
 }
 
-/** A date, date-time or relative age (`7d`, `12h`) as a range; a bare date is that whole day. */
-function dateRange(value: string, now: number): { min: number; max: number } | null {
-  const range = parseRange(value, (end) => {
+/** A date (a whole day), date-time or relative age (`7d`, `12h`, `2w`: a moment) as a range. */
+function dateRange(value: string, now: number): Range | null {
+  return parseRange(value, (end) => {
     const relative = /^(\d+)([dhw])$/.exec(end);
     if (relative) {
       const unit = relative[2] === "h" ? DAY_MS / 24 : relative[2] === "w" ? 7 * DAY_MS : DAY_MS;
-      return now - Number(relative[1]) * unit;
+      const at = now - Number(relative[1]) * unit;
+      return { min: at, max: at };
     }
     const at = Date.parse(end);
-    return Number.isNaN(at) ? null : at;
+    if (Number.isNaN(at)) return null;
+    return /^\d{4}-\d\d-\d\d$/.test(end) ? { min: at, max: at + DAY_MS - 1 } : { min: at, max: at };
   });
-  if (range && range.min === range.max && /^\d{4}-\d\d-\d\d$/.test(value)) {
-    return { min: range.min, max: range.min + DAY_MS - 1 };
-  }
-  return range;
 }
 
-function numberOf(end: string): number | null {
+function numberOf(end: string): Range | null {
   const n = Number(end);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? { min: n, max: n } : null;
 }
 
 /** Logins compare without case, a leading @, `app/` or a `[bot]` suffix. */

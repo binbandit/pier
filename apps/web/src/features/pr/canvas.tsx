@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { errorText, markDone, openOnGitHub } from "@/features/actions";
+import { errorText, markDone, openOnGitHub, takeBack } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
 import { plural, since } from "@/lib/format";
 import { fileAnchor, lineLink, parseLink } from "@/lib/permalink";
@@ -338,7 +338,7 @@ function Loaded({ pr }: { pr: PrView }) {
           : {
               text: `Closing ${pr.repo.split("/")[1]}#${pr.number} in 5s`,
               tone: "ok",
-              undo: () => void rpc("cancelCommands", { commandIds }),
+              undo: () => void takeBack(commandIds, "Closing"),
             },
         5_000,
       );
@@ -359,7 +359,7 @@ function Loaded({ pr }: { pr: PrView }) {
         {
           text: `Approving ${pr.repo.split("/")[1]}#${pr.number} in 5s`,
           tone: "ok",
-          undo: () => void rpc("cancelCommands", { commandIds }),
+          undo: () => void takeBack(commandIds, "The approval"),
         },
         5_000,
       );
@@ -698,7 +698,7 @@ function Loaded({ pr }: { pr: PrView }) {
             <section className="mt-10">
               <h2 className="mb-3 flex items-baseline gap-3">
                 <span className="text-section font-semibold text-strong">
-                  {describeView(view, pr.commits)}
+                  {describeView(view, pr)}
                 </span>
                 {view.range === "commits" && view.from === view.to && (
                   <span className="min-w-0 truncate text-ui text-muted">

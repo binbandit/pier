@@ -41,6 +41,8 @@ export type ViewContext = {
   settings: SettingsStore;
   /** Logins of every linked account. */
   accounts: () => string[];
+  /** Teams those accounts are in ("org/slug"), as far as they've been read. */
+  teams: () => string[];
   now: () => number;
 };
 
@@ -96,6 +98,7 @@ export class Views {
     const query = parseQuery(text);
     const found = searchRecords([...this.ctx.model.all()], query, {
       you: this.ctx.accounts(),
+      teams: this.ctx.teams(),
       turn: new Set(snapshot.turn.keys()),
       bots: new Map(
         [...snapshot.bots].map(([id, e]) => [

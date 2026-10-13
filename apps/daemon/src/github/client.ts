@@ -102,12 +102,13 @@ export class GitHubClient implements GitHubTransport {
     variables: V,
     priority: Priority = "background",
   ): Promise<R> {
+    const query = doc.toString();
     const run = async () => {
       await this.waitForBudget("graphql", priority);
       const response = await this.send(`${API}/graphql`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-github-next-global-id": "1" },
-        body: JSON.stringify({ query: doc.toString(), variables }),
+        body: JSON.stringify({ query, variables }),
         timeoutMs: 30_000,
       });
       const payload = (await response.json()) as {
@@ -121,8 +122,9 @@ export class GitHubClient implements GitHubTransport {
             this.pausedUntil,
             this.windows.graphql?.resetAt ?? Date.now() + 60_000,
           );
-        // Partial results (e.g. one node in a batch was deleted) are still useful.
-        if (!payload.data || rateLimited) {
+        // Partial results (one node in a batch was deleted) are still useful to a read; a write
+        // with errors didn't happen, and GitHub's reason is the one to report.
+        if (!payload.data || rateLimited || /^\s*mutation\b/.test(query)) {
           throw new GitHubError(
             payload.errors.map((e) => e.message).join("; "),
             rateLimited ? "rate-limit" : "graphql",

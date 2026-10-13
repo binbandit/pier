@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { useState } from "react";
 
-import { errorText } from "@/features/actions";
+import { errorText, takeBack } from "@/features/actions";
 import { useCommands } from "@/keys/registry";
 import { plural } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
@@ -70,10 +70,7 @@ export function ReviewPanel({
         {
           text: `${EVENTS.find((e) => e.event === event)?.sending ?? "Sending"} in 5s`,
           tone: "ok",
-          undo: () =>
-            void rpc("cancelCommands", { commandIds }).then(({ cancelled }) =>
-              toast({ text: cancelled > 0 ? "Review cancelled" : "Already sent", tone: "neutral" }),
-            ),
+          undo: () => void takeBack(commandIds, "The review"),
         },
         5_000,
       );

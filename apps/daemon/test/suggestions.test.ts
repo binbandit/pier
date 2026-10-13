@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { SuggestionError, applySplices, hunkLines } from "@/domain/suggestions";
-import { suggestionIn } from "@pier/core/suggestion";
+import { suggestionIn, visibleSuggestion } from "@pier/core/suggestion";
 
 const splice = (start: number, end: number, lines: string[], expected: string[] | null = null) => ({
   start,
@@ -20,6 +20,13 @@ describe("suggestion blocks", () => {
     expect(suggestionIn("```suggestion\r\n```")).toEqual([]);
     expect(suggestionIn("```js\nconst x = 1;\n```")).toBeNull();
     expect(suggestionIn("```suggestion\na\n```\n```suggestion\nb\n```")).toBeNull();
+  });
+
+  test("only a suggestion GitHub draws counts; one hidden in an HTML comment doesn't", () => {
+    const drawn = '<div class="js-suggested-changes-blob">…</div>';
+    expect(visibleSuggestion("```suggestion\nok()\n```", drawn)).toEqual(["ok()"]);
+    const hidden = "LGTM, nit\n<!--\n```suggestion\nevil()\n```\n-->";
+    expect(visibleSuggestion(hidden, "<p>LGTM, nit</p>")).toBeNull();
   });
 });
 

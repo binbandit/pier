@@ -393,6 +393,7 @@ export class FakeGitHub implements GitHubPort {
       const workflows = [...Map.groupBy(jobs, (job) => job.runId)].map(
         ([runId, group]): WorkflowRunView => ({
           id: runId,
+          workflowId: 1,
           name: "CI",
           event: "pull_request",
           state: group.some((j) => j.state === "failure")
@@ -979,6 +980,7 @@ export class FakeGitHub implements GitHubPort {
           side: thread.side,
           line: thread.line,
           startLine: thread.line === null ? null : thread.startLine,
+          startSide: thread.line === null || thread.startLine === null ? null : thread.side,
           originalLine: thread.originalLine,
           subject: thread.subject,
           resolved: thread.resolved,
@@ -1137,8 +1139,15 @@ function pages(count: number, size: number): number {
 }
 
 /** GitHub renders markdown server-side; Bun's renderer is close enough for a fake. */
+/** Markdown as GitHub renders it, down to drawing a suggestion block as a suggested change. */
 function html(markdown: string): string {
-  return markdown ? Bun.markdown.html(markdown) : "";
+  if (!markdown) return "";
+  return Bun.markdown
+    .html(markdown)
+    .replace(
+      /<pre><code class="language-suggestion">([\s\S]*?)<\/code><\/pre>/g,
+      '<div class="js-suggested-changes-blob"><table><tr><td class="blob-code-addition">$1</td></tr></table></div>',
+    );
 }
 
 const REACTION_ORDER: ReactionContent[] = [

@@ -8,12 +8,12 @@ export type CodeOwnerRule = { pattern: string; owners: string[] };
 export function parseCodeOwners(text: string): CodeOwnerRule[] {
   const rules: CodeOwnerRule[] = [];
   for (const raw of text.split(/\r?\n/)) {
-    // `#` starts a comment unless it's escaped.
-    const line = raw.replace(/(^|[^\\])#.*$/, "$1").trim();
+    // `#` starts a comment anywhere; GitHub doesn't honour `\#` in CODEOWNERS.
+    const line = raw.replace(/#.*$/, "").trim();
     if (!line) continue;
     const [pattern, ...owners] = line.split(/\s+/);
     if (!pattern || pattern.startsWith("!") || pattern.includes("[")) continue;
-    rules.push({ pattern: pattern.replaceAll("\\#", "#"), owners });
+    rules.push({ pattern, owners });
   }
   return rules;
 }
@@ -33,6 +33,8 @@ export function codeOwnersMatcher(rules: CodeOwnerRule[]): (path: string) => str
 function toRegExp(pattern: string): RegExp {
   const directory = pattern.endsWith("/");
   const trimmed = pattern.replace(/^\//, "").replace(/\/$/, "");
+  // `**` on its own (or `/**`) is everything.
+  if (trimmed === "**") return /^.*$/;
   // A slash anywhere but the end ties the pattern to the repo root; otherwise it matches a name
   // at any depth.
   const anchored = pattern.startsWith("/") || trimmed.includes("/");

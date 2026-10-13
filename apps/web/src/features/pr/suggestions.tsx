@@ -2,14 +2,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { useEffect, useRef, useState } from "react";
 
-import { errorText } from "@/features/actions";
+import { errorText, takeBack } from "@/features/actions";
 import { useCommands } from "@/keys/registry";
 import { plural } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Dock } from "@/ui/dock";
 import { Keys } from "@/ui/kbd";
-import { suggestionIn } from "@pier/core/suggestion";
+import { visibleSuggestion } from "@pier/core/suggestion";
 import type { PrView, Thread, ThreadComment } from "@pier/core/wire";
 
 // Committing review suggestions, raised with Shift+S or a comment's "Apply suggestion": every
@@ -22,10 +22,16 @@ export type Applicable = { thread: Thread; comment: ThreadComment; lines: string
 export function applicableSuggestions(pr: PrView): Applicable[] {
   if (!pr.canApplySuggestions) return [];
   return pr.threads.flatMap((thread) =>
-    thread.resolved || thread.outdated || thread.line === null || thread.side !== "RIGHT"
+    thread.resolved ||
+    thread.outdated ||
+    thread.line === null ||
+    thread.side !== "RIGHT" ||
+    (thread.startLine !== null && thread.startSide !== "RIGHT")
       ? []
       : thread.comments.flatMap((comment) => {
-          const lines = suggestionIn(comment.body);
+          const lines = comment.minimized
+            ? null
+            : visibleSuggestion(comment.body, comment.bodyHTML);
           return lines ? [{ thread, comment, lines }] : [];
         }),
   );
@@ -94,7 +100,7 @@ export function SuggestionsPanel({
         {
           text: `Applying ${plural(ids.length, "suggestion")} in 5s`,
           tone: "ok",
-          undo: () => void rpc("cancelCommands", { commandIds }),
+          undo: () => void takeBack(commandIds, "Applying the suggestions"),
         },
         5_000,
       );

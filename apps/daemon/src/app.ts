@@ -46,6 +46,7 @@ const HEAD_BOUND = new Set([
   "auto-merge",
   "update-branch",
   "enqueue",
+  "suggestions",
 ]);
 
 export function createApp(options: AppOptions) {
@@ -82,10 +83,14 @@ export function createApp(options: AppOptions) {
     const record = model.get(command.prId);
     if (!record) return { ok: false, state: "failed", detail: "PR is no longer tracked" };
     // In sandbox mode nothing outside the sandbox owners is ever written, whatever the kind.
+    // A suggestions commit writes to the head repo, which for a PR from a fork is the fork's.
     const sandboxOwners = settings.get("sandbox").writeOwners;
-    const owner = record.doc.repo.split("/")[0] ?? "";
-    if (sandboxOwners && !sandboxOwners.includes(owner)) {
-      return { ok: false, state: "cancelled", detail: `Outside the sandbox (${owner})` };
+    const written = [record.doc.repo, command.payload.headRepo ?? record.doc.repo];
+    const outside = written
+      .map((repo) => repo.split("/")[0] ?? "")
+      .find((owner) => sandboxOwners && !sandboxOwners.includes(owner));
+    if (outside !== undefined) {
+      return { ok: false, state: "cancelled", detail: `Outside the sandbox (${outside})` };
     }
     // Replies, resolves and viewed marks don't depend on the head; verdicts on the code do.
     if (!HEAD_BOUND.has(command.kind)) return { ok: true };
@@ -159,6 +164,7 @@ export function createApp(options: AppOptions) {
   planner = new Planner({ model, outbox, verdicts, settings, accounts: logins });
   const drafts = new Drafts(stores.state);
   const details = new Details(stores.cache);
+  const codeOwners = new CodeOwnersCache(ports);
   const views = new Views({
     model,
     outbox,
@@ -167,6 +173,7 @@ export function createApp(options: AppOptions) {
     registry,
     settings,
     accounts: logins,
+    teams: () => codeOwners.knownTeams(),
     now: Date.now,
   });
   const sync = new SyncEngine(model, () => ports, settings, registry, stores.cache);
@@ -179,7 +186,7 @@ export function createApp(options: AppOptions) {
     details,
     sync,
     planner,
-    codeOwners: new CodeOwnersCache(ports),
+    codeOwners,
     linked: () => settings.get("identity").linked,
     git: () => options.git ?? null,
   });
@@ -274,6 +281,8 @@ export function createApp(options: AppOptions) {
       );
       outbox.start();
       sync.start();
+      // Teams decide what counts as a request to you, in search as in the inbox.
+      for (const login of logins()) void codeOwners.teamsOf(login);
       fetchHumanHeads([...model.all()].map((r) => r.doc.id));
     },
     stop() {

@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { useEffect, useRef, useState } from "react";
 
-import { errorText, rerun } from "@/features/actions";
+import { errorText, rerun, takeBack } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
 import { qLive, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
@@ -99,7 +99,7 @@ function Loaded({
         {
           text: done,
           tone: "ok",
-          ...(undoable ? { undo: () => void rpc("cancelCommands", { commandIds }) } : {}),
+          ...(undoable ? { undo: () => void takeBack(commandIds, "The merge") } : {}),
         },
         undoable ? 5_000 : 4_000,
       );

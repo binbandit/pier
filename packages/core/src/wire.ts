@@ -379,6 +379,8 @@ export type Thread = {
   /** Current position; null when the thread is outdated (its lines no longer exist). */
   line: number | null;
   startLine: number | null;
+  /** Which side a multi-line comment starts on (it can start on removed lines). */
+  startSide: Side | null;
   originalLine: number | null;
   subject: "line" | "file";
   resolved: boolean;
@@ -501,6 +503,8 @@ export type PrView = {
   requiredChecks: string[];
   /** The PR's commits, oldest first (the last 100). */
   commits: CommitView[];
+  /** How many commits it has in all, when that's more than `commits` holds. */
+  commitsTotal: number;
   /** Null when the base branch has no CODEOWNERS. */
   codeOwners: CodeOwners | null;
   /** You can push to the head branch, so review suggestions can be committed to it. */
@@ -614,6 +618,8 @@ export type CheckRunView = {
 /** An Actions workflow run on the head, for what's done to a run as a whole. */
 export type WorkflowRunView = {
   id: number;
+  /** The workflow file it ran; two files can share a name. */
+  workflowId: number;
   name: string;
   /** What triggered it: "pull_request", "push", "pull_request_review", … */
   event: string;

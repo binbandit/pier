@@ -14,7 +14,7 @@ import {
 import { type ReactNode, useState } from "react";
 
 import { Html, Markdown } from "@/components/markdown";
-import { errorText } from "@/features/actions";
+import { errorText, takeBack } from "@/features/actions";
 import { since } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
@@ -104,7 +104,7 @@ export function Writing({
         {
           text: "Deleting the comment in 5s",
           tone: "ok",
-          undo: () => void rpc("cancelCommands", { commandIds }),
+          undo: () => void takeBack(commandIds, "Deleting the comment"),
         },
         5_000,
       );
