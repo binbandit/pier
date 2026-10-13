@@ -14,25 +14,25 @@ import { THEMES, registerTheme } from "./theme";
 registerTheme();
 
 const UNSAFE_CSS = /* css */ `
-  :host { background: #000; }
+  :host { background: var(--color-canvas); }
   [data-diffs-header] {
-    background: #000;
-    border-bottom: 1px solid #1e1e1e;
+    background: var(--color-canvas);
+    border-bottom: 1px solid var(--color-line);
     font-size: 13px;
   }
   [data-title] { color: var(--color-fg); font-family: var(--diffs-font-family); }
-  [data-line-type="change-addition"] { background-color: #131810; }
-  [data-line-type="change-deletion"] { background-color: #1d1111; }
-  [data-line-type="change-addition"] [data-diff-span] { background-color: #263020; }
-  [data-line-type="change-deletion"] [data-diff-span] { background-color: #3a2323; }
+  [data-line-type="change-addition"] { background-color: var(--color-add-row); }
+  [data-line-type="change-deletion"] { background-color: var(--color-del-row); }
+  [data-line-type="change-addition"] [data-diff-span] { background-color: var(--color-add-word); }
+  [data-line-type="change-deletion"] [data-diff-span] { background-color: var(--color-del-word); }
   [data-separator],
   [data-separator-wrapper],
   [data-separator-content] {
-    background: #000;
+    background: var(--color-canvas);
     color: var(--color-faint);
   }
   [data-separator] {
-    border-block: 1px solid #1e1e1e;
+    border-block: 1px solid var(--color-line);
     font-family: var(--diffs-header-font-family);
     font-size: 12px;
   }
@@ -45,14 +45,14 @@ const UNSAFE_CSS = /* css */ `
   }
   [data-expand-index] [data-separator-wrapper]:hover,
   [data-expand-index] [data-separator-wrapper]:hover [data-separator-content] {
-    background: #121212;
+    background: var(--color-hover);
   }
   [data-expand-button]:hover { color: var(--color-fg); }
   /* OLED: the space beside a split's one-sided lines and under a thread stays true black. */
   [data-content-buffer] { background-image: none; }
   [data-line-annotation],
-  [data-gutter-buffer="annotation"] { --diffs-annotation-bg: #000; }
-  [data-gutter-buffer] { background: #000; }
+  [data-gutter-buffer="annotation"] { --diffs-annotation-bg: var(--color-canvas); }
+  [data-gutter-buffer] { background: var(--color-canvas); }
   /* Selected lines (for a comment, or opened from a link) read as selected over add/remove. */
   [data-line][data-selected-line],
   [data-line-type][data-selected-line] { background-color: #1d1729; }

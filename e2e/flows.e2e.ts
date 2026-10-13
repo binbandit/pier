@@ -398,6 +398,8 @@ test("a stacked PR shows its stack, and the palette moves through it", async ({ 
   await page.keyboard.press("g");
   await page.keyboard.press("k");
   await expect(page).toHaveURL(/\/pull\/7$/);
+  // Its stack commands exist once its stack is on screen.
+  await expect(stack.locator("..")).toContainText("3 of 3 on main");
 
   await page.keyboard.press("Meta+k");
   await page.keyboard.type("Go down the stack");

@@ -7,8 +7,11 @@
   OLED rule: anything that scrolls sits on #000 or on a fill of at least #121212. Values between
   #010101 and #0f0f0f smear on OLED panels when they move, so they are only used for static
   overlays (--color-raise).
+
+  `static`: every token is a CSS variable, used or not, so the diff renderer's shadow DOM (which
+  Tailwind can't see) and the /tokens page can read them.
 */
-@theme {
+@theme static {
   --color-*: initial;
   --color-transparent: transparent;
   --color-current: currentColor;

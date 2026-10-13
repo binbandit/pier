@@ -19,9 +19,11 @@ export function contrastAt(choice: ContrastChoice, at: Date): Contrast {
   return hour >= NIGHT_FROM || hour < NIGHT_UNTIL ? "night" : "day";
 }
 
-export const useContrast = create<{ mode: Contrast }>(() => ({
-  mode: contrastAt(usePrefs.getState().contrast, new Date()),
-}));
+// Set before the first paint, so a page opened at night doesn't flash day contrast first.
+const initial = contrastAt(usePrefs.getState().contrast, new Date());
+document.documentElement.dataset.contrast = initial;
+
+export const useContrast = create<{ mode: Contrast }>(() => ({ mode: initial }));
 
 /** Keeps the mode (and `data-contrast` on the page, which the CSS reads) in step with the clock. */
 export function useContrastSchedule(): void {
