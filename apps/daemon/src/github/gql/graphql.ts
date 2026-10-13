@@ -75,6 +75,13 @@ export type FileViewedState =
   /** The file has been marked as viewed. */
   | 'VIEWED';
 
+/** The possible states of an issue. */
+export type IssueState =
+  /** An issue that has been closed */
+  | 'CLOSED'
+  /** An issue that is still open */
+  | 'OPEN';
+
 /** The possible reasons that an issue or pull request was locked. */
 export type LockReason =
   /** The issue or pull request was locked because the conversation was off-topic. */
@@ -382,7 +389,7 @@ export type PrDetailQueryVariables = Exact<{
 
 
 export type PrDetailQuery = { node:
-    | { id: string, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, locked: boolean, activeLockReason: LockReason | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, viewerLatestReview: { state: PullRequestReviewState, submittedAt: string | null, commit: { oid: string } | null } | null, pendingReviews: { nodes: Array<{ id: string, commit: { oid: string } | null, comments: { nodes: Array<{ id: string, body: string, path: string, line: number | null, startLine: number | null, originalLine: number | null, diffHunk: string } | null> | null } } | null> | null } | null, reviewThreads: { nodes: Array<{ id: string, isResolved: boolean, isOutdated: boolean, path: string, line: number | null, startLine: number | null, originalLine: number | null, originalStartLine: number | null, diffSide: DiffSide, startDiffSide: DiffSide | null, subjectType: PullRequestReviewThreadSubjectType, viewerCanResolve: boolean, viewerCanUnresolve: boolean, viewerCanReply: boolean, resolvedBy: { login: string } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, diffHunk: string, state: PullRequestReviewCommentState, viewerCanUpdate: boolean, viewerCanDelete: boolean, viewerCanMinimize: boolean, isMinimized: boolean, minimizedReason: string | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, author:
+    | { id: string, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, locked: boolean, activeLockReason: LockReason | null, closingIssuesReferences: { nodes: Array<{ number: number, title: string, url: string, state: IssueState, repository: { nameWithOwner: string } } | null> | null } | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, viewerLatestReview: { state: PullRequestReviewState, submittedAt: string | null, commit: { oid: string } | null } | null, pendingReviews: { nodes: Array<{ id: string, commit: { oid: string } | null, comments: { nodes: Array<{ id: string, body: string, path: string, line: number | null, startLine: number | null, originalLine: number | null, diffHunk: string } | null> | null } } | null> | null } | null, reviewThreads: { nodes: Array<{ id: string, isResolved: boolean, isOutdated: boolean, path: string, line: number | null, startLine: number | null, originalLine: number | null, originalStartLine: number | null, diffSide: DiffSide, startDiffSide: DiffSide | null, subjectType: PullRequestReviewThreadSubjectType, viewerCanResolve: boolean, viewerCanUnresolve: boolean, viewerCanReply: boolean, resolvedBy: { login: string } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, diffHunk: string, state: PullRequestReviewCommentState, viewerCanUpdate: boolean, viewerCanDelete: boolean, viewerCanMinimize: boolean, isMinimized: boolean, minimizedReason: string | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, author:
                 | { login: string, avatarUrl: string }
                 | { login: string, avatarUrl: string }
                 | { login: string, avatarUrl: string }
@@ -1068,6 +1075,32 @@ export type HistoryQuery = { node:
     | Record<PropertyKey, never>
    | null };
 
+export type SuggestedReviewersQueryVariables = Exact<{
+  prId: string | number;
+}>;
+
+
+export type SuggestedReviewersQuery = { node:
+    | { suggestedReviewerActors: { nodes: Array<{ reviewer:
+            | { __typename: 'Bot', login: string, avatarUrl: string }
+            | { __typename: 'EnterpriseUserAccount' }
+            | { __typename: 'Mannequin' }
+            | { __typename: 'Organization' }
+            | { __typename: 'User', login: string, avatarUrl: string }
+           } | null> | null } }
+    | Record<PropertyKey, never>
+   | null };
+
+export type RequestReviewsMutationVariables = Exact<{
+  prId: string | number;
+  users?: Array<string> | string | null | undefined;
+  teams?: Array<string> | string | null | undefined;
+  bots?: Array<string> | string | null | undefined;
+}>;
+
+
+export type RequestReviewsMutation = { requestReviewsByLogin: { pullRequest: { id: string } | null } | null };
+
 export class TypedDocumentString<TResult, TVariables>
   extends String
   implements DocumentTypeDecoration<TResult, TVariables>
@@ -1366,6 +1399,17 @@ export const PrDetailDocument = new TypedDocumentString(`
       viewerCanUpdate
       locked
       activeLockReason
+      closingIssuesReferences(first: 10) {
+        nodes {
+          number
+          title
+          url
+          state
+          repository {
+            nameWithOwner
+          }
+        }
+      }
       reactionGroups {
         content
         viewerHasReacted
@@ -2286,3 +2330,43 @@ export const HistoryDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<HistoryQuery, HistoryQueryVariables>;
+export const SuggestedReviewersDocument = new TypedDocumentString(`
+    query SuggestedReviewers($prId: ID!) {
+  node(id: $prId) {
+    ... on PullRequest {
+      suggestedReviewerActors(first: 20) {
+        nodes {
+          reviewer {
+            __typename
+            ... on User {
+              login
+              avatarUrl(size: 64)
+            }
+            ... on Bot {
+              login
+              avatarUrl(size: 64)
+            }
+          }
+        }
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<SuggestedReviewersQuery, SuggestedReviewersQueryVariables>;
+export const RequestReviewsDocument = new TypedDocumentString(`
+    mutation RequestReviews($prId: ID!, $users: [String!], $teams: [String!], $bots: [String!]) {
+  requestReviewsByLogin(
+    input: {
+      pullRequestId: $prId
+      userLogins: $users
+      teamSlugs: $teams
+      botLogins: $bots
+      union: true
+    }
+  ) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<RequestReviewsMutation, RequestReviewsMutationVariables>;

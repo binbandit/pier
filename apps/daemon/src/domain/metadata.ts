@@ -19,7 +19,8 @@ type Overlaid = Pick<PrView, "labels" | "assignees" | "milestone" | "isDraft"> &
 export function overlayMetadata(doc: PrDoc, pending: PendingEdit[], known: RepoKnown): Overlaid {
   let labels = doc.labels.map((l) => l.name);
   let assignees = doc.assignees.map((a) => a.login);
-  let requested = doc.reviewRequests.map((r) => r.login);
+  // Bots are keyed "bot:login" so they can be asked again by login, like the picker does.
+  let requested = doc.reviewRequests.map((r) => (r.kind === "bot" ? `bot:${r.login}` : r.login));
   let milestone = doc.milestone;
   let isDraft = doc.isDraft;
 

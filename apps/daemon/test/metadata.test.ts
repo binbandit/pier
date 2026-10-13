@@ -54,11 +54,12 @@ describe("metadata edits against the fake", () => {
     const pr = [...world.prs.values()].find(
       (p) => p.author === "sage-smudge" && p.state === "OPEN",
     )!;
-    const repo = pr.repo.fullName;
+    const ref = { id: pr.id, repo: pr.repo.fullName, number: pr.number };
+    const repo = ref.repo;
 
-    await port.editMetadata(repo, pr.number, "labels", { add: ["enhancement"], remove: [] });
-    await port.editMetadata(repo, pr.number, "assignees", { add: ["binbandit"], remove: [] });
-    await port.editMetadata(repo, pr.number, "reviewers", { add: ["WastedHippie"], remove: [] });
+    await port.editMetadata(ref, "labels", { add: ["enhancement"], remove: [] });
+    await port.editMetadata(ref, "assignees", { add: ["binbandit"], remove: [] });
+    await port.editMetadata(ref, "reviewers", { add: ["WastedHippie"], remove: [] });
     await port.setMilestone(repo, pr.number, 1);
     await port.setDraft(pr.id, true);
 
@@ -70,7 +71,7 @@ describe("metadata edits against the fake", () => {
     expect(hydrated?.doc.isDraft).toBe(true);
 
     const refused = await port
-      .editMetadata(repo, pr.number, "reviewers", { add: [pr.author], remove: [] })
+      .editMetadata(ref, "reviewers", { add: [pr.author], remove: [] })
       .then(
         () => null,
         (error: unknown) => error,

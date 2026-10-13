@@ -1033,7 +1033,13 @@ export class FakeWorld {
         "validation",
         422,
       );
-    for (const reviewer of reviewers) this.requestReview(prId, reviewer, actor);
+    for (const reviewer of reviewers) {
+      // Bots are asked by login ("bot:copilot-pull-request-reviewer").
+      const login = reviewer.startsWith("bot:") ? reviewer.slice(4) : reviewer;
+      if (reviewer.startsWith("bot:") && !this.users.has(login))
+        this.addUser(login, { isBot: true });
+      this.requestReview(prId, login, actor);
+    }
   }
 
   setMilestone(prId: string, actor: string, milestone: number | null): void {

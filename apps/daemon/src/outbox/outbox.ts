@@ -619,10 +619,14 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
     case "labels":
     case "assignees":
     case "reviewers":
-      return port.editMetadata(command.repo, command.number, command.kind, {
-        add: payload.add ?? [],
-        remove: payload.remove ?? [],
-      });
+      return port.editMetadata(
+        { id: command.prId, repo: command.repo, number: command.number },
+        command.kind,
+        {
+          add: payload.add ?? [],
+          remove: payload.remove ?? [],
+        },
+      );
     case "milestone":
       return port.setMilestone(command.repo, command.number, payload.milestone ?? null);
     case "draft":

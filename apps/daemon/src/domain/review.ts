@@ -19,6 +19,7 @@ import type {
   ReactionContent,
   Revision,
   Runway,
+  SuggestedReviewer,
   Side,
   Thread,
   ViewedState,
@@ -121,9 +122,19 @@ export class ReviewService {
 
     const pending = this.deps.outbox.pendingFor(doc.id);
     const review = record.viewers.get(account)?.latestReview;
+    // Writes GitHub accepted stay laid over the doc until a read after them, and for half a
+    // minute regardless: GitHub's reads can trail its writes, so the first re-read may not show
+    // them yet. These edits are idempotent sets, so overlapping GitHub's own copy is harmless.
+    const settling = new Date(Date.now() - 30_000).toISOString();
     const meta = overlayMetadata(
       doc,
-      [...this.deps.outbox.ackedSince(doc.id, record.fetchedAt), ...pending],
+      [
+        ...this.deps.outbox.ackedSince(
+          doc.id,
+          settling < record.fetchedAt ? settling : record.fetchedAt,
+        ),
+        ...pending,
+      ],
       this.knownFor(doc.repo),
     );
 
@@ -156,9 +167,13 @@ export class ReviewService {
       labels: meta.labels,
       // Someone asked again after reviewing shows as requested, not with their old verdict.
       reviewers: [
-        ...meta.requested.map((login) => ({
-          login,
-          kind: login.includes("/") ? ("team" as const) : ("user" as const),
+        ...meta.requested.map((key) => ({
+          login: key.startsWith("bot:") ? key.slice(4) : key,
+          kind: key.startsWith("bot:")
+            ? ("bot" as const)
+            : key.includes("/")
+              ? ("team" as const)
+              : ("user" as const),
           state: "requested",
         })),
         ...doc.latestReviews.flatMap((r) =>
@@ -169,6 +184,7 @@ export class ReviewService {
       ],
       assignees: meta.assignees,
       milestone: meta.milestone,
+      linkedIssues: detail?.linkedIssues ?? [],
       account,
       approvedByYou: review?.state === "APPROVED" && review.commitOid === doc.headRefOid,
       lastReviewedOid: detail?.viewerLatestReview?.commitOid ?? null,
@@ -468,6 +484,11 @@ export class ReviewService {
 
   setLocked(prId: string, reason: LockReason | null): string[] {
     return this.enqueue(this.require(prId), "lock", { lockReason: reason }, 0);
+  }
+
+  async suggestedReviewers(prId: string): Promise<SuggestedReviewer[]> {
+    const port = this.deps.ports.get(this.require(prId).reader);
+    return port ? port.suggestedReviewers(prId) : [];
   }
 
   async history(prId: string, subjectId: string): Promise<Revision[]> {

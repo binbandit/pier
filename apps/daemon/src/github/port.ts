@@ -11,6 +11,7 @@ import type {
   Person,
   ReactionContent,
   Revision,
+  SuggestedReviewer,
 } from "@pier/core/wire";
 
 import type { RateWindow } from "./client";
@@ -21,6 +22,9 @@ import type { PrDoc, PrState, PrViewer, VolatileState } from "./pr-doc";
 // `LiveGitHub` implements it over HTTP; the stateful fake implements it in memory for tests.
 
 export type MetadataField = "labels" | "assignees" | "reviewers";
+
+/** A PR by node id and by number: GraphQL takes the first, REST the second. */
+export type PrRef = { id: string; repo: string; number: number };
 
 export type SearchHit = { id: string; updatedAt: string; headRefOid: string; state: PrState };
 
@@ -136,10 +140,12 @@ export interface GitHubPort {
   mergeStatus(repo: string, number: number, uuid: string): Promise<MergeResult>;
   setAutoMerge(prId: string, method: MergeMethod | null, headOid: string): Promise<void>;
   updateBranch(prId: string, rebase: boolean, headOid: string): Promise<void>;
-  /** Adds and removes by name: label names, or user logins for assignees and reviewers. */
+  /**
+   * Adds and removes by name: label names, or logins for assignees and reviewers. Reviewers
+   * can also be teams ("org/slug") or bots ("bot:copilot-pull-request-reviewer").
+   */
   editMetadata(
-    repo: string,
-    number: number,
+    pr: PrRef,
     field: MetadataField,
     change: { add: string[]; remove: string[] },
   ): Promise<void>;
@@ -161,6 +167,7 @@ export interface GitHubPort {
   dismissReview(reviewId: string, message: string): Promise<void>;
   setLocked(repo: string, number: number, reason: LockReason | null): Promise<void>;
   branches(repo: string): Promise<string[]>;
+  suggestedReviewers(prId: string): Promise<SuggestedReviewer[]>;
   /** Every version of a comment, review or description, newest first. */
   history(subjectId: string): Promise<Revision[]>;
   /** When a GitHub release was published, or null if the tag has no release. */

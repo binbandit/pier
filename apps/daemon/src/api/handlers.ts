@@ -89,6 +89,7 @@ export function createHandlers(app: App): Handlers {
     setLocked: ({ prId, reason }) => ({ commandIds: app.review.setLocked(prId, reason) }),
     branches: ({ repo }) => app.review.branches(repo),
     history: ({ prId, subjectId }) => app.review.history(prId, subjectId),
+    suggestedReviewers: ({ prId }) => app.review.suggestedReviewers(prId),
     repoLabels: ({ repo }) => app.review.repoLabels(repo),
     assignable: ({ repo }) => app.review.assignable(repo),
     milestones: ({ repo }) => app.review.milestones(repo),

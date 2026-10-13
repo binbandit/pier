@@ -15,6 +15,7 @@ import type {
   PrView,
   QueueItem,
   Revision,
+  SuggestedReviewer,
   Runway,
   SplitCounts,
 } from "./wire";
@@ -113,6 +114,7 @@ export const inputs = {
   }),
   branches: type({ repo: "string" }),
   history: type({ prId: "string", subjectId: "string" }),
+  suggestedReviewers: type({ prId: "string" }),
   repoLabels: type({ repo: "string" }),
   assignable: type({ repo: "string" }),
   milestones: type({ repo: "string" }),
@@ -164,6 +166,7 @@ export type Outputs = {
   setLocked: { commandIds: string[] };
   branches: string[];
   history: Revision[];
+  suggestedReviewers: SuggestedReviewer[];
   repoLabels: Label[];
   assignable: Person[];
   milestones: Milestone[];

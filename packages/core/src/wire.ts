@@ -74,6 +74,15 @@ export type Actor = {
 };
 
 export type Person = { login: string; avatarUrl: string };
+/** Someone GitHub suggests asking to review; bots (Copilot) only appear where they're enabled. */
+export type SuggestedReviewer = Person & { bot: boolean };
+export type LinkedIssue = {
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  state: "OPEN" | "CLOSED";
+};
 export type Label = { name: string; color: string; description: string | null };
 export type Milestone = { number: number; title: string; dueOn: string | null };
 
@@ -458,6 +467,8 @@ export type PrView = {
   reviewers: { login: string; kind: "user" | "team" | "bot"; state: string }[];
   assignees: Person[];
   milestone: Milestone | null;
+  /** Issues this PR closes when it merges. */
+  linkedIssues: LinkedIssue[];
   account: string;
   approvedByYou: boolean;
   /** The commit your last review was against, if you've reviewed before. */

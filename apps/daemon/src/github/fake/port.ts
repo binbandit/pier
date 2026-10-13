@@ -5,6 +5,7 @@ import type {
   MergeResult,
   MetadataField,
   NotificationPoll,
+  PrRef,
   ReviewEvent,
   ReviewSummary,
   SearchHit,
@@ -28,6 +29,7 @@ import type {
   ReactionContent,
   ReviewDecision,
   Revision,
+  SuggestedReviewer,
   TimelineEntry,
 } from "@pier/core/wire";
 
@@ -362,13 +364,12 @@ export class FakeGitHub implements GitHubPort {
   }
 
   editMetadata(
-    repo: string,
-    number: number,
+    ref: PrRef,
     field: MetadataField,
     { add, remove }: { add: string[]; remove: string[] },
   ): Promise<void> {
     return this.call("editMetadata", "core", () => {
-      const pr = this.restPr(repo, number);
+      const pr = this.restPr(ref.repo, ref.number);
       if (field === "labels") this.world.editLabels(pr.id, this.login, add, remove);
       else if (field === "assignees") this.world.editAssignees(pr.id, this.login, add, remove);
       else {
@@ -465,6 +466,16 @@ export class FakeGitHub implements GitHubPort {
         .filter((pr) => pr.repo === found && pr.state === "OPEN")
         .map((pr) => pr.headRefName);
       return [...new Set([found.defaultBranch, "release", ...heads])];
+    });
+  }
+
+  /** People who can write and aren't the author, most recently active first. */
+  suggestedReviewers(prId: string): Promise<SuggestedReviewer[]> {
+    return this.call("suggestedReviewers", "graphql", () => {
+      const pr = this.visiblePr(prId);
+      return [...this.world.users.values()]
+        .filter((u) => !u.isBot && u.login !== pr.author && this.world.canWrite(pr.repo, u.login))
+        .map((u) => ({ login: u.login, avatarUrl: this.world.avatarUrl(u.login), bot: false }));
     });
   }
 
@@ -837,6 +848,7 @@ export class FakeGitHub implements GitHubPort {
       bodyHTML: html(pr.body),
       reactions: reactionsOf(pr.reactions, this.login),
       canEdit: world.canEditWriting(pr, pr.author, this.login),
+      linkedIssues: [],
       locked: pr.locked,
       viewerLatestReview: latest
         ? { state: latest.state, commitOid: latest.commitOid, submittedAt: latest.submittedAt }

@@ -92,6 +92,10 @@ function useField(pr: PrView, kind: MetadataKind): Field {
   });
   const milestones = useQuery({ ...q("milestones", repo), enabled: kind === "milestone" });
   const branches = useQuery({ ...q("branches", repo), enabled: kind === "base" });
+  const suggested = useQuery({
+    ...q("suggestedReviewers", { prId: pr.id }),
+    enabled: kind === "reviewers",
+  });
   const edit = (field: "labels" | "assignees" | "reviewers") => (c: Change) =>
     rpc("editMetadata", { prId: pr.id, field, ...c });
   const several = { single: false, clearable: true };
@@ -139,37 +143,55 @@ function useField(pr: PrView, kind: MetadataKind): Field {
           ]),
       };
     case "reviewers": {
-      const requested = pr.reviewers.filter((r) => r.state === "requested").map((r) => r.login);
+      const requested = pr.reviewers.filter((r) => r.state === "requested").map(reviewerKey);
       const reviewed = new Map(
         pr.reviewers.filter((r) => r.state !== "requested").map((r) => [r.login, r.state]),
       );
-      // Teams can't be listed without org access, but ones already asked can still be removed.
-      const teams = requested.filter((login) => login.includes("/"));
+      const person = (login: string, avatarUrl: string, why: string | null) => {
+        const state = reviewed.get(login);
+        return {
+          key: login,
+          label: login,
+          detail: state
+            ? `${REVIEW_STATES[state] ?? state.toLowerCase()}; picking asks again`
+            : why,
+          lead: <Avatar login={login} url={avatarUrl} size={16} />,
+        };
+      };
+      // Suggested first (that's where Copilot shows up, where it's enabled), then everyone who
+      // can review. Teams can't be listed without org access, but ones already asked can be removed.
+      const suggestions = suggested.data ?? [];
+      const options = people.data &&
+        suggested.data && [
+          ...requested
+            .filter((login) => login.includes("/"))
+            .map((team) => ({ key: team, label: team, detail: "team" })),
+          ...suggestions.map((s) =>
+            s.bot
+              ? {
+                  key: `bot:${s.login}`,
+                  label: botName(s.login),
+                  detail: "suggested",
+                  lead: <Avatar login={s.login} url={s.avatarUrl} size={16} />,
+                }
+              : person(s.login, s.avatarUrl, "suggested"),
+          ),
+          ...people.data
+            .filter(
+              (p) => p.login !== pr.author?.login && !suggestions.some((s) => s.login === p.login),
+            )
+            .map((p) => person(p.login, p.avatarUrl, null)),
+        ];
       return {
         ...several,
         title: "Reviewers",
-        options: people.data && [
-          ...teams.map((team) => ({ key: team, label: team, detail: "team" })),
-          ...people.data
-            .filter((p) => p.login !== pr.author?.login)
-            .map((person) => {
-              const state = reviewed.get(person.login);
-              return {
-                key: person.login,
-                label: person.login,
-                detail: state
-                  ? `${REVIEW_STATES[state] ?? state.toLowerCase()}; picking asks again`
-                  : null,
-                lead: <Avatar login={person.login} url={person.avatarUrl} size={16} />,
-              };
-            }),
-        ],
+        options,
         selected: requested,
         send: edit("reviewers"),
         describe: ({ add, remove }) =>
           sentence([
-            add.length > 0 && `asked ${list(add)} to review`,
-            remove.length > 0 && `withdrew the request to ${list(remove)}`,
+            add.length > 0 && `asked ${list(add.map(display))} to review`,
+            remove.length > 0 && `withdrew the request to ${list(remove.map(display))}`,
           ]),
       };
     }
@@ -237,4 +259,18 @@ function list(items: string[]): string {
   return items.length <= 2
     ? items.join(" and ")
     : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+/** Bots by the name people know them by. */
+function botName(login: string): string {
+  return login === "copilot-pull-request-reviewer" ? "Copilot" : login;
+}
+
+function display(key: string): string {
+  return key.startsWith("bot:") ? botName(key.slice(4)) : key;
+}
+
+/** Bots are asked by login with a "bot:" prefix; people and teams by login. */
+function reviewerKey(reviewer: { login: string; kind: string }): string {
+  return reviewer.kind === "bot" ? `bot:${reviewer.login}` : reviewer.login;
 }

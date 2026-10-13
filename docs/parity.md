@@ -18,7 +18,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | FIND-VIEWS | Saved views / custom inbox sections | local | I8 | - |
 | FIND-REPO-LIST | Per-repo PR list with filters | search `repo:` | I8 | - |
 | NOTIF-FEED | Notifications as a change feed (304s free) | REST `/notifications` | M1a | built |
-| NOTIF-DONE | Mark done also clears the GitHub notification | `DELETE /notifications/threads/:id` | M1b | - |
+| NOTIF-DONE | Mark done also clears the GitHub notification | `DELETE /notifications/threads/:id` | M1b | built |
 | NOTIF-SUBSCRIBE | Subscribe / unsubscribe / mute a PR | thread subscription | I8 | - |
 | NOTIF-READ | Mark read / unread | `PATCH` thread (read only; no unread API) | I8 | - |
 | NOTIF-SAVED | "Saved" notifications | none | gap | - |
@@ -41,12 +41,12 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | CONV-SAVED-REPLIES | Saved replies | read-only `viewer.savedReplies` (needs `read:user`) | I10 | - |
 | CONV-UPLOAD | Paste or drop images and files | undocumented attachments endpoint | gap | - |
 | META-TITLE | Edit title and body | `updatePullRequest` | I6 | sandbox |
-| META-REVIEWERS | Request / re-request / remove reviewers (users, teams, Copilot), suggested reviewers | REST `requested_reviewers` (users, and teams already requested); team listing, Copilot and suggestions not yet | I6 | sandbox |
+| META-REVIEWERS | Request / re-request / remove reviewers (users, teams, Copilot), suggested reviewers | `requestReviewsByLogin` (users, team slugs, bots), REST removal, `suggestedReviewerActors`; listing every team needs org access, so only already-requested teams are offered | I6 | sandbox |
 | META-ASSIGNEES | Assignees | REST issue `assignees` | I6 | sandbox |
 | META-LABELS | Labels | REST issue `labels` | I6 | sandbox |
 | META-MILESTONE | Milestone | REST issue `milestone` | I6 | sandbox |
 | META-PROJECTS | Projects (v2) fields | `addProjectV2ItemById` (needs `project` scope) | I10 | - |
-| META-LINKED | Linked issues (Development) | closing keywords / timeline | I6 | - |
+| META-LINKED | Linked issues (Development) | `closingIssuesReferences` (shown); link by writing `Closes #n` in the description, as GitHub's API offers no other way | I6 | sandbox |
 | LIFE-DRAFT | Draft ⇄ ready for review | `convertPullRequestToDraft` / `markPullRequestReadyForReview` | I6 | sandbox |
 | LIFE-CLOSE | Close / reopen | `closePullRequest` / `reopenPullRequest` | I6 | sandbox |
 | LIFE-BASE | Change base branch | `updatePullRequest` | I6 | sandbox |
@@ -88,7 +88,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | THREAD-NAV | Jump between open threads | client | M1b | built |
 | REVIEW-DISMISS | Dismiss someone's review | `dismissPullRequestReview` | I6 | sandbox |
 | CODEOWNERS | Who owns what, code-owner requests | CODEOWNERS parse, `asCodeOwner` | I5 | - |
-| COPILOT-REVIEW | Request a Copilot review | `requestReviewsByLogin` (bot) | I6 | - |
+| COPILOT-REVIEW | Request a Copilot review | `requestReviewsByLogin` bot `copilot-pull-request-reviewer`, offered when GitHub suggests it (the sandbox accounts don't have Copilot review, so not live-tested) | I6 | built |
 
 ## D. Checks
 

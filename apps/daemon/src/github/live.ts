@@ -13,6 +13,7 @@ import type {
   Person,
   ReactionContent,
   Revision,
+  SuggestedReviewer,
 } from "@pier/core/wire";
 
 import type { GitHubTransport, RestResponse } from "./client";
@@ -40,6 +41,7 @@ import {
   PrDetailQuery,
   RemoveReactionMutation,
   ReopenPrMutation,
+  RequestReviewsMutation,
   ReplyMutation,
   ResolveThreadMutation,
   ReviewsByAuthorQuery,
@@ -47,6 +49,7 @@ import {
   StartReviewMutation,
   SubmitPendingReviewMutation,
   SubmitReviewMutation,
+  SuggestedReviewersQuery,
   SweepQuery,
   UnmarkViewedMutation,
   UnminimizeMutation,
@@ -66,6 +69,7 @@ import type {
   MetadataField,
   NotificationPoll,
   NotificationThread,
+  PrRef,
   ReviewSummary,
   SearchHit,
   SubmitReviewInput,
@@ -485,11 +489,12 @@ export class LiveGitHub implements GitHubPort {
   }
 
   async editMetadata(
-    repo: string,
-    number: number,
+    { id: prId, repo, number }: PrRef,
     field: MetadataField,
-    { add, remove }: { add: string[]; remove: string[] },
+    change: { add: string[]; remove: string[] },
   ): Promise<void> {
+    let { add } = change;
+    const { remove } = change;
     if (field === "labels") {
       if (add.length > 0)
         await this.write("POST", `/repos/${repo}/issues/${number}/labels`, { labels: add });
@@ -504,6 +509,20 @@ export class LiveGitHub implements GitHubPort {
       }
       return;
     }
+    if (field === "reviewers" && add.length > 0) {
+      // By login, so people, teams and bots (Copilot) are asked in one write.
+      await this.client.graphql(
+        RequestReviewsMutation,
+        {
+          prId,
+          users: add.filter((login) => !login.includes("/") && !login.startsWith("bot:")),
+          teams: add.flatMap((login) => (login.includes("/") ? (login.split("/")[1] ?? []) : [])),
+          bots: add.flatMap((login) => (login.startsWith("bot:") ? login.slice(4) : [])),
+        },
+        "interactive",
+      );
+      add = [];
+    }
     const path =
       field === "assignees"
         ? `/repos/${repo}/issues/${number}/assignees`
@@ -513,7 +532,13 @@ export class LiveGitHub implements GitHubPort {
       field === "assignees"
         ? { assignees: logins }
         : {
-            reviewers: logins.filter((login) => !login.includes("/")),
+            reviewers: logins.flatMap((login) =>
+              login.includes("/")
+                ? []
+                : login.startsWith("bot:")
+                  ? `${login.slice(4)}[bot]`
+                  : login,
+            ),
             team_reviewers: logins.flatMap((login) => login.split("/")[1] ?? []),
           };
     if (add.length > 0) await this.write("POST", path, body(add));
@@ -605,6 +630,25 @@ export class LiveGitHub implements GitHubPort {
       `/repos/${repo}/branches`,
     );
     return branches.map((b) => b.name);
+  }
+
+  async suggestedReviewers(prId: string): Promise<SuggestedReviewer[]> {
+    const data = await this.client.graphql(SuggestedReviewersQuery, { prId }, "interactive");
+    const actors =
+      data.node && "suggestedReviewerActors" in data.node
+        ? data.node.suggestedReviewerActors
+        : null;
+    return (actors?.nodes ?? []).flatMap((node) => {
+      const reviewer = node?.reviewer;
+      if (!reviewer || !("login" in reviewer)) return [];
+      return [
+        {
+          login: reviewer.login,
+          avatarUrl: reviewer.avatarUrl,
+          bot: reviewer.__typename === "Bot",
+        },
+      ];
+    });
   }
 
   async history(subjectId: string): Promise<Revision[]> {

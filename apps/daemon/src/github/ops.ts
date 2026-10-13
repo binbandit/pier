@@ -301,6 +301,17 @@ export const PrDetailQuery = graphql(`
         viewerCanUpdate
         locked
         activeLockReason
+        closingIssuesReferences(first: 10) {
+          nodes {
+            number
+            title
+            url
+            state
+            repository {
+              nameWithOwner
+            }
+          }
+        }
         reactionGroups {
           content
           viewerHasReacted
@@ -1262,6 +1273,48 @@ export const HistoryQuery = graphql(`
             }
           }
         }
+      }
+    }
+  }
+`);
+
+export const SuggestedReviewersQuery = graphql(`
+  query SuggestedReviewers($prId: ID!) {
+    node(id: $prId) {
+      ... on PullRequest {
+        suggestedReviewerActors(first: 20) {
+          nodes {
+            reviewer {
+              __typename
+              ... on User {
+                login
+                avatarUrl(size: 64)
+              }
+              ... on Bot {
+                login
+                avatarUrl(size: 64)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`);
+
+export const RequestReviewsMutation = graphql(`
+  mutation RequestReviews($prId: ID!, $users: [String!], $teams: [String!], $bots: [String!]) {
+    requestReviewsByLogin(
+      input: {
+        pullRequestId: $prId
+        userLogins: $users
+        teamSlugs: $teams
+        botLogins: $bots
+        union: true
+      }
+    ) {
+      pullRequest {
+        id
       }
     }
   }

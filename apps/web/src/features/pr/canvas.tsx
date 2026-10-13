@@ -1,7 +1,8 @@
 import type { SelectedLineRange } from "@pierre/diffs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { Lock, Milestone, UserRound, Users } from "lucide-react";
+import { clsx } from "clsx";
+import { CircleDot, Lock, Milestone, UserRound, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { errorText, markDone, openOnGitHub, rerun } from "@/features/actions";
@@ -519,7 +520,8 @@ function Loaded({ pr }: { pr: PrView }) {
 
 function Header({ pr }: { pr: PrView }) {
   const triage =
-    pr.reviewers.length + pr.assignees.length + pr.labels.length > 0 || pr.milestone !== null;
+    pr.reviewers.length + pr.assignees.length + pr.labels.length + pr.linkedIssues.length > 0 ||
+    pr.milestone !== null;
   return (
     <header>
       <p className="font-code text-meta text-faint">
@@ -608,6 +610,26 @@ function Header({ pr }: { pr: PrView }) {
             <span aria-label="Milestone" className="flex items-center gap-2">
               <Milestone aria-hidden size={14} className="text-off" />
               {pr.milestone.title}
+            </span>
+          )}
+          {pr.linkedIssues.length > 0 && (
+            <span aria-label="Closes" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <CircleDot aria-hidden size={14} className="text-off" />
+              {pr.linkedIssues.map((issue) => (
+                <a
+                  key={issue.url}
+                  href={issue.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  title={issue.title}
+                  className={clsx(
+                    "hover:text-fg",
+                    issue.state === "CLOSED" && "text-faint line-through",
+                  )}
+                >
+                  {issue.repo === pr.repo ? "" : issue.repo}#{issue.number}
+                </a>
+              ))}
             </span>
           )}
         </div>

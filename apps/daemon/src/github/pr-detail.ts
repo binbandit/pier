@@ -1,5 +1,6 @@
 import type {
   Actor,
+  LinkedIssue,
   LockReason,
   PendingReview,
   Reaction,
@@ -22,6 +23,7 @@ export type PrDetail = {
   reactions: Reaction[];
   canEdit: boolean;
   locked: string | null;
+  linkedIssues: LinkedIssue[];
   viewerLatestReview: {
     state: string;
     commitOid: string | null;
@@ -192,6 +194,19 @@ export function toPrDetail(node: Node): PrDetail {
     bodyHTML: node.bodyHTML,
     reactions: reactions(node.reactionGroups),
     canEdit: node.viewerCanUpdate,
+    linkedIssues: (node.closingIssuesReferences?.nodes ?? []).flatMap((issue) =>
+      issue
+        ? [
+            {
+              repo: issue.repository.nameWithOwner,
+              number: issue.number,
+              title: issue.title,
+              url: issue.url,
+              state: issue.state === "OPEN" ? ("OPEN" as const) : ("CLOSED" as const),
+            },
+          ]
+        : [],
+    ),
     locked: node.locked ? (LOCK_REASONS[node.activeLockReason ?? ""] ?? "locked") : null,
     viewerLatestReview: node.viewerLatestReview
       ? {
