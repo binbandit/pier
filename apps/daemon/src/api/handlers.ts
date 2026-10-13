@@ -46,6 +46,9 @@ export function createHandlers(app: App): Handlers {
       commandIds: app.review.setViewed(prId, path, viewed),
     }),
     comment: ({ prId, body }) => ({ commandIds: app.review.comment(prId, body) }),
+    checks: ({ repo, number }) => app.review.checks(repo, number),
+    checkLog: ({ repo, jobId }) => app.review.checkLog(repo, jobId),
+    rerunFailed: ({ prIds }) => app.review.rerunFailed(prIds),
     flight: () => app.views.flight(),
     log: ({ limit }) => app.outbox.log(limit ?? 100),
 

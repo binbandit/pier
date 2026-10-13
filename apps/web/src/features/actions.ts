@@ -49,3 +49,18 @@ export function openOnGitHub(url: string): void {
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+export async function rerun(prIds: string[]): Promise<void> {
+  try {
+    const { runs } = await rpc("rerunFailed", { prIds });
+    useUi.getState().toast({
+      text:
+        runs === 0
+          ? "Nothing failed to re-run"
+          : `Re-running ${runs === 1 ? "1 failed run" : `${runs} failed runs`}`,
+      tone: runs === 0 ? "neutral" : "ok",
+    });
+  } catch (error) {
+    useUi.getState().toast({ text: errorText(error), tone: "bad" });
+  }
+}

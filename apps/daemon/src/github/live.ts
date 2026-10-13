@@ -1,6 +1,6 @@
 import type { components } from "@octokit/openapi-types";
 
-import type { DiffFile } from "@pier/core/wire";
+import type { CheckLog, CheckRunView, DiffFile } from "@pier/core/wire";
 
 import type { GitHubTransport } from "./client";
 import { GitHubError } from "./client";
@@ -36,6 +36,8 @@ type RestThread = components["schemas"]["thread"];
 type RestFile = components["schemas"]["diff-entry"];
 
 const SEARCH_CAP = 1000;
+/** Lines of a failing job's log worth showing; the cause is almost always near the end. */
+const LOG_TAIL = 150;
 const HYDRATE_BATCH = 25;
 // 100 per query is allowed, but mergeability is computed on read and big batches hit GitHub's
 // 10-second limit (502). 50 keeps each sweep well under it for the same point cost.
@@ -277,6 +279,57 @@ export class LiveGitHub implements GitHubPort {
     );
   }
 
+  async checkRuns(repo: string, oid: string): Promise<CheckRunView[]> {
+    const response = await this.client.rest<{ check_runs: components["schemas"]["check-run"][] }>({
+      path: `/repos/${repo}/commits/${oid}/check-runs?per_page=100&filter=latest`,
+      cache: true,
+      priority: "interactive",
+    });
+    return response.data.check_runs.map((run) => {
+      // Actions checks link to their job: /owner/repo/actions/runs/<run>/job/<job>.
+      const ids = /\/actions\/runs\/(\d+)\/job\/(\d+)/.exec(run.details_url ?? run.html_url ?? "");
+      return {
+        id: Number(run.id),
+        name: run.name,
+        state: checkRunState(run.status, run.conclusion),
+        jobId: ids?.[2] ? Number(ids[2]) : null,
+        runId: ids?.[1] ? Number(ids[1]) : null,
+        url: run.html_url ?? run.details_url ?? "",
+        startedAt: run.started_at ?? null,
+        completedAt: run.completed_at ?? null,
+      };
+    });
+  }
+
+  async jobLog(repo: string, jobId: number): Promise<CheckLog | null> {
+    // GitHub answers with a redirect to a short-lived storage URL, which must be fetched without
+    // our token (it would be sent to a third-party host otherwise).
+    const target = await this.client.location(`/repos/${repo}/actions/jobs/${jobId}/logs`);
+    if (!target) return null;
+    const response = await fetch(target, { signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) return null;
+    const all = (await response.text())
+      .split("\n")
+      .map((line) => line.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z ?/, ""));
+    const lines = all.slice(-LOG_TAIL);
+    const errors = lines.flatMap((line, i) => (line.includes("##[error]") ? [i] : []));
+    return {
+      lines: lines.map((line) =>
+        line.replace("##[error]", "").replace(/^##\[(group|endgroup|warning|notice)\]/, ""),
+      ),
+      errors,
+      url: `https://github.com/${repo}/actions/runs/${jobId}`,
+    };
+  }
+
+  async rerunFailedJobs(repo: string, runId: number): Promise<void> {
+    await this.client.rest({
+      method: "POST",
+      path: `/repos/${repo}/actions/runs/${runId}/rerun-failed-jobs`,
+      priority: "interactive",
+    });
+  }
+
   async releaseDate(repo: string, tag: string): Promise<string | null> {
     try {
       const response = await this.client.rest<components["schemas"]["release"]>({
@@ -383,6 +436,14 @@ async function splitOnTimeout<I, O>(items: I[], run: (part: I[]) => Promise<O[]>
       ...(await splitOnTimeout(items.slice(middle), run)),
     ];
   }
+}
+
+function checkRunState(status: string, conclusion: string | null): CheckRunView["state"] {
+  if (status !== "completed") return "pending";
+  if (conclusion === "success") return "success";
+  if (conclusion === "neutral") return "neutral";
+  if (conclusion === "skipped" || conclusion === "stale") return "skipped";
+  return "failure";
 }
 
 function chunks<T>(items: T[], size: number): T[][] {

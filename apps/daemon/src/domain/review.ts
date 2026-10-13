@@ -3,7 +3,16 @@ import type { PrDetail } from "@/github/pr-detail";
 import type { CommandPayload, NewCommand, Outbox } from "@/outbox/outbox";
 import type { Planner } from "@/outbox/planner";
 import type { SyncEngine } from "@/sync/engine";
-import type { DiffRange, PrDiff, PrView, Side, Thread, ViewedState } from "@pier/core/wire";
+import type {
+  CheckLog,
+  CheckRunView,
+  DiffRange,
+  PrDiff,
+  PrView,
+  Side,
+  Thread,
+  ViewedState,
+} from "@pier/core/wire";
 
 import type { Details } from "./details";
 import type { Drafts } from "./drafts";
@@ -287,6 +296,39 @@ export class ReviewService {
 
   comment(prId: string, body: string): string[] {
     return this.enqueue(this.require(prId), "comment", { body }, 0);
+  }
+
+  async checks(repo: string, number: number): Promise<CheckRunView[]> {
+    const record = this.find(repo, number);
+    const port = record && this.deps.ports.get(record.reader);
+    if (!record || !port) return [];
+    return port.checkRuns(repo, record.doc.headRefOid);
+  }
+
+  async checkLog(repo: string, jobId: number): Promise<CheckLog | null> {
+    const record = [...this.deps.model.all()].find((r) => r.doc.repo === repo);
+    const port = record && this.deps.ports.get(record.reader);
+    return port ? port.jobLog(repo, jobId) : null;
+  }
+
+  /** Re-runs the failed jobs of every failing Actions run on these PRs' heads. */
+  async rerunFailed(prIds: string[]): Promise<{ commandIds: string[]; runs: number }> {
+    const commandIds: string[] = [];
+    let runs = 0;
+    for (const prId of prIds) {
+      const record = this.deps.model.get(prId);
+      const port = record && this.deps.ports.get(record.reader);
+      if (!record || !port) continue;
+      const failing = (await port.checkRuns(record.doc.repo, record.doc.headRefOid)).filter(
+        (run) => run.state === "failure" && run.runId !== null,
+      );
+      for (const runId of new Set(failing.map((run) => run.runId ?? 0))) {
+        commandIds.push(...this.enqueue(record, "rerun-failed", { runId }, 0));
+        runs++;
+      }
+      this.deps.sync.nudge([prId]);
+    }
+    return { commandIds, runs };
   }
 
   // -------------------------------------------------------------------------

@@ -68,6 +68,8 @@ export interface GitHubTransport {
   readonly login: string;
   graphql<R, V>(doc: TypedDocumentString<R, V>, variables: V, priority?: Priority): Promise<R>;
   rest<T>(request: RestRequest): Promise<RestResponse<T>>;
+  /** Where a GET redirects to (e.g. a job log's storage URL), without following it. */
+  location(path: string): Promise<string | null>;
   rates(): { graphql: RateWindow | null; core: RateWindow | null };
 }
 
@@ -187,6 +189,21 @@ export class GitHubClient implements GitHubTransport {
     }
   }
 
+  async location(path: string): Promise<string | null> {
+    await this.acquireRestSlot();
+    try {
+      const response = await this.send(`${API}${path}`, {
+        method: "GET",
+        headers: { accept: "application/vnd.github+json" },
+        timeoutMs: 20_000,
+        manualRedirect: true,
+      });
+      return response.headers.get("location");
+    } finally {
+      this.releaseRestSlot();
+    }
+  }
+
   // -------------------------------------------------------------------------
 
   private async send(
@@ -197,6 +214,8 @@ export class GitHubClient implements GitHubTransport {
       body?: string | undefined;
       timeoutMs: number;
       allow304?: boolean;
+      /** Return 3xx responses instead of following them. */
+      manualRedirect?: boolean;
     },
     retriedAuth = false,
   ): Promise<Response> {
@@ -216,6 +235,7 @@ export class GitHubClient implements GitHubTransport {
         },
         body: init.body ?? null,
         signal: AbortSignal.timeout(init.timeoutMs),
+        redirect: init.manualRedirect ? "manual" : "follow",
       });
     } catch (error) {
       throw new GitHubError(`network error: ${String(error)}`, "network", null);
@@ -223,6 +243,7 @@ export class GitHubClient implements GitHubTransport {
 
     this.recordRate(response.headers);
     if (response.ok || (init.allow304 && response.status === 304)) return response;
+    if (init.manualRedirect && response.status >= 300 && response.status < 400) return response;
 
     // A revoked or rotated token: re-read it from gh once, then give up.
     if (response.status === 401 && !retriedAuth) {

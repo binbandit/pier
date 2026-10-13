@@ -96,7 +96,8 @@ export type CommandKind =
   | "unresolve"
   | "viewed"
   | "unviewed"
-  | "notification-done";
+  | "notification-done"
+  | "rerun-failed";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -382,6 +383,26 @@ export type PrDiff = {
   fallback: string | null;
   fromOid: string | null;
   toOid: string;
+};
+
+export type CheckRunView = {
+  id: number;
+  name: string;
+  state: CheckRun["state"];
+  /** The Actions job behind this check, when it is one (for logs and re-runs). */
+  jobId: number | null;
+  runId: number | null;
+  url: string;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+export type CheckLog = {
+  /** The last lines of the job's log, timestamps stripped. */
+  lines: string[];
+  /** Indexes into `lines` that GitHub marked as errors. */
+  errors: number[];
+  url: string;
 };
 
 // ---------------------------------------------------------------------------

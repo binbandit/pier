@@ -26,6 +26,8 @@ export type CommandPayload = {
   path?: string;
   /** The bumps an approval decided on, so a waiting one can check a rebase didn't change them. */
   bumpKeys?: string[];
+  /** The Actions run to re-run the failed jobs of. */
+  runId?: number;
 };
 
 /** Kinds that create content on GitHub and so count against its 500-per-hour limit. */
@@ -539,6 +541,8 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
       return port.setViewed(command.prId, payload.path ?? "", command.kind === "viewed");
     case "notification-done":
       return port.markNotificationDone(payload.threadId ?? "");
+    case "rerun-failed":
+      return port.rerunFailedJobs(command.repo, payload.runId ?? 0);
     default:
       return Promise.reject(new Error(`unknown command kind ${String(command.kind)}`));
   }

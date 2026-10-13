@@ -6,9 +6,9 @@ import { Ledger, type Tick } from "@/components/ledger";
 import { Markdown } from "@/components/markdown";
 import { Row } from "@/components/rows";
 import { DiffFiles } from "@/diff/adapter";
-import { openOnGitHub, propose } from "@/features/actions";
+import { openOnGitHub, propose, rerun } from "@/features/actions";
 import { useCommands } from "@/keys/registry";
-import { ago, plural } from "@/lib/format";
+import { plural, since } from "@/lib/format";
 import { q } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
 import { Avatar } from "@/ui/avatar";
@@ -143,6 +143,17 @@ function Loaded({ view }: { view: GroupView }) {
           },
         },
         {
+          id: "group.rerun",
+          title: "Re-run failed checks",
+          keys: ["f r"],
+          scope: "surface",
+          group: "Checks",
+          run: () => {
+            const targets = chosen ?? (current ? [current] : []);
+            void rerun(targets.map((r) => r.prId));
+          },
+        },
+        {
           id: "group.github",
           title: "Open on github.com",
           keys: ["shift+o"],
@@ -192,7 +203,7 @@ function Loaded({ view }: { view: GroupView }) {
             <dt className="text-faint">Published</dt>
             <dd className="text-muted">
               {release?.publishedAt
-                ? `${ago(release.publishedAt)} ago, ${new Date(release.publishedAt).toLocaleDateString()}`
+                ? `${since(release.publishedAt)}, ${new Date(release.publishedAt).toLocaleDateString()}`
                 : "Unknown"}
             </dd>
             {release?.links.slice(0, 2).map((link) => (

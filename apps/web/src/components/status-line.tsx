@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { activeCommands, useKeys } from "@/keys/registry";
 import { useConnection } from "@/lib/events";
-import { ago, plural } from "@/lib/format";
+import { plural, since } from "@/lib/format";
 import { q } from "@/lib/rpc";
 import { Avatar } from "@/ui/avatar";
 import { Dot } from "@/ui/dot";
@@ -120,8 +120,7 @@ export function StatusLine() {
 }
 
 function syncedText(iso: string, now: number): string {
-  const age = ago(iso, now);
-  return age === "now" ? "Synced just now" : `Synced ${age} ago`;
+  return `Synced ${since(iso, now)}`;
 }
 
 export function useNow(intervalMs: number): number {

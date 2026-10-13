@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Html, Markdown } from "@/components/markdown";
 import { errorText } from "@/features/actions";
-import { ago } from "@/lib/format";
+import { since } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
@@ -79,7 +79,7 @@ export function ThreadCard({
                 <Avatar login={comment.author.login} url={comment.author.avatarUrl} size={16} />
               )}
               <span className="text-fg">{comment.author?.login ?? "ghost"}</span>
-              <span className="text-faint">{ago(comment.createdAt)} ago</span>
+              <span className="text-faint">{since(comment.createdAt)}</span>
               {comment.edited && <span className="text-faint">edited</span>}
             </div>
             <Html html={comment.bodyHTML} className="prose-pier text-ui" />

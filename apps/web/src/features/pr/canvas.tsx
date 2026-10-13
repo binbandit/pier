@@ -1,21 +1,21 @@
 import type { SelectedLineRange } from "@pierre/diffs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { clsx } from "clsx";
 import { useEffect, useRef, useState } from "react";
 
 import { Html } from "@/components/markdown";
-import { errorText, markDone, openOnGitHub } from "@/features/actions";
+import { errorText, markDone, openOnGitHub, rerun } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
-import { ago, plural } from "@/lib/format";
+import { plural, since } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
-import { Dot, type Tone } from "@/ui/dot";
+import { Dot } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
 import type { DiffRange, PrView, QueueItem } from "@pier/core/wire";
 
 import { ActivityRail } from "./activity";
+import { Checks } from "./checks";
 import { FileTree } from "./file-tree";
 import { type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
@@ -24,13 +24,6 @@ import { type ReviewEvent, ReviewPanel } from "./review-panel";
 // files (source first) with conversation inline. Re-reviews open on what changed since you last
 // looked. Deciding moves you to the next PR waiting on you.
 
-const CHECK_TONE: Record<string, Tone> = {
-  success: "ok",
-  failure: "bad",
-  pending: "warn",
-  neutral: "faint",
-  skipped: "faint",
-};
 const WIDE = 1600;
 
 export function PrCanvas({ repo, number }: { repo: string; number: number }) {
@@ -302,6 +295,14 @@ function Loaded({ pr }: { pr: PrView }) {
       },
     },
     {
+      id: "pr.rerun",
+      title: "Re-run failed checks",
+      keys: ["f r"],
+      scope: "surface",
+      group: "Checks",
+      run: () => void rerun([pr.id]),
+    },
+    {
       id: "pr.github",
       title: "Open on github.com",
       keys: ["shift+o"],
@@ -335,6 +336,7 @@ function Loaded({ pr }: { pr: PrView }) {
         <div ref={streamRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <div className="px-8 pt-8 pb-24">
             <Header pr={pr} />
+            <Checks pr={pr} />
             <TurnLine pr={pr} range={range} fallback={diff?.fallback ?? null} />
             {pr.bodyHTML || pr.body.trim() ? (
               <section className="mt-6 border-t border-line pt-6">
@@ -441,22 +443,6 @@ function Header({ pr }: { pr: PrView }) {
           <span className="text-faint">{pr.state === "MERGED" ? "Merged" : "Closed"}</span>
         )}
       </div>
-      {pr.checks.contexts.length > 0 && (
-        <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-meta">
-          {pr.checks.contexts.map((check) => (
-            <li
-              key={check.name}
-              className={clsx(
-                "flex items-center gap-2",
-                check.state === "failure" ? "text-bad" : "text-muted",
-              )}
-            >
-              <Dot tone={CHECK_TONE[check.state] ?? "faint"} />
-              {check.name}
-            </li>
-          ))}
-        </ul>
-      )}
     </header>
   );
 }
@@ -478,7 +464,7 @@ function TurnLine({
   let text: string;
   if (pr.approvedByYou) text = "You approved this commit.";
   else if (pushedSince && lastReview)
-    text = `Your turn: ${pr.author?.login ?? "the author"} pushed after your review ${ago(lastReview.at)} ago.`;
+    text = `Your turn: ${pr.author?.login ?? "the author"} pushed after your review ${since(lastReview.at)}.`;
   else if (pr.reviewers.some((r) => r.login === pr.account && r.state === "requested"))
     text = "Your turn: your review was requested.";
   else text = "";

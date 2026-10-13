@@ -10,6 +10,7 @@ function flakyTransport(limit: number) {
     login: "binbandit",
     rates: () => ({ graphql: null, core: null }),
     rest: () => Promise.reject(new Error("not used")),
+    location: () => Promise.resolve(null),
     graphql: <R>(_doc: unknown, variables: unknown): Promise<R> => {
       const ids = (variables as { ids: string[] }).ids;
       batches.push(ids.length);

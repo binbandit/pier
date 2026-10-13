@@ -2,6 +2,8 @@ import { type } from "arktype";
 
 import type {
   AppStatus,
+  CheckLog,
+  CheckRunView,
   FlightItem,
   GroupView,
   LogEntry,
@@ -48,6 +50,9 @@ export const inputs = {
   resolveThread: type({ prId: "string", threadId: "string", resolved: "boolean" }),
   setViewed: type({ prId: "string", path: "string", viewed: "boolean" }),
   comment: type({ prId: "string", body: "string > 0" }),
+  checks: type({ repo: "string", number: "number.integer > 0" }),
+  checkLog: type({ repo: "string", jobId: "number.integer > 0" }),
+  rerunFailed: type({ prIds: "string[] > 0" }),
   flight: type({}),
   log: type({ "limit?": "1 <= number.integer <= 500" }),
   planAction: type({
@@ -76,6 +81,9 @@ export type Outputs = {
   resolveThread: { commandIds: string[] };
   setViewed: { commandIds: string[] };
   comment: { commandIds: string[] };
+  checks: CheckRunView[];
+  checkLog: CheckLog | null;
+  rerunFailed: { commandIds: string[]; runs: number };
   flight: FlightItem[];
   log: LogEntry[];
   planAction: PlanPreview;

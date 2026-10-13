@@ -15,6 +15,12 @@ export function ago(iso: string, now = Date.now()): string {
   return `${Math.floor(days / 365)}y`;
 }
 
+/** "just now", "5m ago", "3h ago": a relative time as it reads in a sentence. */
+export function since(iso: string, now = Date.now()): string {
+  const age = ago(iso, now);
+  return age === "now" ? "just now" : `${age} ago`;
+}
+
 export function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
 }

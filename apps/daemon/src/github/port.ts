@@ -1,4 +1,4 @@
-import type { DiffFile } from "@pier/core/wire";
+import type { CheckLog, CheckRunView, DiffFile } from "@pier/core/wire";
 
 import type { RateWindow } from "./client";
 import type { PrDetail } from "./pr-detail";
@@ -76,6 +76,11 @@ export interface GitHubPort {
   setViewed(prId: string, path: string, viewed: boolean): Promise<void>;
   /** Recent conversation and thread comments, for checking whether an interrupted post landed. */
   recentComments(prId: string): Promise<{ id: string; body: string; author: string | null }[]>;
+  /** Check runs on a commit, with their Actions job and run ids where they have them. */
+  checkRuns(repo: string, oid: string): Promise<CheckRunView[]>;
+  /** The tail of an Actions job's log. */
+  jobLog(repo: string, jobId: number): Promise<CheckLog | null>;
+  rerunFailedJobs(repo: string, runId: number): Promise<void>;
   /** When a GitHub release was published, or null if the tag has no release. */
   releaseDate(repo: string, tag: string): Promise<string | null>;
   rates(): { graphql: RateWindow | null; core: RateWindow | null };

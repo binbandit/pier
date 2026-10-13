@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { Html } from "@/components/markdown";
 import { errorText } from "@/features/actions";
-import { ago } from "@/lib/format";
+import { ago, since } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
@@ -108,13 +108,13 @@ function Entry({ entry }: { entry: TimelineEntry }) {
           <span className="font-code">
             {entry.before?.slice(0, 7) ?? "?"} → {entry.after?.slice(0, 7) ?? "?"}
           </span>
-          , {ago(entry.at)} ago
+          , {since(entry.at)}
         </p>
       );
     default:
       return (
         <p className="text-meta text-faint">
-          {entry.actor ?? "Someone"} {entry.text}, {ago(entry.at)} ago
+          {entry.actor ?? "Someone"} {entry.text}, {since(entry.at)}
         </p>
       );
   }
