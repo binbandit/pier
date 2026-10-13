@@ -16,7 +16,7 @@ export const paths = {
 export const PORT = Number(process.env.PIER_PORT ?? 4477);
 export const HOST = "127.0.0.1";
 export const ORIGIN = `http://${HOST}:${PORT}`;
-/** The Vite dev server, allowed as an extra origin only when running with --dev. */
-export const DEV_ORIGIN = "http://127.0.0.1:4478";
+/** The Vite dev server always runs one port above the daemon. Allowed only with --dev. */
+export const DEV_HOST = `${HOST}:${PORT + 1}`;
 
 export const VERSION = "0.1.0";

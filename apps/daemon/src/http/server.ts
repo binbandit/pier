@@ -4,7 +4,7 @@ import { extname, join, normalize } from "node:path";
 import { type } from "arktype";
 
 import type { Handlers } from "@/api/handlers";
-import { DEV_ORIGIN, HOST, PORT } from "@/config";
+import { DEV_HOST, HOST, PORT } from "@/config";
 import { inputs, type ProcedureName } from "@pier/core/contract";
 
 import { embeddedAssets } from "./assets";
@@ -30,10 +30,8 @@ export function serve(options: ServerOptions) {
   const port = options.port ?? PORT;
   const self = `${HOST}:${port}`;
   const config: GuardConfig = {
-    hosts: options.dev
-      ? [self, `localhost:${port}`, "127.0.0.1:4478"]
-      : [self, `localhost:${port}`],
-    origins: options.dev ? [`http://${self}`, DEV_ORIGIN] : [`http://${self}`],
+    hosts: options.dev ? [self, `localhost:${port}`, DEV_HOST] : [self, `localhost:${port}`],
+    origins: options.dev ? [`http://${self}`, `http://${DEV_HOST}`] : [`http://${self}`],
   };
 
   return Bun.serve({

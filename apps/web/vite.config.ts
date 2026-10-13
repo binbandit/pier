@@ -6,8 +6,11 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// In dev, Vite serves the app on :4478 and proxies the API to the daemon on :4477.
+// In dev, Vite serves the app one port above the daemon (4478 for the default 4477) and proxies
+// the API to it. PIER_PORT moves the pair, so two dev setups can run side by side.
 // In production the daemon serves the built files itself.
+const daemonPort = Number(process.env.PIER_PORT ?? 4477);
+
 export default defineConfig({
   plugins: [
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
@@ -19,8 +22,11 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   server: {
+    host: "127.0.0.1",
+    port: daemonPort + 1,
+    strictPort: true,
     proxy: {
-      "/api": { target: "http://127.0.0.1:4477", changeOrigin: false },
+      "/api": { target: `http://127.0.0.1:${daemonPort}`, changeOrigin: false },
     },
   },
   build: {

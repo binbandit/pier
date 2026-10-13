@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 4478 --strictPort",
+    "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json"

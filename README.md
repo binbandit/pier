@@ -27,7 +27,7 @@ bun run --filter @pier/web dev          # app on :4478 with hot reload
 bun run check                           # format, lint, typecheck, tests
 ```
 
-`PIER_HOME` keeps a separate data folder and `PIER_SANDBOX=<owner>` refuses every write outside that owner's repos, which is how live end-to-end runs stay off real work.
+`PIER_HOME` keeps a separate data folder and `PIER_SANDBOX=<owner>` refuses every write outside that owner's repos, which is how live end-to-end runs stay off real work. `PIER_PORT` moves the daemon, and the app follows one port above it, so a sandbox setup can run beside your own.
 
 ## Docs
 
