@@ -17,7 +17,7 @@ export function When({
 }) {
   const relative = suffix || date ? since(at, now) : ago(at, now);
   return (
-    <time dateTime={at} title={new Date(at).toLocaleString()}>
+    <time dateTime={at} title={new Date(at).toLocaleString()} className="whitespace-nowrap">
       {date ? `${relative}, ${new Date(at).toLocaleDateString()}` : relative}
     </time>
   );

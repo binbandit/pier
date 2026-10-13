@@ -98,10 +98,12 @@ export function Inbox({ split }: { split: Split }) {
         },
         {
           id: "inbox.next-split",
-          title: `Go to ${TITLES[NEXT[split]]}`,
+          title: `Next split: ${TITLES[NEXT[split]]}`,
           keys: ["tab"],
           scope: "surface",
           group: "Go to",
+          // The palette already has "Go to …" for every split.
+          hidden: true,
           run: () => void navigate({ to: "/inbox/$split", params: { split: NEXT[split] } }),
         },
       ];
