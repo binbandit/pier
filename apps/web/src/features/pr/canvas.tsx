@@ -12,11 +12,11 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { errorText, markDone, openOnGitHub, takeBack } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
-import { plural, since } from "@/lib/format";
+import { plural } from "@/lib/format";
 import { fileAnchor, lineLink, parseLink } from "@/lib/permalink";
 import { q, qLive, rpc } from "@/lib/rpc";
 import { usePrefs } from "@/stores/prefs";
@@ -24,6 +24,7 @@ import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
+import { When } from "@/ui/when";
 import type { DiffView, PrView, QueueItem } from "@pier/core/wire";
 
 import { ActivityRail } from "./activity";
@@ -995,13 +996,13 @@ function Header({ pr }: { pr: PrView }) {
         )}
         {pr.subscription === "IGNORED" && (
           <span className="flex items-center gap-1.5 text-faint" title="Ignored on github.com">
-            <BellOff aria-hidden size={13} className="text-off" />
+            <BellOff aria-hidden size={14} className="text-off" />
             Muted
           </span>
         )}
         {pr.subscription === "SUBSCRIBED" && (
           <span className="flex items-center gap-1.5 text-faint" title="s n changes it">
-            <Bell aria-hidden size={13} className="text-off" />
+            <Bell aria-hidden size={14} className="text-off" />
             Watching
           </span>
         )}
@@ -1010,7 +1011,7 @@ function Header({ pr }: { pr: PrView }) {
             className="flex items-center gap-1.5 text-faint"
             title="Only people who can write to the repo can comment"
           >
-            <Lock aria-hidden size={13} className="text-off" />
+            <Lock aria-hidden size={14} className="text-off" />
             Locked{pr.locked !== "locked" && ` as ${pr.locked}`}
           </span>
         )}
@@ -1108,15 +1109,19 @@ function TurnLine({ pr, view, fallback }: { pr: PrView; view: DiffView; fallback
     .toReversed()
     .find((e) => e.kind === "review" && e.author?.login === pr.account);
   const pushedSince = pr.lastReviewedOid && pr.lastReviewedOid !== pr.headRefOid;
-  let text: string;
+  let text: ReactNode = null;
   // A merged or closed PR isn't anyone's turn.
-  if (pr.state !== "OPEN") text = "";
+  if (pr.state !== "OPEN") text = null;
   else if (pr.approvedByYou) text = "You approved this commit.";
   else if (pushedSince && lastReview)
-    text = `Your turn: ${pr.author?.login ?? "the author"} pushed after your review ${since(lastReview.at)}.`;
+    text = (
+      <>
+        Your turn: {pr.author?.login ?? "the author"} pushed after your review{" "}
+        <When at={lastReview.at} suffix />.
+      </>
+    );
   else if (pr.reviewers.some((r) => r.login === pr.account && r.state === "requested"))
     text = "Your turn: your review was requested.";
-  else text = "";
   const drafts = pr.drafts.length;
   const showing =
     view.range === "commits"

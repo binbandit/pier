@@ -3,10 +3,11 @@ import { Link } from "@tanstack/react-router";
 
 import { errorText } from "@/features/actions";
 import { useCommands } from "@/keys/registry";
-import { plural, shortRepo, since } from "@/lib/format";
+import { plural, shortRepo } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Keys } from "@/ui/kbd";
+import { When } from "@/ui/when";
 import type { PrRef, Revocation } from "@pier/core/wire";
 
 // A verdict an advisory took back. The open PRs carrying the version need deciding again (the
@@ -70,7 +71,8 @@ export function RevocationNotice({
         ))}
       </p>
       <p className="mt-1 text-meta text-muted">
-        You decided on it {since(decidedAt)}, before this was known, so your verdict is withdrawn.
+        You decided on it <When at={decidedAt} suffix />, before this was known, so your verdict is
+        withdrawn.
         {open.length > 0 &&
           ` Still open in ${plural(open.length, "PR")}${approved > 0 ? `, ${approved} with your approval, which can still merge` : ""}.`}
         {merged.length > 0 && (

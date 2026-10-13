@@ -4,10 +4,10 @@ import { useState } from "react";
 
 import { Markdown } from "@/components/markdown";
 import { errorText } from "@/features/actions";
-import { since } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
+import { When } from "@/ui/when";
 import type { Draft, PendingReview, Thread } from "@pier/core/wire";
 
 import { Composer } from "./composer";
@@ -95,7 +95,9 @@ export function ThreadCard({
                     <Avatar login={comment.author.login} url={comment.author.avatarUrl} size={16} />
                   )}
                   <span className="text-fg">{comment.author?.login ?? "ghost"}</span>
-                  <span className="text-faint">{since(comment.createdAt)}</span>
+                  <span className="text-faint">
+                    <When at={comment.createdAt} suffix />
+                  </span>
                   {comment.edited && <span className="text-faint">edited</span>}
                 </div>
               }

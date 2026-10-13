@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 
 import { VirtualRows } from "@/components/rows";
 import { openOnGitHub } from "@/features/actions";
-import { ago, shortRepo } from "@/lib/format";
+import { shortRepo } from "@/lib/format";
 import { q } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
 import { AccountAvatar } from "@/ui/avatar";
 import { CHECK_TONE, Dot } from "@/ui/dot";
+import { When } from "@/ui/when";
 import type { FlightItem } from "@pier/core/wire";
 
 // Everything that isn't your turn: approvals waiting on automation, your PRs waiting on others.
@@ -52,7 +53,9 @@ export function Flight() {
                 {shortRepo(item.repo)}#{item.number}
               </span>
               <span className="truncate text-meta text-muted">{item.waitingOn}</span>
-              <span className="text-right text-meta text-faint">{ago(item.updatedAt)}</span>
+              <span className="text-right text-meta text-faint">
+                <When at={item.updatedAt} />
+              </span>
               <AccountAvatar login={item.account} size={16} />
             </div>
           )}

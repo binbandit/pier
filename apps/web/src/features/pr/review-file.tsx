@@ -300,7 +300,7 @@ export function ReviewFile(props: Props) {
             title={`Owned by ${ownership.owners.join(", ")}, including you`}
             className="flex shrink-0 items-center gap-1 text-meta text-muted"
           >
-            <ShieldCheck aria-hidden size={13} className="text-off" />
+            <ShieldCheck aria-hidden size={14} className="text-off" />
             Yours
           </span>
         )}

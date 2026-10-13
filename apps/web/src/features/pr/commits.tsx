@@ -3,10 +3,10 @@ import { BadgeCheck, BadgeX } from "lucide-react";
 import { useState } from "react";
 
 import { useCommands } from "@/keys/registry";
-import { ago } from "@/lib/format";
 import { Dock } from "@/ui/dock";
 import { CHECK_TONE, Dot } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
+import { When } from "@/ui/when";
 import type { CommitView, DiffView, PrView } from "@pier/core/wire";
 
 // Which changes to look at, raised with `p`: everything, what changed since your review, one
@@ -210,7 +210,7 @@ function CommitRow({ commit }: { commit: CommitView }) {
         <BadgeX aria-label="Signature didn't verify" size={14} className="shrink-0 text-warn" />
       )}
       <span className="ml-auto shrink-0 text-meta text-faint">
-        {commit.author ?? "unknown"} {ago(commit.at)}
+        {commit.author ?? "unknown"} <When at={commit.at} />
       </span>
     </>
   );

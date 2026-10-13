@@ -15,9 +15,9 @@ import { type ReactNode, useState } from "react";
 
 import { Html, Markdown } from "@/components/markdown";
 import { errorText, takeBack } from "@/features/actions";
-import { since } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
+import { When } from "@/ui/when";
 import type { Commentable, MinimizeReason, ReactionContent } from "@pier/core/wire";
 
 import { Composer } from "./composer";
@@ -313,7 +313,7 @@ function Revisions({ prId, id }: { prId: string; id: string }) {
         <li key={`${revision.editedAt}-${revision.editor ?? ""}`}>
           <p className="text-meta text-faint">
             {i === revisions.length - 1 ? "Written" : "Edited"} by {revision.editor ?? "someone"},{" "}
-            {since(revision.editedAt)}
+            <When at={revision.editedAt} suffix />
             {i === 0 && " (now)"}
           </p>
           <Markdown source={revision.body} className="prose-pier mt-1 text-[13px] text-muted" />
@@ -349,7 +349,7 @@ function IconAction({
         danger ? "hover:text-bad" : "hover:text-fg",
       )}
     >
-      <Icon aria-hidden size={15} strokeWidth={1.75} />
+      <Icon aria-hidden size={16} strokeWidth={1.75} />
     </button>
   );
 }

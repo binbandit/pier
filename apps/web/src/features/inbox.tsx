@@ -7,12 +7,13 @@ import { VirtualRows } from "@/components/rows";
 import { markDone, openOnGitHub, propose } from "@/features/actions";
 import { RevocationNotice } from "@/features/revocations";
 import type { Command } from "@/keys/registry";
-import { ago, plural, shortRepo } from "@/lib/format";
+import { plural, shortRepo } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
 import { AccountAvatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
+import { When } from "@/ui/when";
 import type { GroupItem, PrItem, QueueItem, Split } from "@pier/core/wire";
 
 const TITLES: Record<Split, string> = { review: "Review", deps: "Deps", mine: "Mine" };
@@ -198,7 +199,9 @@ function GroupLine({ item }: { item: GroupItem }) {
         />
       )}
       <span className="text-right text-meta text-muted">{plural(item.repoCount, "repo")}</span>
-      <span className="text-right text-meta text-faint">{ago(item.updatedAt)}</span>
+      <span className="text-right text-meta text-faint">
+        <When at={item.updatedAt} />
+      </span>
       <span className="flex justify-end -space-x-1">
         {item.accounts.slice(0, 2).map((login) => (
           <AccountAvatar key={login} login={login} size={16} />

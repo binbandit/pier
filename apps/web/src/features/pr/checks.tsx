@@ -5,11 +5,11 @@ import { type ReactNode, useState } from "react";
 
 import { errorText, rerun } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
-import { since } from "@/lib/format";
 import { q, qLive, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
+import { When } from "@/ui/when";
 import type { CheckRunView, ChecksView, LogSection, PrView, StepLog } from "@pier/core/wire";
 
 // CI for this PR's head: every check and commit status, which ones are required, and for a
@@ -207,7 +207,9 @@ export function Checks({ pr }: { pr: PrView }) {
                   </span>
                 )}
                 {run.completedAt && (
-                  <span className="shrink-0 text-faint">{since(run.completedAt)}</span>
+                  <span className="shrink-0 text-faint">
+                    <When at={run.completedAt} suffix />
+                  </span>
                 )}
                 {hasLog && (
                   <button
@@ -219,7 +221,7 @@ export function Checks({ pr }: { pr: PrView }) {
                     }
                     className="flex size-6 shrink-0 items-center justify-center rounded-sm text-faint opacity-0 group-hover/check:opacity-100 hover:bg-press hover:text-fg focus-visible:opacity-100"
                   >
-                    <RotateCw aria-hidden size={13} />
+                    <RotateCw aria-hidden size={14} />
                   </button>
                 )}
                 {hasLog ? (
@@ -279,7 +281,9 @@ export function Checks({ pr }: { pr: PrView }) {
                 <span className="text-muted">{d.environment}</span>
                 <span className="text-faint">{d.state.replaceAll("_", " ")}</span>
                 <span className="flex-1" />
-                <span className="text-faint">{since(d.at)}</span>
+                <span className="text-faint">
+                  <When at={d.at} suffix />
+                </span>
                 {d.url && (
                   <a
                     href={d.url}

@@ -3,12 +3,12 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { errorText } from "@/features/actions";
-import { ago, since } from "@/lib/format";
 import { githubPath } from "@/lib/permalink";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
+import { When } from "@/ui/when";
 import type { PrView, TimelineEntry } from "@pier/core/wire";
 
 import { Composer } from "./composer";
@@ -141,7 +141,7 @@ function Entry({ prId, entry }: { prId: string; entry: TimelineEntry }) {
           <span className="font-code">
             {entry.before?.slice(0, 7) ?? "?"} → {entry.after?.slice(0, 7) ?? "?"}
           </span>
-          , {since(entry.at)}
+          , <When at={entry.at} suffix />
         </p>
       );
     default: {
@@ -167,7 +167,7 @@ function Entry({ prId, entry }: { prId: string; entry: TimelineEntry }) {
       );
       return (
         <p className="text-meta text-faint">
-          {entry.actor ?? "Someone"} {text}, {since(entry.at)}
+          {entry.actor ?? "Someone"} {text}, <When at={entry.at} suffix />
         </p>
       );
     }
@@ -190,7 +190,9 @@ function Byline({
       <Avatar login={login} url={avatarUrl ?? null} size={16} />
       <span className="text-fg">{login}</span>
       {children && <span className="text-muted">{children}</span>}
-      <span className="ml-auto text-faint">{ago(at)}</span>
+      <span className="ml-auto text-faint">
+        <When at={at} />
+      </span>
     </div>
   );
 }

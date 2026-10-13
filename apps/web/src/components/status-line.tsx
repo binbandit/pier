@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 
 import { activeCommands, useKeys } from "@/keys/registry";
 import { useConnection } from "@/lib/events";
-import { plural, since } from "@/lib/format";
+import { plural } from "@/lib/format";
 import { q } from "@/lib/rpc";
 import { Avatar } from "@/ui/avatar";
 import { Dot } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
+import { When } from "@/ui/when";
 
 // The 28px line along the bottom: who you're acting as, how fresh the data is, what's queued to
 // send, and which keys do something right now. While a chord is half-typed it lists what can
@@ -68,7 +69,15 @@ export function StatusLine() {
             <span>{sync.message}</span>
           </>
         ) : (
-          <span>{sync?.lastSyncAt ? syncedText(sync.lastSyncAt, now) : "Starting"}</span>
+          <span>
+            {sync?.lastSyncAt ? (
+              <>
+                Synced <When at={sync.lastSyncAt} now={now} suffix />
+              </>
+            ) : (
+              "Starting"
+            )}
+          </span>
         )}
       </span>
 
@@ -117,10 +126,6 @@ export function StatusLine() {
       </span>
     </footer>
   );
-}
-
-function syncedText(iso: string, now: number): string {
-  return `Synced ${since(iso, now)}`;
 }
 
 export function useNow(intervalMs: number): number {

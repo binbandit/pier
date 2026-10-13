@@ -9,11 +9,12 @@ import { DiffFiles } from "@/diff/adapter";
 import { openOnGitHub, propose, rerun } from "@/features/actions";
 import { RevocationNotice } from "@/features/revocations";
 import { useCommands } from "@/keys/registry";
-import { plural, since } from "@/lib/format";
+import { plural } from "@/lib/format";
 import { q } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
 import { AccountAvatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
+import { When } from "@/ui/when";
 import type { Cohort, GateResult, GroupRow, GroupView } from "@pier/core/wire";
 
 // One dependency bump across every repo it landed in. The left column is the decision (is this
@@ -228,9 +229,7 @@ function Loaded({ view }: { view: GroupView }) {
             <dd className={view.semver === "major" ? "text-warn" : "text-muted"}>{view.semver}</dd>
             <dt className="text-faint">Published</dt>
             <dd className="text-muted">
-              {release?.publishedAt
-                ? `${since(release.publishedAt)}, ${new Date(release.publishedAt).toLocaleDateString()}`
-                : "Unknown"}
+              {release?.publishedAt ? <When at={release.publishedAt} date /> : "Unknown"}
             </dd>
             {/* Registries often list the repo as both source and homepage; show it once. */}
             {release?.links

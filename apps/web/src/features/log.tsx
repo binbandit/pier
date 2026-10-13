@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { ago, shortRepo } from "@/lib/format";
+import { shortRepo } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { Dot, type Tone } from "@/ui/dot";
+import { When } from "@/ui/when";
 import type { LogEntry, OutboxState } from "@pier/core/wire";
 
 // Every write pier has made or is about to make, newest first. When something fails, this is
@@ -101,7 +102,9 @@ export function Log() {
               <span className={entry.state === "failed" ? "text-bad" : "text-faint"}>
                 {entry.detail ?? `as ${entry.account}`}
               </span>
-              <span className="text-right text-faint">{ago(entry.updatedAt)}</span>
+              <span className="text-right text-faint">
+                <When at={entry.updatedAt} />
+              </span>
             </li>
           ))}
         </ul>
