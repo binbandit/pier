@@ -133,18 +133,27 @@ export class SyncEngine {
   // -------------------------------------------------------------------------
 
   private loop(name: string, run: () => Promise<number | void>, everyMs: number): void {
+    let failures = 0;
     const tick = async () => {
       if (this.stopped) return;
       let next = everyMs;
       try {
         const override = await run();
         if (typeof override === "number") next = override;
+        failures = 0;
         this.errors.delete(name);
       } catch (error) {
-        const wait =
-          error instanceof GitHubError && error.retryAfterMs ? error.retryAfterMs : everyMs;
-        next = Math.max(everyMs, Math.min(wait, 15 * 60_000));
-        this.errors.set(name, describe(name, error));
+        failures++;
+        if (failures === 1 && isTransient(error)) {
+          // A GitHub hiccup (a 502, a dropped connection) usually clears at once: try again
+          // soon, and only say so if it happens twice running.
+          next = Math.min(everyMs, TRANSIENT_RETRY_MS);
+        } else {
+          const wait =
+            error instanceof GitHubError && error.retryAfterMs ? error.retryAfterMs : everyMs;
+          next = Math.max(everyMs, Math.min(wait, 15 * 60_000));
+          this.errors.set(name, describe(name, error));
+        }
       }
       this.statusChanged();
       if (!this.stopped) this.timers.push(setTimeout(tick, next));
@@ -394,6 +403,12 @@ const LOOP_NAMES: Record<string, string> = {
 };
 
 /** A status-line sentence: what was being done, and what went wrong, without GitHub's HTML. */
+const TRANSIENT_RETRY_MS = 10_000;
+
+function isTransient(error: unknown): boolean {
+  return error instanceof GitHubError && (error.kind === "server" || error.kind === "network");
+}
+
 function describe(loop: string, error: unknown): string {
   const what = LOOP_NAMES[loop.split(":")[0] ?? ""] ?? loop;
   if (error instanceof GitHubError) {

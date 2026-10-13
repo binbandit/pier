@@ -67,3 +67,30 @@ test("an action's own groups nest under the step that ran it", () => {
   ]);
   expect(steps[2]?.sections[0]?.lines[0]).toBe("npm test");
 });
+
+/** A log line's timestamp, `s` seconds past 08:00. */
+const at = (s: number) => `2026-10-13T08:00:${String(s).padStart(2, "0")}.1234567Z`;
+
+test("a log cut short starts under the step that was running, not the job's set-up", () => {
+  const log = [
+    `${at(0)} ##[group]Runner Image`,
+    `${at(1)} ##[group]Run actions/setup-node@v7`,
+    ...Array.from({ length: 5_500 }, (_, i) => `${at(2)} ##[debug]resolving ${i}`),
+    `${at(5)} ##[group]Run npm test`,
+    `${at(6)} ##[error]Process completed with exit code 1.`,
+  ].join("\n");
+  const { sections, cutAt } = parseJobLog(log);
+  const steps = byStep(
+    [
+      { name: "Set up job", state: "success", startedAt: "2026-10-13T08:00:00Z" },
+      { name: "Run actions/setup-node@v7", state: "success", startedAt: "2026-10-13T08:00:01Z" },
+      { name: "Run npm test", state: "failure", startedAt: "2026-10-13T08:00:05Z" },
+    ],
+    sections,
+    cutAt,
+  );
+  expect(steps.map((s) => [s.name, s.sections.map((x) => x.title)])).toEqual([
+    ["Run actions/setup-node@v7", ["Earlier output"]],
+    ["Run npm test", ["Run npm test"]],
+  ]);
+});

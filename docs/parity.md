@@ -11,7 +11,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 |---|---|---|---|---|
 | FIND-REVIEW-REQUESTED | PRs where your review (or your team's) is requested | GraphQL search `review-requested:@me` | M1b | sandbox |
 | FIND-REREVIEW | PRs with new commits since you reviewed | search + viewerLatestReview | M1b | sandbox |
-| FIND-MINE | Your PRs that need you (changes requested, red, conflicts, approved and idle) | search `involves:@me` | M1b | built |
+| FIND-MINE | Your PRs that need you (changes requested, red, conflicts, approved and idle) | search `involves:@me` | M1b | sandbox |
 | FIND-BOTS | Dependabot / Renovate PRs across owned repos and orgs | search `author:app/dependabot user:X` | M1a | sandbox |
 | FIND-INFLIGHT | Things waiting on others | derived | M1a | built |
 | FIND-SEARCH | Search with every qualifier (`is:`, `review:`, `label:`, `status:`, `sort:` ...), plus pier's (`turn:`, `checks:`, `size:`, `acct:`, `bot:`, `semver:`, `cohort:`); instant over the replica, ⌘⏎ asks GitHub for the rest | replica; search API | I8 | sandbox |
@@ -32,7 +32,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | CONV-MERMAID | Mermaid (in a sandboxed frame) and math (KaTeX); GeoJSON, TopoJSON and STL show as source | client render | I9 | sandbox |
 | CONV-TIMELINE | Commits, reviews, comments, requests, force-pushes, labels, renames, merges | `timelineItems` | M1b | sandbox |
 | CONV-TIMELINE-ALL | Every other timeline event type (about 70) with a generic fallback | `timelineItems` (the ~35 event types a reviewer sees; the rest are noise like subscriptions) | I6 | built |
-| CONV-COMMENT | Add a conversation comment | `addComment` | M1b | built |
+| CONV-COMMENT | Add a conversation comment | `addComment` | M1b | sandbox |
 | CONV-EDIT | Edit your comment (edit history not shown yet) | `updateIssueComment` / `userContentEdits` | I6 | sandbox |
 | CONV-DELETE | Delete a comment | `deleteIssueComment` | I6 | sandbox |
 | CONV-MINIMIZE | Hide a comment with a reason, unhide | `minimizeComment` | I6 | sandbox |
@@ -59,33 +59,33 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 |---|---|---|---|---|
 | FILES-UNIFIED | Unified diff with syntax and word highlighting | REST files / git store | M1b | sandbox |
 | FILES-SPLIT | Split (side by side) view, remembered (`d s`) | renderer option | I9 | sandbox |
-| FILES-WHITESPACE | Hide whitespace, without a reload | git store `-w` | M1b | built |
+| FILES-WHITESPACE | Hide whitespace, without a reload | git store `-w` | M1b | sandbox |
 | FILES-CONTEXT | Expand context around hunks | git store blobs | I9 | sandbox |
 | FILES-TREE | File tree with viewed and comment markers | derived | M1b | built |
 | FILES-FILTER | Filter by extension, owned by you, viewed, deleted | CODEOWNERS parse | I5 | sandbox |
-| FILES-VIEWED | Viewed checkbox, synced to GitHub, resets when the file changes | `markFileAsViewed`, `viewerViewedState` | M1b | built |
+| FILES-VIEWED | Viewed checkbox, synced to GitHub, resets when the file changes | `markFileAsViewed`, `viewerViewedState` | M1b | sandbox |
 | FILES-SINCE-REVIEW | Only what changed since your last review, without rebase noise | git store merge-tree | M1b | sandbox |
 | FILES-COMMITS | Commit list, single commit, any range | git store / `commits` | I4 | sandbox |
 | FILES-RICH | Rich diffs: images side by side, SVG, rendered Markdown, CSV, notebooks (`d r`) | client | I9 | sandbox |
 | FILES-LARGE | Very large PRs: lazy drawing, past 3,000 files and truncated patches from git | git store | I9 | built |
-| FILES-LOCKFILE | Lockfiles collapsed, dependency summary | dependency review API | M1a | built |
+| FILES-LOCKFILE | Lockfiles collapsed, dependency summary | dependency review API | M1a | sandbox |
 | FILES-PERMALINK | Line permalinks (`y`, github.com `#diff-` links open here) and `.diff` / `.patch` | client; REST diff media types | I9 | sandbox |
 | COMMENT-LINE | Comment on a line | review `threads[]` | M1b | sandbox |
-| COMMENT-RANGE | Comment on a range of lines | `startLine` | M1b | built |
-| COMMENT-DELETED-LINE | Comment on a removed line | `side: LEFT` | M1b | built |
+| COMMENT-RANGE | Comment on a range of lines | `startLine` | M1b | sandbox |
+| COMMENT-DELETED-LINE | Comment on a removed line | `side: LEFT` | M1b | sandbox |
 | COMMENT-FILE | Comment on a whole file | `subjectType: FILE` | I6 | sandbox |
 | COMMENT-UNCHANGED | Comment on an unchanged line outside the hunks | undocumented in the API | gap | - |
 | COMMENT-OUTSIDE | Threads on lines outside the shown diff stay visible | derived | M1b | sandbox |
-| COMMENT-OUTDATED | Outdated threads shown with their original code | `diffHunk` | M1b | built |
-| SUGGEST-WRITE | Write a suggestion block from the selected code (Cmd+G) | client | M1b | built |
+| COMMENT-OUTDATED | Outdated threads shown with their original code | `diffHunk` | M1b | sandbox |
+| SUGGEST-WRITE | Write a suggestion block from the selected code (Cmd+G) | client | M1b | sandbox |
 | SUGGEST-APPLY | Apply one or a batch of suggestions as a commit (signed by GitHub, co-authored, threads resolved; keeps file modes, CRLF, BOM and a missing final newline, all checked live) | none; `createCommitOnBranch` with `expectedHeadOid` | I7 | sandbox |
 | REVIEW-DRAFTS | Inline comments held as drafts until the review is sent | local | M1b | sandbox |
 | REVIEW-SUBMIT | Comment / approve / request changes, with a summary | `addPullRequestReview` | M1b | sandbox |
 | REVIEW-UNDO | Take a review back within 5 seconds | outbox hold | M1b | sandbox |
 | REVIEW-WEB-PENDING | Continue a review started on github.com | `submitPullRequestReview` | I6 | sandbox |
-| THREAD-REPLY | Reply to a thread | `addPullRequestReviewThreadReply` | M1b | built |
-| THREAD-RESOLVE | Resolve / unresolve | `resolveReviewThread` | M1b | built |
-| THREAD-NAV | Jump between open threads | client | M1b | built |
+| THREAD-REPLY | Reply to a thread | `addPullRequestReviewThreadReply` | M1b | sandbox |
+| THREAD-RESOLVE | Resolve / unresolve | `resolveReviewThread` | M1b | sandbox |
+| THREAD-NAV | Jump between open threads | client | M1b | sandbox |
 | REVIEW-DISMISS | Dismiss someone's review | `dismissPullRequestReview` | I6 | sandbox |
 | CODEOWNERS | Who owns what, code-owner requests | CODEOWNERS parse, `asCodeOwner` | I5 | sandbox |
 | COPILOT-REVIEW | Request a Copilot review | `requestReviewsByLogin` bot `copilot-pull-request-reviewer`, offered when GitHub suggests it (the sandbox accounts don't have Copilot review, so not live-tested) | I6 | built |
@@ -135,7 +135,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | ID | Behaviour | Milestone | Status |
 |---|---|---|---|
 | APP-ACCOUNTS | Every gh account in one inbox, each acting as itself | M1a | sandbox |
-| APP-OUTBOX | Writes survive crashes and are never sent twice | M1a | built |
+| APP-OUTBOX | Writes survive crashes and are never sent twice | M1a | sandbox |
 | APP-INSTALL | One binary, starts at login, `pier doctor` | M1a | sandbox |
 | APP-PWA | Installable window: dock badge counts PRs where it's your turn (Review and Mine); "Notify me when it's my turn" (palette) sends a system notification for each new one while pier is in the background; an open window takes captured links (`launchQueue`); dock icons on Apple's grid plus a maskable one | M1a | built |
 | APP-LINKS | github.com PR links (and `/files#diff-…` line links, and `/pulls`) open in pier: `pier extension` writes a Chrome extension that redirects them. `?pier=0` (Shift+O) and links followed on github.com itself stay there. PR links inside comments open in pier directly. | M1a | sandbox |

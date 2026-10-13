@@ -811,13 +811,14 @@ export class LiveGitHub implements GitHubPort {
     if (!target) return null;
     const response = await fetch(target, { signal: AbortSignal.timeout(30_000) });
     if (!response.ok) return null;
-    const { sections, truncated } = parseJobLog(await response.text());
+    const { sections, truncated, cutAt } = parseJobLog(await response.text());
     const steps = (job.steps ?? []).map((step) => ({
       name: step.name,
       state: checkRunState(step.status, step.conclusion),
+      startedAt: step.started_at ?? null,
     }));
     return {
-      steps: byStep(steps, sections),
+      steps: byStep(steps, sections, cutAt),
       truncated,
       url: job.html_url ?? `https://github.com/${repo}/actions/runs/${job.run_id}`,
     };

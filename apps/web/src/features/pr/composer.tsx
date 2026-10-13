@@ -85,11 +85,8 @@ export function Composer({
     const el = ref.current;
     setReplying({ start: el?.selectionStart ?? body.length, end: el?.selectionEnd ?? body.length });
   };
-  const insertReply = (text: string) => {
-    if (!replying) return;
-    setBody(body.slice(0, replying.start) + text + body.slice(replying.end));
-    const caret = replying.start + text.length;
-    setReplying(null);
+  /** Puts the caret at `caret` once the new text is in the box. */
+  const placeCaret = (caret: number) =>
     queueMicrotask(() => {
       const el = ref.current;
       if (!el) return;
@@ -97,14 +94,22 @@ export function Composer({
       el.selectionStart = el.selectionEnd = caret;
       grow(el);
     });
+  const insertReply = (text: string) => {
+    if (!replying) return;
+    setBody(body.slice(0, replying.start) + text + body.slice(replying.end));
+    setReplying(null);
+    placeCaret(replying.start + text.length);
   };
 
   const insertSuggestion = () => {
     const el = ref.current;
     if (!el) return;
-    const block = `\`\`\`suggestion\n${suggestionSource ?? ""}\n\`\`\`\n`;
+    const opening = "```suggestion\n";
+    const source = suggestionSource ?? "";
     const at = el.selectionStart;
-    setBody(body.slice(0, at) + block + body.slice(el.selectionEnd));
+    setBody(`${body.slice(0, at)}${opening}${source}\n\`\`\`\n${body.slice(el.selectionEnd)}`);
+    // At the end of the code, ready to change it.
+    placeCaret(at + opening.length + source.length);
   };
 
   useCommands(

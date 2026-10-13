@@ -11,7 +11,7 @@ import { ShieldCheck } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
 import { DIFF_OPTIONS, LOCKFILE, toPatch, useDiffTheme } from "@/diff/adapter";
-import { codeBetween, patchLines } from "@/diff/lines";
+import { codeBetween, hunkRows, patchLines } from "@/diff/lines";
 import { errorText } from "@/features/actions";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
@@ -520,9 +520,7 @@ export function ReviewFile(props: Props) {
               <p className="mb-1 px-1 font-code text-meta text-faint">
                 Outdated, originally on line {thread.originalLine ?? "?"}
               </p>
-              <pre className="mb-1 max-w-[820px] overflow-x-auto rounded-sm border border-line px-3 py-2 font-code text-[12px] leading-5 text-muted">
-                {lastLines(thread.diffHunk, 4)}
-              </pre>
+              <OriginalCode hunk={thread.diffHunk} />
               <ThreadCard
                 applicable={applicable}
                 onApply={onApply}
@@ -621,6 +619,35 @@ function rangeLabel(comment: LineComment): string {
     : `lines ${comment.start} to ${comment.end}`;
 }
 
-function lastLines(hunk: string, count: number): string {
-  return hunk.split("\n").slice(-count).join("\n");
+/** The code an outdated thread was written on: the last lines of its hunk, as a small diff. */
+function OriginalCode({ hunk }: { hunk: string }) {
+  return (
+    <div className="mb-1 max-w-[820px] overflow-x-auto rounded-sm border border-line py-1 font-code text-[12px] leading-5">
+      {hunkRows(hunk)
+        .slice(-4)
+        .map((row) => (
+          <div
+            key={`${row.kind}${row.number}`}
+            className={clsx(
+              "flex border-l-2",
+              row.kind === "added"
+                ? "border-ok bg-add-row"
+                : row.kind === "removed"
+                  ? "border-bad bg-del-row"
+                  : "border-transparent",
+            )}
+          >
+            <span
+              className={clsx(
+                "w-10 shrink-0 pr-3 text-right select-none",
+                row.kind === "added" ? "text-ok" : row.kind === "removed" ? "text-bad" : "text-off",
+              )}
+            >
+              {row.number}
+            </span>
+            <span className="whitespace-pre text-fg">{row.text}</span>
+          </div>
+        ))}
+    </div>
+  );
 }

@@ -51,3 +51,29 @@ export function codeBetween(
   }
   return out.join("\n");
 }
+
+export type HunkRow = { kind: "added" | "removed" | "context"; number: number; text: string };
+
+/** A hunk's lines in order, each numbered on its side (a removed line by the old file). */
+export function hunkRows(hunk: string): HunkRow[] {
+  const rows: HunkRow[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+  for (const line of hunk.split("\n")) {
+    const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (header) {
+      oldLine = Number(header[1]);
+      newLine = Number(header[2]);
+      continue;
+    }
+    if (line.startsWith("\\")) continue;
+    const text = line.slice(1);
+    if (line[0] === "+") rows.push({ kind: "added", number: newLine++, text });
+    else if (line[0] === "-") rows.push({ kind: "removed", number: oldLine++, text });
+    else {
+      rows.push({ kind: "context", number: newLine++, text });
+      oldLine++;
+    }
+  }
+  return rows;
+}
