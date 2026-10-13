@@ -165,6 +165,7 @@ function Loaded({ view }: { view: GroupView }) {
               "ignore",
               (chosen ?? rows).map((r) => r.prId),
               `${view.pkg} ${view.to}`,
+              view.key,
             ),
         },
         {

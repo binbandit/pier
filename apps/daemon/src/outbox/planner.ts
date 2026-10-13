@@ -77,8 +77,8 @@ export class Planner {
           verdicts.set(key, bump.semver);
           known.set(key, new Set([...(known.get(key) ?? []), ...this.deps.advisories(bump)]));
         }
-      } else if (action === "ignore" && record.bot?.bot !== "dependabot") {
-        // Renovate takes a closed PR as "not this version".
+      } else if (action === "ignore") {
+        // Both bots take a PR closed unmerged as "not this release" and come back for the next.
         step.writes = ["close"];
         commands.push({ ...target(record), planId, kind: "close", payload: {}, priority });
       } else {
@@ -87,9 +87,7 @@ export class Planner {
           ...target(record),
           planId,
           kind: "bot-command",
-          payload: {
-            body: action === "ignore" ? "@dependabot ignore this version" : `@dependabot ${action}`,
-          },
+          payload: { body: `@dependabot ${action}` },
           priority,
         });
       }
@@ -126,9 +124,24 @@ export class Planner {
               .filter((k) => k !== groupKey) ?? [],
         ),
       );
-      if (others.size > 0)
+      if (others.size > 0) {
+        const bumps = `${others.size} other bump${others.size === 1 ? "" : "s"}`;
         warnings.push(
-          `Grouped PRs here also carry ${others.size} other bump${others.size === 1 ? "" : "s"}; approving records verdicts for them too.`,
+          action === "ignore"
+            ? `Grouped PRs here also carry ${bumps}; closing skips those too.`
+            : `Grouped PRs here also carry ${bumps}; approving records verdicts for them too.`,
+        );
+      }
+    }
+    if (action === "ignore") {
+      // Renovate reads a closed major update as "no more of this major", not just this release.
+      const majors = commands.filter((c) => {
+        const bot = this.deps.model.get(c.prId)?.bot;
+        return bot?.bot === "renovate" && bot.bumps.some((b) => b.semver === "major");
+      }).length;
+      if (majors > 0)
+        warnings.push(
+          `${majors === 1 ? "A Renovate major update" : `${majors} Renovate major updates`} here: Renovate skips every later release of that major too.`,
         );
     }
 

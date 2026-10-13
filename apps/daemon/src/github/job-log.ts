@@ -65,7 +65,9 @@ export function byStep(
   const first = cutAt
     ? Math.max(
         0,
-        steps.findLastIndex((step) => (step.startedAt ?? "").slice(0, 19) <= cutAt.slice(0, 19)),
+        steps.findLastIndex(
+          (step) => step.startedAt != null && step.startedAt.slice(0, 19) <= cutAt.slice(0, 19),
+        ),
       )
     : 0;
   const out: StepLog[] = [];

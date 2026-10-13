@@ -35,29 +35,40 @@ export class Verdicts {
     this.version++;
   }
 
-  /** Each version with an unexpired verdict: when it was decided, and what was known then. */
-  standing(now = Date.now()): Map<string, { decidedAt: string; known: Set<string> }> {
+  /**
+   * Each version with an unexpired verdict: when it was decided, and the advisories known then
+   * (null for verdicts from before pier remembered them).
+   */
+  standing(now = Date.now()): Map<string, { decidedAt: string; known: Set<string> | null }> {
     const rows = this.db
       .query<{ key: string; decided_at: string; known_advisories: string }, [string]>(
         "SELECT key, decided_at, known_advisories FROM verdict WHERE expires_at > ?",
       )
       .all(new Date(now).toISOString());
-    const standing = new Map<string, { decidedAt: string; known: Set<string> }>();
+    const standing = new Map<string, { decidedAt: string; known: Set<string> | null }>();
     for (const row of rows) {
-      const known = new Set(JSON.parse(row.known_advisories) as string[]);
+      const list = JSON.parse(row.known_advisories) as string[] | null;
+      const known = list ? new Set(list) : null;
       const seen = standing.get(row.key);
+      if (!seen) {
+        standing.set(row.key, { decidedAt: row.decided_at, known });
+        continue;
+      }
       // A version decided under two semver classes knows only what both decisions knew.
-      standing.set(
-        row.key,
-        seen
-          ? {
-              decidedAt: seen.decidedAt < row.decided_at ? seen.decidedAt : row.decided_at,
-              known: new Set([...known].filter((id) => seen.known.has(id))),
-            }
-          : { decidedAt: row.decided_at, known },
-      );
+      const before = seen.known;
+      standing.set(row.key, {
+        decidedAt: seen.decidedAt < row.decided_at ? seen.decidedAt : row.decided_at,
+        known: before && known ? new Set([...known].filter((id) => before.has(id))) : null,
+      });
     }
     return standing;
+  }
+
+  /** Records what's known against a version as its verdicts' baseline. */
+  setKnown(key: string, known: string[]): void {
+    this.db
+      .query("UPDATE verdict SET known_advisories = ? WHERE key = ?")
+      .run(JSON.stringify(known.toSorted()), key);
   }
 
   /** Withdraws every verdict on this version. */

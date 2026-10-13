@@ -64,9 +64,14 @@ export class AdvisoryWatch {
           const infos = await Promise.all(
             bumps.map((bump) => registry.lookup(bump).catch(() => null)),
           );
-          const news = [...new Set(infos.flatMap((info) => info?.advisories ?? []))]
-            .filter((id) => !verdict.known.has(id))
-            .toSorted();
+          const current = [...new Set(infos.flatMap((info) => info?.advisories ?? []))];
+          // A verdict from before pier remembered advisories: what's known now is its baseline.
+          const { known } = verdict;
+          if (known === null) {
+            if (infos.some((info) => info !== null)) verdicts.setKnown(key, current);
+            return;
+          }
+          const news = current.filter((id) => !known.has(id)).toSorted();
           const [bump] = bumps;
           if (news.length === 0 || !bump) return;
           verdicts.withdraw(key);

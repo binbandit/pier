@@ -236,7 +236,7 @@ export function ReviewFile(props: Props) {
     [path, anchors, split, prId, range.from, range.to, theme],
   );
   const patch = useMemo(() => toPatch(shown), [shown]);
-  // Renamed with nothing to show: git has no text diff for it either.
+  // Renamed with nothing to show: moved as it was, or a binary file.
   const moved =
     file.previousPath !== null && file.patch === null && file.additions + file.deletions === 0;
 
@@ -250,7 +250,14 @@ export function ReviewFile(props: Props) {
         to: range.to,
       });
       if (diff?.patch) setFromGit(diff);
-      else toast({ text: `${file.path} is binary; there's no text diff`, tone: "neutral" });
+      else
+        toast({
+          // A move that changed nothing and a binary file both come back without text.
+          text: moved
+            ? `No text changes in ${file.path}: it moved as it was, or it's binary`
+            : `${file.path} is binary; there's no text diff`,
+          tone: "neutral",
+        });
     } catch (error) {
       toast({ text: errorText(error), tone: "bad" });
     }
@@ -395,20 +402,16 @@ export function ReviewFile(props: Props) {
           <RichView prId={prId} file={file} range={range} kind={rich} />
         ) : shown.patch === null ? (
           <p className="flex items-center gap-4 px-1 py-3 text-meta text-faint">
-            {moved ? (
-              "Moved, with no changes GitHub can show."
-            ) : (
-              <>
-                GitHub didn't send a diff for this file (it's binary, or too long).
-                <button
-                  type="button"
-                  onClick={() => void loadFromGit()}
-                  className="text-muted hover:text-fg"
-                >
-                  Load it from git
-                </button>
-              </>
-            )}
+            {moved
+              ? "Moved, with no changes GitHub can show."
+              : "GitHub didn't send a diff for this file (it's binary, or too long)."}
+            <button
+              type="button"
+              onClick={() => void loadFromGit()}
+              className="text-muted hover:text-fg"
+            >
+              Load it from git
+            </button>
           </p>
         ) : (
           <PatchDiff

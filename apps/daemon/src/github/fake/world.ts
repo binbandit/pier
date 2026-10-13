@@ -1138,6 +1138,14 @@ export class FakeWorld {
     pr.updatedAt = this.iso();
     pr.events.push({ kind: "event", text: "closed this", actor, at: pr.updatedAt });
     this.notify(pr, actor, this.subscribers(pr, "state_change"));
+    // Closed unmerged, a bump is skipped until the next release, and Dependabot says so.
+    if (pr.author === "dependabot" && actor !== pr.author) {
+      this.comment(
+        pr.id,
+        pr.author,
+        "OK, I won't notify you again about this release, but will get in touch when a new version is available.",
+      );
+    }
   }
 
   reopen(prId: string, actor: string): void {
@@ -1876,26 +1884,9 @@ export class FakeWorld {
   }
 
   private botCommand(pr: FakePr, body: string): void {
-    if (pr.author !== "dependabot") return;
-    if (/^@dependabot ignore this version\b/m.test(body)) {
-      this.schedule(this.options.botDelayMs, () => this.botIgnore(pr));
-      return;
-    }
     const command = /^@dependabot (rebase|recreate)\b/m.exec(body)?.[1];
-    if (!command) return;
+    if (pr.author !== "dependabot" || !command) return;
     this.schedule(this.options.botDelayMs, () => this.botRebase(pr, command === "recreate"));
-  }
-
-  /** Dependabot takes "ignore this version" by saying so and closing the PR. */
-  private botIgnore(pr: FakePr): void {
-    if (pr.state !== "OPEN") return;
-    const version = pr.bumps[0]?.to ?? "this version";
-    this.comment(
-      pr.id,
-      pr.author,
-      `OK, I won't notify you about version ${version} again, unless you re-open this PR.`,
-    );
-    this.close(pr.id, pr.author);
   }
 
   private botRebase(pr: FakePr, recreate: boolean): void {

@@ -85,6 +85,8 @@ test("a log cut short starts under the step that was running, not the job's set-
       { name: "Set up job", state: "success", startedAt: "2026-10-13T08:00:00Z" },
       { name: "Run actions/setup-node@v7", state: "success", startedAt: "2026-10-13T08:00:01Z" },
       { name: "Run npm test", state: "failure", startedAt: "2026-10-13T08:00:05Z" },
+      // Never started, so it can't be where the kept part begins.
+      { name: "Upload coverage", state: "success", startedAt: null },
     ],
     sections,
     cutAt,

@@ -6,6 +6,8 @@ import { createFakePorts, generateScenario } from "@/github/fake/scenario";
 
 const cacheMigration = (name: string) =>
   Bun.file(new URL(`../src/store/migrations/cache/${name}`, import.meta.url)).text();
+const stateMigration = (name: string) =>
+  Bun.file(new URL(`../src/store/migrations/state/${name}`, import.meta.url)).text();
 
 test("docs stored before assignees and milestone stay usable and get read again", async () => {
   const db = new Database(":memory:", { strict: true });
@@ -29,4 +31,22 @@ test("docs stored before assignees and milestone stay usable and get read again"
   expect(record?.stale).toBe(true);
   // Retention still counts from when it was really read, not from the migration.
   expect(record?.fetchedAt).toBe("2026-10-01T00:00:00.000Z");
+});
+
+test("verdicts from before advisories were remembered come out with no baseline", async () => {
+  const db = new Database(":memory:", { strict: true });
+  for (const name of ["001-init.sql", "002-drafts.sql", "003-waiting.sql", "004-file-drafts.sql"]) {
+    db.exec(await stateMigration(name));
+  }
+  db.query(
+    "INSERT INTO verdict (key, semver, decided_at, expires_at) VALUES ('npm:ws@8.18.3', 'patch', ?, ?)",
+  ).run("2026-10-01T00:00:00.000Z", "2026-10-15T00:00:00.000Z");
+
+  db.exec(await stateMigration("005-revocations.sql"));
+  db.exec(await stateMigration("006-advisory-baseline.sql"));
+
+  const row = db
+    .query<{ known: string }, []>("SELECT known_advisories AS known FROM verdict")
+    .get();
+  expect(row?.known).toBe("null");
 });

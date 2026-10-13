@@ -37,16 +37,14 @@ test("an advisory after you approve takes the verdict back, and the version can 
   await expect(notice).toContainText("GHSA-4c7m-pq2x-8h3v", { timeout: 30_000 });
   await expect(notice).toContainText("1 with your approval, which can still merge");
 
-  // Renovate's PR is closed outright; Dependabot is told to skip the version, and closes its own.
+  // Closing them unmerged tells either bot to skip this release.
   await page.keyboard.press("b");
   await page.keyboard.press("i");
   await expect(strip).toContainText("Close 2 PRs and skip this version");
   await page.keyboard.press("Enter");
-  await expect(notice).toContainText("Still open in 1 PR.", { timeout: 15_000 });
-  await page.goto("/log");
-  await expect(
-    page.getByRole("listitem").filter({ hasText: "sandbox-web#3" }).first(),
-  ).toContainText("Sent");
+  await expect(page.getByText("Every PR in this group has merged or closed.")).toBeVisible({
+    timeout: 15_000,
+  });
 
   await page.goto("/inbox/deps");
   await notice.getByRole("button", { name: "Dismiss" }).click();

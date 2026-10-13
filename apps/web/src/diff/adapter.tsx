@@ -126,10 +126,12 @@ export function toPatch(file: DiffFile): string {
   if (file.status === "added") lines.push("new file mode 100644");
   if (file.status === "removed") lines.push("deleted file mode 100644");
   if (from !== file.path) {
+    // A copy leaves the original in place; a rename doesn't.
+    const how = file.status === "copied" ? "copy" : "rename";
     lines.push(
       `similarity index ${file.patch ? 90 : 100}%`,
-      `rename from ${from}`,
-      `rename to ${file.path}`,
+      `${how} from ${from}`,
+      `${how} to ${file.path}`,
     );
   }
   lines.push(

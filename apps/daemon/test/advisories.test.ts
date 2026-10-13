@@ -28,7 +28,7 @@ async function setup() {
   );
   const watch = new AdvisoryWatch({ model, verdicts, revocations, registry });
   const release = world.release("npm", "typescript", "5.9.3")!;
-  return { verdicts, revocations, watch, release };
+  return { stores, verdicts, revocations, watch, release };
 }
 
 test("an advisory published after the verdict withdraws it", async () => {
@@ -61,4 +61,23 @@ test("one you knew about when deciding doesn't, but the next one does, even once
   release.advisories.push("GHSA-more-more-more");
   expect(await watch.check()).toBe(1);
   expect(revocations.open()).toMatchObject([{ key: KEY, advisories: ["GHSA-more-more-more"] }]);
+});
+
+test("a verdict from before pier remembered advisories takes today's as its baseline", async () => {
+  const { stores, verdicts, revocations, watch, release } = await setup();
+  release.advisories.push("GHSA-seen-seen-seen");
+  // Recorded as older builds did, then upgraded.
+  verdicts.record(KEY, "patch", 14);
+  const upgrade = new URL(
+    "../src/store/migrations/state/006-advisory-baseline.sql",
+    import.meta.url,
+  );
+  stores.state.exec(await Bun.file(upgrade).text());
+  expect(await watch.check()).toBe(0);
+  expect(verdicts.active(KEY)).toHaveLength(1);
+  expect(revocations.open()).toEqual([]);
+
+  release.advisories.push("GHSA-next-next-next");
+  expect(await watch.check()).toBe(1);
+  expect(revocations.open()).toMatchObject([{ key: KEY, advisories: ["GHSA-next-next-next"] }]);
 });
