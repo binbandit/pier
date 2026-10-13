@@ -1,7 +1,7 @@
 import { graphql } from "./gql";
 
-// Every GraphQL operation pier runs. Each is priced with `rateLimit(dryRun: true)` in tests,
-// so a query that quietly grows expensive fails CI rather than draining the hourly budget.
+// Every GraphQL operation pier runs. `pier doctor --measure` prices the ones the sync repeats
+// (search, sweep, read) with GitHub's dry run, against the accounts' real PRs.
 
 export const ViewerQuery = graphql(`
   query Viewer {

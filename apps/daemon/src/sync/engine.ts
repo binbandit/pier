@@ -14,10 +14,10 @@ import type { ReleaseRegistry } from "@/registry/release";
 //   hydrate    full re-read of PRs that the above marked dirty, 25 at a time
 // plus files (REST patches for bot PRs) and registry lookups (release dates, advisories).
 
-const SEARCH_EVERY_MS = 60_000;
-const FULL_SEARCH_EVERY_MS = 30 * 60_000;
-const HOT_SWEEP_MS = 60_000;
-const WARM_SWEEP_MS = 10 * 60_000;
+export const SEARCH_EVERY_MS = 60_000;
+export const FULL_SEARCH_EVERY_MS = 30 * 60_000;
+export const HOT_SWEEP_MS = 60_000;
+export const WARM_SWEEP_MS = 10 * 60_000;
 const OVERLAP_MS = 3 * 60_000;
 
 export type SyncStatus = {

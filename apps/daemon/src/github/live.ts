@@ -103,10 +103,10 @@ type RestThread = components["schemas"]["thread"];
 type RestFile = components["schemas"]["diff-entry"];
 
 const SEARCH_CAP = 1000;
-const HYDRATE_BATCH = 25;
+export const HYDRATE_BATCH = 25;
 // 100 per query is allowed, but mergeability is computed on read and big batches hit GitHub's
 // 10-second limit (502). 50 keeps each sweep well under it for the same point cost.
-const SWEEP_BATCH = 50;
+export const SWEEP_BATCH = 50;
 
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
 
@@ -1236,7 +1236,7 @@ export class LiveGitHub implements GitHubPort {
 }
 
 // Search results are a union of every searchable type; only PRs carry an `id` here.
-function isPullHit(node: unknown): node is SearchHit {
+export function isPullHit(node: unknown): node is SearchHit {
   return typeof node === "object" && node !== null && "id" in node;
 }
 

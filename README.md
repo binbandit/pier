@@ -13,6 +13,7 @@ bun install
 bun run --filter @pier/daemon build     # builds apps/daemon/dist/pier
 ./apps/daemon/dist/pier install         # starts at login, restarts if it stops
 ./apps/daemon/dist/pier doctor          # checks everything pier needs
+./apps/daemon/dist/pier doctor --measure  # and what syncing your accounts costs per hour
 ```
 
 Then open http://127.0.0.1:4477 in Chrome and use its Install button to give pier its own window.
