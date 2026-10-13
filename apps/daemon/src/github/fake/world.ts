@@ -203,7 +203,13 @@ export type FakePr = {
   bumps: Bump[];
 };
 
-export type FakeRelease = { publishedAt: string; advisories: string[]; installScript: boolean };
+export type FakeRelease = {
+  publishedAt: string;
+  advisories: string[];
+  /** Published once a PR moving to this version is approved. */
+  lateAdvisories?: string[];
+  installScript: boolean;
+};
 
 export type FakePackage = {
   ecosystem: Ecosystem;
@@ -1495,6 +1501,14 @@ export class FakeWorld {
     const threads = pr.threads.flatMap((t) => t.comments.filter((c) => c.reviewId === review.id));
     this.touched(pr, review.author, [review.body, ...threads.map((c) => c.body)]);
     const isBotPr = this.users.get(pr.author)?.isBot ?? false;
+    if (review.state === "APPROVED") {
+      for (const bump of pr.bumps) {
+        const release = this.release(bump.ecosystem, bump.pkg, bump.to);
+        if (!release?.lateAdvisories?.length) continue;
+        release.advisories.push(...release.lateAdvisories);
+        release.lateAdvisories = [];
+      }
+    }
     const armed = pr.autoMerge !== null || (isBotPr && pr.repo.automergeOnApproval);
     if (review.state === "APPROVED" && armed)
       this.schedule(this.options.automergeDelayMs, () => this.automerge(pr, review.commitOid));
@@ -1862,9 +1876,26 @@ export class FakeWorld {
   }
 
   private botCommand(pr: FakePr, body: string): void {
+    if (pr.author !== "dependabot") return;
+    if (/^@dependabot ignore this version\b/m.test(body)) {
+      this.schedule(this.options.botDelayMs, () => this.botIgnore(pr));
+      return;
+    }
     const command = /^@dependabot (rebase|recreate)\b/m.exec(body)?.[1];
-    if (pr.author !== "dependabot" || !command) return;
+    if (!command) return;
     this.schedule(this.options.botDelayMs, () => this.botRebase(pr, command === "recreate"));
+  }
+
+  /** Dependabot takes "ignore this version" by saying so and closing the PR. */
+  private botIgnore(pr: FakePr): void {
+    if (pr.state !== "OPEN") return;
+    const version = pr.bumps[0]?.to ?? "this version";
+    this.comment(
+      pr.id,
+      pr.author,
+      `OK, I won't notify you about version ${version} again, unless you re-open this PR.`,
+    );
+    this.close(pr.id, pr.author);
   }
 
   private botRebase(pr: FakePr, recreate: boolean): void {

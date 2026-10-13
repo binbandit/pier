@@ -19,6 +19,7 @@ import type {
   PrView,
   QueueItem,
   Revision,
+  Revocation,
   SuggestedReviewer,
   RemoteSearch,
   Runway,
@@ -207,8 +208,11 @@ export const inputs = {
   }),
   /** The Log was looked at, so its failures stop showing in the status line. */
   seenLog: type({}),
+  /** Verdicts an advisory withdrew, whose notices haven't been dismissed. */
+  revocations: type({}),
+  dismissRevocation: type({ key: "string" }),
   planAction: type({
-    action: "'approve' | 'rebase' | 'recreate'",
+    action: "'approve' | 'rebase' | 'recreate' | 'ignore'",
     prIds: "string[] > 0",
     "groupKey?": "string",
   }),
@@ -224,6 +228,8 @@ export type Outputs = {
   inbox: QueueItem[];
   counts: SplitCounts;
   group: GroupView | null;
+  revocations: Revocation[];
+  dismissRevocation: { ok: true };
   pr: PrView | null;
   prDiff: PrDiff | null;
   saveDraft: { id: string };

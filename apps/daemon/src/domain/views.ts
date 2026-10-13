@@ -13,8 +13,10 @@ import type {
   GroupView,
   MergePath,
   PrItem,
+  PrRef,
   QueueItem,
   ReleaseInfo,
+  Revocation,
   SavedView,
   SearchResult,
   SemverClass,
@@ -22,7 +24,7 @@ import type {
 } from "@pier/core/wire";
 
 import { bumpKey, isManifestOf } from "./bumps";
-import type { DoneItems, Verdicts } from "./decisions";
+import type { DoneItems, Revocations, StoredRevocation, Verdicts } from "./decisions";
 import { evaluateGates, type Placement, place, summarizeGates } from "./gates";
 import type { Model, PrRecord } from "./model";
 import { checksFailing } from "./runway";
@@ -36,6 +38,7 @@ export type ViewContext = {
   model: Model;
   outbox: Outbox;
   verdicts: Verdicts;
+  revocations: Revocations;
   done: DoneItems;
   registry: ReleaseRegistry;
   settings: SettingsStore;
@@ -78,7 +81,34 @@ export class Views {
 
   counts(): Record<Split, number> {
     const { inbox } = this.snapshot();
-    return { review: inbox.review.length, deps: inbox.deps.length, mine: inbox.mine.length };
+    // A withdrawn verdict is yours to deal with until you dismiss its notice.
+    const revoked = this.ctx.revocations.open().length;
+    return {
+      review: inbox.review.length,
+      deps: inbox.deps.length + revoked,
+      mine: inbox.mine.length,
+    };
+  }
+
+  /** Verdicts an advisory withdrew, with the PRs that carry the version, open and merged. */
+  revocations(): Revocation[] {
+    return this.ctx.revocations.open().map((stored) => this.revocation(stored));
+  }
+
+  private revocation(stored: StoredRevocation): Revocation {
+    const carrying = [...this.ctx.model.all()]
+      .filter((record) => record.bot?.bumps.some((bump) => bumpKey(bump) === stored.key))
+      .toSorted((a, b) => a.doc.repo.localeCompare(b.doc.repo) || a.doc.number - b.doc.number);
+    return {
+      ...stored,
+      open: carrying
+        .filter((r) => r.doc.state === "OPEN")
+        .map((r) => ({
+          ...ref(r),
+          approved: r.viewers.get(r.reader)?.latestReview?.state === "APPROVED",
+        })),
+      merged: carrying.filter((r) => r.doc.state === "MERGED").map(ref),
+    };
   }
 
   flight(): FlightItem[] {
@@ -161,6 +191,7 @@ export class Views {
       fromCounts.set(from, (fromCounts.get(from) ?? 0) + 1);
     }
     const repBumpIndex = representative.bumps.findIndex((b) => bumpKey(b) === key);
+    const revoked = this.ctx.revocations.open().find((r) => r.key === key);
 
     return {
       key,
@@ -184,6 +215,7 @@ export class Views {
       },
       rows,
       verdicts: this.ctx.verdicts.active(key, this.ctx.now()),
+      revocation: revoked ? this.revocation(revoked) : null,
     };
   }
 
@@ -558,4 +590,13 @@ export function standing(doc: PrDoc): string {
   if (doc.reviewDecision === "approved") return "Approved";
   if (doc.checks.state === "failure") return checksFailing(doc.checks.failing);
   return doc.reviewDecision === "review_required" ? "Waiting on review" : "Open";
+}
+
+function ref(record: PrRecord): PrRef {
+  return {
+    prId: record.doc.id,
+    repo: record.doc.repo,
+    number: record.doc.number,
+    title: record.doc.title,
+  };
 }

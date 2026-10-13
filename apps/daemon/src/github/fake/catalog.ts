@@ -145,3 +145,11 @@ export const ADVISORIES: Record<string, string[]> = {
   "npm:ws@8.18.3": ["GHSA-fq2m-7wpx-c9vh"],
   "cargo:reqwest@0.12.24": ["GHSA-x8hr-2cwv-q5mj"],
 };
+
+/**
+ * Advisories published only once a PR moving to the version is approved, so they land after the
+ * verdict, as the ones that matter do.
+ */
+export const LATE_ADVISORIES: Record<string, string[]> = {
+  "npm:typescript@5.9.3": ["GHSA-4c7m-pq2x-8h3v"],
+};

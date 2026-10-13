@@ -126,9 +126,9 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | BOT-GROUP | One decision per bump across every repo it landed in | derived | M1a | sandbox |
 | BOT-GATES | Safety gates: version, release age, files, transitive deps, provenance, install scripts, advisories, checks | deps.dev, npm, GitHub | M1a | sandbox |
 | BOT-APPROVE | Approve a cohort through a paced write plan | `addPullRequestReview` | M1a | sandbox |
-| BOT-COMMANDS | `@dependabot rebase` / `recreate` / `ignore` | `addComment` | M1a | built |
+| BOT-COMMANDS | `@dependabot rebase` / `recreate` (`b r`, `b c`); `b i` closes and skips the version (`@dependabot ignore this version`, or closing a Renovate PR) | `addComment`, `closePullRequest` | M1a | built |
 | BOT-VERDICTS | Remember verdicts so new PRs for the same bump need one key | local | M1a | built |
-| BOT-REVOKE | Revoke verdicts when an advisory lands | deps.dev | M3 | - |
+| BOT-REVOKE | Hourly, every version with a standing verdict is looked up again; an advisory that wasn't known when you decided withdraws the verdict, cancels approvals not yet sent, and puts a notice on Deps (open PRs, with which can still merge; merged ones) until dismissed. Verified on the fake world (E2E); live needs a real advisory to land. | deps.dev | M3 | built |
 
 ## G. App
 

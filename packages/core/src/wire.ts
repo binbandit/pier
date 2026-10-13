@@ -291,19 +291,42 @@ export type GroupView = {
   representative: { prId: string; repo: string; number: number; files: DiffFile[] } | null;
   rows: GroupRow[];
   verdicts: Verdict[];
+  /** Your verdict on this version, withdrawn by an advisory, until you dismiss the notice. */
+  revocation: Revocation | null;
+};
+
+export type PrRef = { prId: string; repo: string; number: number; title: string };
+
+/**
+ * A verdict withdrawn because an advisory against its version appeared after you gave it. The
+ * open PRs carrying the version no longer count as decided; the merged ones already shipped it.
+ */
+export type Revocation = {
+  key: string;
+  ecosystem: Ecosystem;
+  pkg: string;
+  to: string;
+  /** Advisories that weren't known when you decided. */
+  advisories: string[];
+  decidedAt: string;
+  revokedAt: string;
+  /** `approved`: your approval stands on GitHub, so automation can still merge it. */
+  open: (PrRef & { approved: boolean })[];
+  merged: PrRef[];
 };
 
 // ---------------------------------------------------------------------------
 // Writes
 
-export type ActionKind = "approve" | "rebase" | "recreate";
+/** `ignore`: close the PR and have the bot skip this version (Dependabot's "ignore this version"). */
+export type ActionKind = "approve" | "rebase" | "recreate" | "ignore";
 
 export type PlanStep = {
   prId: string;
   repo: string;
   number: number;
   account: string;
-  writes: ("approve" | "comment")[];
+  writes: ("approve" | "comment" | "close")[];
   /** Why this PR is skipped, if it is. Skipped steps cost no writes. */
   skip: string | null;
 };

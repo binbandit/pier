@@ -13,6 +13,7 @@ import {
 } from "./bots";
 import {
   ADVISORIES,
+  LATE_ADVISORIES,
   CATALOG,
   type CatalogEcosystem,
   type CatalogEntry,
@@ -649,6 +650,7 @@ class Builder {
             {
               publishedAt: world.iso(at),
               advisories: ADVISORIES[key] ?? [],
+              lateAdvisories: LATE_ADVISORIES[key] ?? [],
               installScript: entry.installScript === true || NEW_INSTALL_SCRIPTS.has(key),
             },
             entry.source,

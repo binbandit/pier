@@ -7,6 +7,7 @@ import { Markdown } from "@/components/markdown";
 import { Row } from "@/components/rows";
 import { DiffFiles } from "@/diff/adapter";
 import { openOnGitHub, propose, rerun } from "@/features/actions";
+import { RevocationNotice } from "@/features/revocations";
 import { useCommands } from "@/keys/registry";
 import { plural, since } from "@/lib/format";
 import { q } from "@/lib/rpc";
@@ -44,12 +45,14 @@ const GATE_LABEL: Record<GateResult["gate"], string> = {
 export function GroupCanvas({ groupKey }: { groupKey: string }) {
   const { data: view, isPending } = useQuery(q("group", { key: groupKey }));
   if (isPending) return <div className="px-8 pt-10 text-faint">Loading</div>;
-  if (!view) return <GroupGone />;
+  if (!view) return <GroupGone groupKey={groupKey} />;
   return <Loaded view={view} />;
 }
 
-function GroupGone() {
+function GroupGone({ groupKey }: { groupKey: string }) {
   const navigate = useNavigate();
+  const { data: revocations = [] } = useQuery(q("revocations", {}));
+  const revocation = revocations.find((r) => r.key === groupKey);
   useCommands([
     {
       id: "group.back",
@@ -62,6 +65,11 @@ function GroupGone() {
   return (
     <div className="px-8 pt-16">
       <p className="text-prose text-muted">Every PR in this group has merged or closed.</p>
+      {revocation && (
+        <div className="mt-8">
+          <RevocationNotice revocation={revocation} inGroup />
+        </div>
+      )}
     </div>
   );
 }
@@ -146,6 +154,20 @@ function Loaded({ view }: { view: GroupView }) {
           },
         },
         {
+          id: "group.ignore",
+          title: "Close and skip this version",
+          keys: ["b i"],
+          scope: "surface",
+          group: "Bot",
+          // Skipping a version is about the version, so it covers the group unless rows are chosen.
+          run: () =>
+            void propose(
+              "ignore",
+              (chosen ?? rows).map((r) => r.prId),
+              `${view.pkg} ${view.to}`,
+            ),
+        },
+        {
           id: "group.rerun",
           title: "Re-run failed checks",
           keys: ["f r"],
@@ -218,6 +240,12 @@ function Loaded({ view }: { view: GroupView }) {
               ))}
           </dl>
         </header>
+
+        {view.revocation && (
+          <div className="mt-8">
+            <RevocationNotice revocation={view.revocation} inGroup />
+          </div>
+        )}
 
         <div className="mt-8">
           <Ledger ticks={ticks} size="lg" label={`${rows.length} PRs`} />

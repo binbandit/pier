@@ -8,22 +8,25 @@ import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Dock } from "@/ui/dock";
 import { Keys } from "@/ui/kbd";
-import type { PlanPreview } from "@pier/core/wire";
+import type { ActionKind, PlanPreview } from "@pier/core/wire";
 
 // The confirmation that rises out of the status line before any write. It says exactly what will
 // be sent, as whom, what's skipped and why, and what it costs against GitHub's hourly limit.
 // Enter sends, Esc backs out; nothing reaches GitHub until Enter.
 
-const VERBS = {
-  approve: "Approve",
-  rebase: "Ask Dependabot to rebase",
-  recreate: "Ask Dependabot to recreate",
-} as const;
+/** What sending does, given "N PRs". */
+const SAYS: Record<ActionKind, (prs: string) => string> = {
+  approve: (prs) => `Approve ${prs}`,
+  rebase: (prs) => `Ask Dependabot to rebase ${prs}`,
+  recreate: (prs) => `Ask Dependabot to recreate ${prs}`,
+  ignore: (prs) => `Close ${prs} and skip this version`,
+};
 
 const SENDING = {
   approve: "Approving",
   rebase: "Asking Dependabot to rebase",
   recreate: "Asking Dependabot to recreate",
+  ignore: "Closing",
 } as const;
 
 export function PlanStrip({ preview, label }: { preview: PlanPreview; label: string }) {
@@ -105,7 +108,7 @@ export function PlanStrip({ preview, label }: { preview: PlanPreview; label: str
         <h2 className="text-ui font-medium text-strong">
           {acting.length === 0
             ? "Nothing to send"
-            : `${VERBS[preview.action]} ${plural(acting.length, "PR")}`}
+            : SAYS[preview.action](plural(acting.length, "PR"))}
           <span className="ml-2 font-normal text-muted">{label}</span>
         </h2>
         {acting.length > 0 && (

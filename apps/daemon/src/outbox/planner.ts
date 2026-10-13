@@ -2,7 +2,7 @@ import { bumpKey } from "@/domain/bumps";
 import type { Verdicts } from "@/domain/decisions";
 import type { Model, PrRecord } from "@/domain/model";
 import type { SettingsStore } from "@/domain/settings";
-import type { ActionKind, PlanPreview, PlanStep, SemverClass } from "@pier/core/wire";
+import type { ActionKind, Bump, PlanPreview, PlanStep, SemverClass } from "@pier/core/wire";
 
 import { LIMITS, type NewCommand, type Outbox } from "./outbox";
 
@@ -16,7 +16,8 @@ const UNDO_WINDOW_MS = 5_000;
 type StoredPlan = {
   preview: PlanPreview;
   commands: NewCommand[];
-  verdicts: { key: string; semver: SemverClass }[];
+  /** With the advisories against each version that were known as you decided. */
+  verdicts: { key: string; semver: SemverClass; known: string[] }[];
   createdAt: number;
 };
 
@@ -26,6 +27,8 @@ export type PlannerDeps = {
   verdicts: Verdicts;
   settings: SettingsStore;
   accounts: () => string[];
+  /** Advisories known against the version a bump moves to. */
+  advisories: (bump: Bump) => string[];
 };
 
 export class Planner {
@@ -39,6 +42,7 @@ export class Planner {
     const steps: PlanStep[] = [];
     const commands: NewCommand[] = [];
     const verdicts = new Map<string, SemverClass>();
+    const known = new Map<string, Set<string>>();
     const warnings: string[] = [];
     const priority = prIds.length > 1 ? 1 : 0;
 
@@ -68,14 +72,24 @@ export class Planner {
           payload: { bumpKeys: (record.bot?.bumps ?? []).map(bumpKey) },
           priority,
         });
-        for (const bump of record.bot?.bumps ?? []) verdicts.set(bumpKey(bump), bump.semver);
+        for (const bump of record.bot?.bumps ?? []) {
+          const key = bumpKey(bump);
+          verdicts.set(key, bump.semver);
+          known.set(key, new Set([...(known.get(key) ?? []), ...this.deps.advisories(bump)]));
+        }
+      } else if (action === "ignore" && record.bot?.bot !== "dependabot") {
+        // Renovate takes a closed PR as "not this version".
+        step.writes = ["close"];
+        commands.push({ ...target(record), planId, kind: "close", payload: {}, priority });
       } else {
         step.writes = ["comment"];
         commands.push({
           ...target(record),
           planId,
           kind: "bot-command",
-          payload: { body: `@dependabot ${action}` },
+          payload: {
+            body: action === "ignore" ? "@dependabot ignore this version" : `@dependabot ${action}`,
+          },
           priority,
         });
       }
@@ -138,7 +152,7 @@ export class Planner {
     this.plans.set(planId, {
       preview,
       commands,
-      verdicts: preview.verdicts,
+      verdicts: preview.verdicts.map((v) => ({ ...v, known: [...(known.get(v.key) ?? [])] })),
       createdAt: Date.now(),
     });
     return preview;
@@ -154,7 +168,7 @@ export class Planner {
     if (!plan) throw new Error("This plan expired. Review it again.");
     this.plans.delete(planId);
     const ttl = this.deps.settings.get("policy").verdictTtlDays;
-    for (const v of plan.verdicts) this.deps.verdicts.record(v.key, v.semver, ttl);
+    for (const v of plan.verdicts) this.deps.verdicts.record(v.key, v.semver, ttl, v.known);
     const hold = plan.commands.length === 1 ? UNDO_WINDOW_MS : 0;
     return this.deps.outbox.enqueue(plan.commands, hold);
   }
@@ -172,6 +186,7 @@ export class Planner {
     const owner = doc.repo.split("/")[0] ?? "";
     if (sandbox && !sandbox.includes(owner)) return `Outside the sandbox (${owner})`;
 
+    if (action === "ignore") return record.bot ? null : "Not a dependency bump";
     if (action !== "approve") {
       return record.bot?.bot === "dependabot" ? null : "Only Dependabot takes comment commands";
     }

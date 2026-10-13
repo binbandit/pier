@@ -5,6 +5,7 @@ import { Ledger, countTicks } from "@/components/ledger";
 import { PrLine } from "@/components/pr-line";
 import { VirtualRows } from "@/components/rows";
 import { markDone, openOnGitHub, propose } from "@/features/actions";
+import { RevocationNotice } from "@/features/revocations";
 import type { Command } from "@/keys/registry";
 import { ago, plural, shortRepo } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
@@ -33,6 +34,11 @@ export function Inbox({ split }: { split: Split }) {
   const { data: items = [], isPending } = useQuery(q("inbox", { split }));
   const { data: counts } = useQuery(q("counts", {}));
   const { data: status } = useQuery(q("status", {}));
+  const { data: revocations = [] } = useQuery({
+    ...q("revocations", {}),
+    enabled: split === "deps",
+  });
+  const notices = split === "deps" ? revocations : [];
   // An empty list during the first sync means "not loaded yet", not "nothing to do".
   const loading = isPending || (items.length === 0 && status?.sync.state === "syncing");
 
@@ -105,11 +111,21 @@ export function Inbox({ split }: { split: Split }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-16 shrink-0 items-end gap-3 px-8 pb-3">
         <h1 className="text-title font-semibold text-strong">{TITLES[split]}</h1>
-        <span className="pb-0.5 text-ui text-faint">{items.length > 0 ? items.length : ""}</span>
+        <span className="pb-0.5 text-ui text-faint">
+          {items.length + notices.length > 0 ? items.length + notices.length : ""}
+        </span>
         {list.selected.length > 0 && (
           <span className="ml-4 pb-0.5 text-meta text-accent">{list.selected.length} selected</span>
         )}
       </header>
+
+      {notices.length > 0 && (
+        <div className="shrink-0 space-y-5 px-8 pt-1 pb-6">
+          {notices.map((revocation) => (
+            <RevocationNotice key={revocation.key} revocation={revocation} />
+          ))}
+        </div>
+      )}
 
       {!isPending && items.length === 0 ? (
         <div className="px-8 pt-16">

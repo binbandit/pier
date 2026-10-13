@@ -22,6 +22,37 @@ test("a clear bump group goes out in one sweep", async ({ page }) => {
   });
 });
 
+test("an advisory after you approve takes the verdict back, and the version can be skipped", async ({
+  page,
+}) => {
+  await page.goto("/deps/npm:typescript@5.9.3");
+  await expect(page.getByRole("heading", { name: /^Look/ })).toBeVisible();
+  await page.keyboard.press("Shift+A");
+  const strip = page.getByRole("region", { name: "Confirm writes" });
+  await expect(strip).toContainText("Approve 1 PR");
+  await page.keyboard.press("Enter");
+
+  // The fake publishes an advisory once it's approved; the next check takes the verdict back.
+  const notice = page.getByRole("region", { name: "Advisory against typescript 5.9.3" });
+  await expect(notice).toContainText("GHSA-4c7m-pq2x-8h3v", { timeout: 30_000 });
+  await expect(notice).toContainText("1 with your approval, which can still merge");
+
+  // Renovate's PR is closed outright; Dependabot is told to skip the version, and closes its own.
+  await page.keyboard.press("b");
+  await page.keyboard.press("i");
+  await expect(strip).toContainText("Close 2 PRs and skip this version");
+  await page.keyboard.press("Enter");
+  await expect(notice).toContainText("Still open in 1 PR.", { timeout: 15_000 });
+  await page.goto("/log");
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "sandbox-web#3" }).first(),
+  ).toContainText("Sent");
+
+  await page.goto("/inbox/deps");
+  await notice.getByRole("button", { name: "Dismiss" }).click();
+  await expect(notice).toBeHidden();
+});
+
 test("an approval can be taken back during its five seconds", async ({ page }) => {
   await page.goto("/WastedHippie/sandbox-api/pull/5");
   await expect(page.getByRole("heading", { name: "Add AUDIT_LOG feature flag" })).toBeVisible();

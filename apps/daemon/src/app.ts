@@ -1,8 +1,9 @@
 import { type Account, OPTIONAL_SCOPES, REQUIRED_SCOPES, missingScopes } from "@/accounts/gh";
 import { VERSION } from "@/config";
+import { AdvisoryWatch } from "@/domain/advisories";
 import { bumpKey } from "@/domain/bumps";
 import { CodeOwnersCache } from "@/domain/codeowners";
-import { DoneItems, Verdicts } from "@/domain/decisions";
+import { DoneItems, Revocations, Verdicts } from "@/domain/decisions";
 import { Details } from "@/domain/details";
 import { Drafts } from "@/domain/drafts";
 import { provenanceGate } from "@/domain/gates";
@@ -31,6 +32,8 @@ export type AppOptions = {
   /** Overrides applied on first run (e.g. sandbox scopes in E2E). */
   defaults?: Partial<Settings>;
   fetcher?: typeof fetch;
+  /** How often versions with a standing verdict are checked for new advisories. */
+  advisoryCheckMs?: number;
   /** The local git store for diffs and interdiffs. Optional so tests can run without git. */
   git?: InterdiffSource & { ensure(repo: string, account: string, oids: string[]): Promise<void> };
 };
@@ -76,6 +79,7 @@ export function createApp(options: AppOptions) {
     options.fetcher,
   );
   const verdicts = new Verdicts(stores.state);
+  const revocations = new Revocations(stores.state);
   const done = new DoneItems(stores.state);
 
   let planner: Planner;
@@ -108,6 +112,14 @@ export function createApp(options: AppOptions) {
     const approving =
       command.kind === "approve" ||
       (command.kind === "review" && command.payload.event === "APPROVE");
+    // An advisory that landed after you decided takes back approvals not yet sent.
+    const revoked = (command.payload.bumpKeys ?? [])
+      .map((key) => revocations.get(key))
+      .find((r) => r !== null && r.revokedAt > command.createdAt);
+    if (approving && revoked) {
+      const detail = `An advisory landed against ${revoked.pkg} ${revoked.to}`;
+      return { ok: false, state: "cancelled", detail };
+    }
     const action = command.kind === "bot-command" ? "rebase" : "approve";
     const skip =
       approving || command.kind === "bot-command"
@@ -162,7 +174,14 @@ export function createApp(options: AppOptions) {
   };
 
   const outbox = new Outbox(stores.state, () => ports, preflight, release);
-  planner = new Planner({ model, outbox, verdicts, settings, accounts: logins });
+  planner = new Planner({
+    model,
+    outbox,
+    verdicts,
+    settings,
+    accounts: logins,
+    advisories: (bump) => registry.cached(bump)?.advisories ?? [],
+  });
   const drafts = new Drafts(stores.state);
   const details = new Details(stores.cache);
   const codeOwners = new CodeOwnersCache(ports);
@@ -170,6 +189,7 @@ export function createApp(options: AppOptions) {
     model,
     outbox,
     verdicts,
+    revocations,
     done,
     registry,
     settings,
@@ -234,11 +254,15 @@ export function createApp(options: AppOptions) {
       sync.forgetThread(command.account, command.payload.threadId);
     }
   });
+  const advisoryWatch = new AdvisoryWatch({ model, verdicts, revocations, registry });
   let lastRegistryVersion = registry.version;
+  let lastRevocationsVersion = revocations.version;
   const registryWatch = setInterval(() => {
-    if (registry.version === lastRegistryVersion) return;
+    if (registry.version === lastRegistryVersion && revocations.version === lastRevocationsVersion)
+      return;
     lastRegistryVersion = registry.version;
-    events.emit(["inbox", "counts", "group"]);
+    lastRevocationsVersion = revocations.version;
+    events.emit(["inbox", "counts", "group", "revocations", "status"]);
   }, 1_000);
 
   function accountStatus(account: Account): AccountStatus {
@@ -265,6 +289,8 @@ export function createApp(options: AppOptions) {
     sync,
     events,
     verdicts,
+    revocations,
+    advisoryWatch,
     done,
     stores,
     accounts,
@@ -282,11 +308,13 @@ export function createApp(options: AppOptions) {
       );
       outbox.start();
       sync.start();
+      advisoryWatch.start(options.advisoryCheckMs ?? 60 * 60_000);
       // Teams decide what counts as a request to you, in search as in the inbox.
       for (const login of logins()) void codeOwners.teamsOf(login);
       fetchHumanHeads([...model.all()].map((r) => r.doc.id));
     },
     stop() {
+      advisoryWatch.stop();
       sync.stop();
       outbox.stop();
       events.close();

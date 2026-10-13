@@ -140,6 +140,8 @@ async function fakeGitHub(preset: Preset): Promise<GitHubSetup> {
     ports: fake.createFakePorts(world),
     fetcher: fake.fakeRegistryFetch(world),
     defaults: fake.fakeDefaults(world, preset),
+    // Advisories land in seconds here, so their check runs as often.
+    advisoryCheckMs: 5_000,
   };
 }
 

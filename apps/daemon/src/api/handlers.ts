@@ -16,6 +16,11 @@ export function createHandlers(app: App): Handlers {
     inbox: ({ split }) => app.views.inbox(split),
     counts: () => app.views.counts(),
     group: ({ key }) => app.views.group(key),
+    revocations: () => app.views.revocations(),
+    dismissRevocation({ key }) {
+      app.revocations.dismiss(key);
+      return { ok: true as const };
+    },
     pr: ({ repo, number }) => app.review.view(repo, number),
     prDiff: ({ repo, number, ignoreWhitespace, ...view }) =>
       app.review.diff(repo, number, view, ignoreWhitespace ?? false),
