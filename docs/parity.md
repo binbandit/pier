@@ -137,7 +137,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | APP-ACCOUNTS | Every gh account in one inbox, each acting as itself | M1a | sandbox |
 | APP-OUTBOX | Writes survive crashes and are never sent twice | M1a | built |
 | APP-INSTALL | One binary, starts at login, `pier doctor` | M1a | sandbox |
-| APP-PWA | Installable window with dock badge | M1a | built |
+| APP-PWA | Installable window: dock badge counts PRs where it's your turn (Review and Mine); "Notify me when it's my turn" (palette) sends a system notification for each new one while pier is in the background; an open window takes captured links (`launchQueue`); dock icons on Apple's grid plus a maskable one | M1a | built |
 | APP-LINKS | github.com PR links (and `/files#diff-…` line links, and `/pulls`) open in pier: `pier extension` writes a Chrome extension that redirects them. `?pier=0` (Shift+O) and links followed on github.com itself stay there. PR links inside comments open in pier directly. | M1a | sandbox |
-| APP-OFFLINE | Says "daemon offline" instead of a browser error | M1a | built |
+| APP-OFFLINE | With the daemon stopped, a page load says pier isn't running (how to start it, the same page on GitHub) and opens by itself once it's back; checked in Chromium against the built binary | M1a | built |
 | APP-CONTRAST | Night contrast: from 20:00 to 07:00 text and diff colours sit a tenth lower (black stays black); palette pins day or night | M3 | built |

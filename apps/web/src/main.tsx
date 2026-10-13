@@ -3,6 +3,8 @@ import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { followLaunches } from "@/lib/launch";
+
 import { routeTree } from "./routeTree.gen";
 
 import "./styles/app.css";
@@ -22,6 +24,8 @@ declare module "@tanstack/react-router" {
     router: typeof router;
   }
 }
+
+followLaunches((href) => void router.navigate({ href }));
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   void navigator.serviceWorker.register("/sw.js");

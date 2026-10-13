@@ -3,6 +3,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
 
+import { enableNotifications, useTurnSignals } from "@/features/turn-signals";
 import { useCommands, useKeyDispatcher } from "@/keys/registry";
 import { useServerEvents } from "@/lib/events";
 import { q } from "@/lib/rpc";
@@ -31,7 +32,11 @@ export function Shell({ children }: { children: ReactNode }) {
   useKeyDispatcher();
   useServerEvents();
   useContrastSchedule();
+  useTurnSignals();
   const setContrast = usePrefs((s) => s.setContrast);
+  const notify = usePrefs((s) => s.notify);
+  const setNotify = usePrefs((s) => s.setNotify);
+  const toast = useUi((s) => s.toast);
   const navigate = useNavigate();
   const panel = useUi((s) => s.panel);
   const openPanel = useUi((s) => s.openPanel);
@@ -99,6 +104,29 @@ export function Shell({ children }: { children: ReactNode }) {
       group: "View",
       run: () => setContrast(choice),
     })),
+    notify
+      ? {
+          id: "notify.off",
+          title: "Stop notifying me when it's my turn",
+          scope: "global" as const,
+          group: "View",
+          run: () => setNotify(false),
+        }
+      : {
+          id: "notify.on",
+          title: "Notify me when it's my turn",
+          scope: "global" as const,
+          group: "View",
+          run: () =>
+            void enableNotifications().then((on) =>
+              toast({
+                text: on
+                  ? "pier will notify you when a PR becomes your turn"
+                  : "Notifications are blocked for pier; allow them in Chrome's site settings",
+                tone: on ? "ok" : "bad",
+              }),
+            ),
+        },
     {
       id: "cheatsheet",
       title: "Keyboard shortcuts",

@@ -12,6 +12,9 @@ type Prefs = {
   /** Night contrast by the clock, or pinned to one. */
   contrast: ContrastChoice;
   setContrast: (contrast: ContrastChoice) => void;
+  /** A system notification when a PR becomes your turn while pier is in the background. */
+  notify: boolean;
+  setNotify: (notify: boolean) => void;
 };
 
 export const usePrefs = create<Prefs>()(
@@ -21,6 +24,8 @@ export const usePrefs = create<Prefs>()(
       toggleSplit: () => set((s) => ({ split: !s.split })),
       contrast: "auto",
       setContrast: (contrast) => set({ contrast }),
+      notify: false,
+      setNotify: (notify) => set({ notify }),
     }),
     { name: "pier.prefs" },
   ),
