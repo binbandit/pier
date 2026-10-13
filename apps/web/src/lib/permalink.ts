@@ -38,3 +38,17 @@ export async function lineLink(
     : "";
   return `https://github.com/${repo}/pull/${number}/files#${await fileAnchor(path)}${at}`;
 }
+
+/** `https://github.com/o/r/pull/12/files#x` → `/o/r/pull/12`. */
+export function githubPath(text: string): string | null {
+  return githubLink(text)?.path ?? null;
+}
+
+/** A github.com PR link as a pier path, keeping a line anchor (`#diff-…R12`) when it has one. */
+export function githubLink(text: string): { path: string; hash: string } | null {
+  const m =
+    /^\s*(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)[^#\s]*(?:#(\S*))?/i.exec(
+      text,
+    );
+  return m ? { path: `/${m[1]}/${m[2]}/pull/${m[3]}`, hash: m[4] ?? "" } : null;
+}

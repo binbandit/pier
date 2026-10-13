@@ -138,5 +138,5 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | APP-OUTBOX | Writes survive crashes and are never sent twice | M1a | built |
 | APP-INSTALL | One binary, starts at login, `pier doctor` | M1a | sandbox |
 | APP-PWA | Installable window with dock badge | M1a | built |
-| APP-LINKS | github.com PR links open in pier (browser extension) | M1a | - |
+| APP-LINKS | github.com PR links (and `/files#diff-…` line links, and `/pulls`) open in pier: `pier extension` writes a Chrome extension that redirects them. `?pier=0` (Shift+O) and links followed on github.com itself stay there. PR links inside comments open in pier directly. | M1a | sandbox |
 | APP-OFFLINE | Says "daemon offline" instead of a browser error | M1a | built |

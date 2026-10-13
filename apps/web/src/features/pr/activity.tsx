@@ -2,9 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
-import { githubPath } from "@/components/palette";
 import { errorText } from "@/features/actions";
 import { ago, since } from "@/lib/format";
+import { githubPath } from "@/lib/permalink";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";

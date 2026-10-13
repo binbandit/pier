@@ -1,12 +1,16 @@
+import { useNavigate } from "@tanstack/react-router";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { useEffect, useMemo, useRef } from "react";
+
+import { githubLink } from "@/lib/permalink";
 
 import { enrich } from "./enrich";
 
 // Markdown written by PR authors and bots. It renders on pier's own origin, next to buttons that
 // approve and merge, so it is sanitised hard: no scripts, styles, forms or frames, links open
-// outside the app, and images load only from GitHub (anything else could be a tracking pixel).
+// outside the app (except links to PRs, which open here), and images load only from GitHub
+// (anything else could be a tracking pixel).
 
 const IMAGE_HOSTS = /^https:\/\/([a-z0-9-]+\.)*(githubusercontent\.com|github\.com)\//i;
 
@@ -97,8 +101,24 @@ export function Html({ html, className }: { html: string; className?: string }) 
 /** Sanitised HTML in the page, with its math and diagrams drawn. */
 function Rendered({ html, className }: { html: string; className?: string | undefined }) {
   const root = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   // React replaces the content whenever the HTML changes, so it's drawn again each time.
   useEffect(() => (html && root.current ? enrich(root.current) : undefined), [html]);
+  // A link to a PR opens it here. A modified click still opens it in a new tab.
+  useEffect(() => {
+    const open = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+        return;
+      const anchor = event.target instanceof Element ? event.target.closest("a") : null;
+      const link = anchor ? githubLink(anchor.href) : null;
+      if (!link) return;
+      event.preventDefault();
+      void navigate({ to: link.path, hash: link.hash });
+    };
+    const element = root.current;
+    element?.addEventListener("click", open);
+    return () => element?.removeEventListener("click", open);
+  }, [navigate]);
   // Sanitised above; this is the one place pier renders HTML it didn't write.
   return (
     <div

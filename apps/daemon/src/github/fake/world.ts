@@ -2044,7 +2044,8 @@ function textFile(
     path: change.path,
     previousPath: change.previousPath ?? null,
     status,
-    patch: diff.patch,
+    // As GitHub has it: a file with nothing to show (moved as is, or empty) comes without one.
+    patch: diff.additions + diff.deletions === 0 ? null : diff.patch,
     additions: diff.additions,
     deletions: diff.deletions,
     revision: 0,

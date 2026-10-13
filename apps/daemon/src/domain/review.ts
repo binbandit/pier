@@ -46,6 +46,8 @@ import { SuggestionError, applySplices, hunkLines } from "./suggestions";
 // Everything the PR canvas reads and writes: the view of one PR (doc + detail + your drafts +
 // writes still in flight), its diff, and the review actions. Writes all go through the outbox.
 
+/** How many files GitHub lists for a PR before it stops. */
+const GITHUB_FILE_LIST_LIMIT = 3000;
 /** The largest image pier shows inline; bigger ones open on GitHub. */
 const IMAGE_LIMIT = 5 * 1024 * 1024;
 /** A submitted review waits this long before sending, so `z` can still take it back. */
@@ -357,14 +359,16 @@ export class ReviewService {
         toOid: view.to,
       };
     }
-    // GitHub lists at most 3,000 files; past that, the whole diff comes from the git store.
-    const listed = this.deps.model.get(doc.id)?.files;
-    const complete = listed !== null && listed !== undefined && listed.length >= doc.changedFiles;
+    // GitHub lists at most 3,000 files; past that, the whole diff comes from the git store. A
+    // shorter list is one not read yet, or from before a push, and fills in when it is.
+    const listed = this.deps.model.get(doc.id)?.files ?? null;
+    const complete = listed !== null && listed.length >= doc.changedFiles;
     if (range === "all" && !ignoreWhitespace && (complete || !git)) {
+      const capped = listed !== null && listed.length >= GITHUB_FILE_LIST_LIMIT && !complete;
       return all(
-        complete
-          ? null
-          : "GitHub lists only the first 3,000 files; the rest need the local git store",
+        capped
+          ? "GitHub lists only the first 3,000 files; the rest need the local git store"
+          : null,
       );
     }
     if (!git)

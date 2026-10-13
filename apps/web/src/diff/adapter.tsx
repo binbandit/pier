@@ -35,6 +35,17 @@ const UNSAFE_CSS = /* css */ `
     font-family: var(--diffs-header-font-family);
     font-size: 12px;
   }
+  /* Showing more context: the chevron is a cell of the line-number column, flush with it. */
+  [data-separator-wrapper] {
+    padding-inline: 0;
+    grid-template-columns: var(--diffs-column-number-width) auto;
+  }
+  [data-expand-button] {
+    border-radius: 0;
+    border-right: 0;
+    background: #121212;
+  }
+  [data-expand-button]:hover { background: #1e1e1e; color: #cccccc; }
   /* OLED: the space beside a split's one-sided lines and under a thread stays true black. */
   [data-content-buffer] { background-image: none; }
   [data-line-annotation],
@@ -95,9 +106,26 @@ function DiffFileView({ file }: { file: DiffFile }) {
   return <PatchDiff patch={toPatch(file)} options={DIFF_OPTIONS} />;
 }
 
-/** GitHub gives hunks only; the renderer wants a full git-style file patch. */
+/**
+ * GitHub gives hunks only; the renderer wants a full git-style file patch. It tells new, deleted
+ * and renamed files apart by git's extended headers (a new file it can't expand has no "more
+ * context" to offer), so those are written as git would.
+ */
 export function toPatch(file: DiffFile): string {
-  const before = file.status === "added" ? "/dev/null" : `a/${file.previousPath ?? file.path}`;
-  const after = file.status === "removed" ? "/dev/null" : `b/${file.path}`;
-  return `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n--- ${before}\n+++ ${after}\n${file.patch ?? ""}\n`;
+  const from = file.previousPath ?? file.path;
+  const lines = [`diff --git a/${from} b/${file.path}`];
+  if (file.status === "added") lines.push("new file mode 100644");
+  if (file.status === "removed") lines.push("deleted file mode 100644");
+  if (from !== file.path) {
+    lines.push(
+      `similarity index ${file.patch ? 90 : 100}%`,
+      `rename from ${from}`,
+      `rename to ${file.path}`,
+    );
+  }
+  lines.push(
+    `--- ${file.status === "added" ? "/dev/null" : `a/${from}`}`,
+    `+++ ${file.status === "removed" ? "/dev/null" : `b/${file.path}`}`,
+  );
+  return `${lines.join("\n")}\n${file.patch ?? ""}\n`;
 }

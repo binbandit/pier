@@ -305,13 +305,27 @@ npm test
 `;
 }
 
+const CONTRIBUTING = `# Contributing
+
+Open a PR against main. One approval from an owner merges it.
+`;
+
 function docs(): HumanChange {
   return {
     title: "Document local setup and tests",
     branch: "docs/local-setup",
     summary:
       "New joiners kept asking how to run this locally. Adds the env file step and how to run tests.",
-    files: [{ path: "README.md", before: README, after: readme(3000) }],
+    files: [
+      { path: "README.md", before: README, after: readme(3000) },
+      // Moved, not changed.
+      {
+        path: "docs/CONTRIBUTING.md",
+        previousPath: "CONTRIBUTING.md",
+        before: CONTRIBUTING,
+        after: CONTRIBUTING,
+      },
+    ],
     followUp: [{ path: "README.md", after: readme(8080) }],
   };
 }

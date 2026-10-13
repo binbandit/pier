@@ -442,20 +442,26 @@ class Builder {
       ["config-validate", "config-load", "Validate config against the schema"],
       ["config-reload", "config-validate", "Reload config when the file changes"],
     ] as const;
-    const stacked = layers.map(([branch, base, title], i) =>
-      world.openPr({
-        repo: cli.repo.fullName,
-        author: other,
-        title,
-        body: `Part ${i + 1} of the config work.`,
-        headRefName: branch,
-        baseRefName: base,
-        files: [{ path: `src/config/${branch}.ts`, after: `export const step = ${i + 1};\n` }],
-        reviewers: [you],
-        checks: "success",
-        createdAt: now - (12 - i) * HOUR,
-      }),
-    );
+    const stacked: FakePr[] = [];
+    for (const [i, [branch, base, title]] of layers.entries()) {
+      const below = stacked.at(-1);
+      stacked.push(
+        world.openPr({
+          repo: cli.repo.fullName,
+          author: other,
+          title,
+          body: below
+            ? `Part ${i + 1} of the config work, on top of [#${below.number}](https://github.com/${cli.repo.fullName}/pull/${below.number}).`
+            : "Part 1 of the config work.",
+          headRefName: branch,
+          baseRefName: base,
+          files: [{ path: `src/config/${branch}.ts`, after: `export const step = ${i + 1};\n` }],
+          reviewers: [you],
+          checks: "success",
+          createdAt: now - (12 - i) * HOUR,
+        }),
+      );
+    }
     world.stack(
       cli.repo.fullName,
       stacked.map((pr) => pr.number),

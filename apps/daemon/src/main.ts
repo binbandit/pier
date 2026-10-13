@@ -5,6 +5,7 @@ import { discoverAccounts, readToken } from "@/accounts/gh";
 import { createHandlers } from "@/api/handlers";
 import { type AppOptions, createApp } from "@/app";
 import { doctor } from "@/cli/doctor";
+import { writeExtension } from "@/cli/extension";
 import { install, uninstall } from "@/cli/install";
 import { ORIGIN, paths } from "@/config";
 import { GitStore, gitVersionOk } from "@/git/store";
@@ -23,6 +24,7 @@ const HELP = `pier: pull request review, one decision at a time
   pier install      start pier at login (launchd) and keep it running
   pier uninstall    stop starting at login (your data stays)
   pier doctor       check gh, git, accounts and the daemon
+  pier extension    write the Chrome extension that opens github.com PR links in pier
 `;
 
 async function main(argv: string[]) {
@@ -34,6 +36,8 @@ async function main(argv: string[]) {
       return install();
     case "uninstall":
       return uninstall();
+    case "extension":
+      return writeExtension();
     case "doctor":
       process.exit((await doctor()) ? 0 : 1);
       return;

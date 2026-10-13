@@ -373,6 +373,11 @@ test("a stacked PR shows its stack, and the palette moves through it", async ({ 
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/pull\/6$/);
   expect(errors.filter((e) => /Maximum update depth/.test(e))).toEqual([]);
+
+  // Its description links the PR below on github.com; the link opens it here.
+  await page.locator('a[href="https://github.com/WastedHippie/sandbox-cli/pull/5"]').click();
+  await expect(page).toHaveURL(/\/WastedHippie\/sandbox-cli\/pull\/5$/);
+  await expect(page.getByRole("heading", { name: "Load config from TOML files" })).toBeVisible();
 });
 
 test("a saved reply goes in where the cursor is", async ({ page }) => {

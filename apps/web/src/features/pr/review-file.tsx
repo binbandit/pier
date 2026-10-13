@@ -234,6 +234,9 @@ export function ReviewFile(props: Props) {
     [path, anchors, split, prId, range.from, range.to],
   );
   const patch = useMemo(() => toPatch(shown), [shown]);
+  // Renamed with nothing to show: git has no text diff for it either.
+  const moved =
+    file.previousPath !== null && file.patch === null && file.additions + file.deletions === 0;
 
   const loadFromGit = async () => {
     try {
@@ -276,7 +279,7 @@ export function ReviewFile(props: Props) {
           )}
         </button>
         {file.patch === null && file.additions + file.deletions === 0 ? (
-          <span className="shrink-0 text-meta text-faint">binary</span>
+          <span className="shrink-0 text-meta text-faint">{moved ? "moved" : "binary"}</span>
         ) : (
           <span className="shrink-0 font-code text-meta">
             <span className="text-ok">+{file.additions}</span>{" "}
@@ -390,14 +393,20 @@ export function ReviewFile(props: Props) {
           <RichView prId={prId} file={file} range={range} kind={rich} />
         ) : shown.patch === null ? (
           <p className="flex items-center gap-4 px-1 py-3 text-meta text-faint">
-            GitHub didn't send a diff for this file (it's binary, or too long).
-            <button
-              type="button"
-              onClick={() => void loadFromGit()}
-              className="text-muted hover:text-fg"
-            >
-              Load it from git
-            </button>
+            {moved ? (
+              "Moved, with no changes GitHub can show."
+            ) : (
+              <>
+                GitHub didn't send a diff for this file (it's binary, or too long).
+                <button
+                  type="button"
+                  onClick={() => void loadFromGit()}
+                  className="text-muted hover:text-fg"
+                >
+                  Load it from git
+                </button>
+              </>
+            )}
           </p>
         ) : (
           <PatchDiff

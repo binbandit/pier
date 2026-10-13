@@ -17,7 +17,11 @@ bun run --filter @pier/daemon build     # builds apps/daemon/dist/pier
 
 Then open http://127.0.0.1:4477 in Chrome and use its Install button to give pier its own window.
 
-Every github.com PR link works with the host swapped: `github.com/acme/api/pull/12` is `127.0.0.1:4477/acme/api/pull/12`.
+Every github.com PR link works with the host swapped: `github.com/acme/api/pull/12` is `127.0.0.1:4477/acme/api/pull/12`. To have those links open in pier on their own (from Slack, email or bookmarks), add the link extension:
+
+```sh
+./apps/daemon/dist/pier extension       # writes it, then says how to load it in Chrome
+```
 
 ## Develop
 

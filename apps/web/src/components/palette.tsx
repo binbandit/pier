@@ -3,6 +3,7 @@ import { clsx } from "clsx";
 import { useState } from "react";
 
 import { type Command, activeCommands, useCommands, useKeys } from "@/keys/registry";
+import { githubLink } from "@/lib/permalink";
 import { useUi } from "@/stores/ui";
 import { Keys } from "@/ui/kbd";
 
@@ -138,20 +139,6 @@ export function Palette() {
       </dialog>
     </div>
   );
-}
-
-/** `https://github.com/o/r/pull/12/files#x` → `/o/r/pull/12`. */
-export function githubPath(text: string): string | null {
-  return githubLink(text)?.path ?? null;
-}
-
-/** A github.com PR link as a pier path, keeping a line anchor (`#diff-…R12`) when it has one. */
-export function githubLink(text: string): { path: string; hash: string } | null {
-  const m =
-    /^\s*(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)[^#\s]*(?:#(\S*))?/i.exec(
-      text,
-    );
-  return m ? { path: `/${m[1]}/${m[2]}/pull/${m[3]}`, hash: m[4] ?? "" } : null;
 }
 
 /** Subsequence match, preferring matches at word starts and earlier positions. */
