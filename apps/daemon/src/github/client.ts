@@ -3,16 +3,18 @@ import type { Database } from "bun:sqlite";
 import { VERSION } from "@/config";
 
 import type { TypedDocumentString } from "./gql/graphql";
+import { Lane, type Priority } from "./lane";
 
 // One client per account. It owns that account's token, rate windows, and pacing:
-//   - GraphQL runs serially (GitHub recommends it, and it keeps point spend predictable).
-//   - REST runs at most 4 at a time, with ETag / Last-Modified revalidation (304s are free).
+//   - GraphQL runs one background request at a time (GitHub recommends serial requests, and it
+//     keeps point spend predictable), with a second slot held for interactive ones.
+//   - REST runs at most 4 at a time, one slot held for interactive requests, with ETag /
+//     Last-Modified revalidation (304s are free).
+//   - Holding a slot back means a click never waits behind a slow sync batch.
 //   - A secondary-limit response pauses the whole client until `retry-after` passes.
 
 const API = "https://api.github.com";
 const REST_CONCURRENCY = 4;
-
-export type Priority = "interactive" | "background";
 
 export type RateWindow = { limit: number; remaining: number; used: number; resetAt: number };
 
@@ -75,9 +77,8 @@ export interface GitHubTransport {
 
 export class GitHubClient implements GitHubTransport {
   private token: string | null = null;
-  private graphqlChain: Promise<unknown> = Promise.resolve();
-  private restInFlight = 0;
-  private restWaiters: (() => void)[] = [];
+  private readonly graphqlLane = new Lane(2, 1);
+  private readonly restLane = new Lane(REST_CONCURRENCY, 1);
   private pausedUntil = 0;
   private windows: { graphql: RateWindow | null; core: RateWindow | null } = {
     graphql: null,
@@ -131,15 +132,13 @@ export class GitHubClient implements GitHubTransport {
         throw new GitHubError("GraphQL response had no data", "graphql", response.status);
       return payload.data;
     };
-    const result = this.graphqlChain.then(run, run);
-    this.graphqlChain = result.catch(() => undefined);
-    return result;
+    return this.graphqlLane.run(priority, run);
   }
 
-  async rest<T>(request: RestRequest): Promise<RestResponse<T>> {
-    await this.acquireRestSlot();
-    try {
-      await this.waitForBudget("core", request.priority ?? "background");
+  rest<T>(request: RestRequest): Promise<RestResponse<T>> {
+    const priority = request.priority ?? "background";
+    return this.restLane.run(priority, async () => {
+      await this.waitForBudget("core", priority);
       const method = request.method ?? "GET";
       const accept = request.accept ?? "application/vnd.github+json";
       const cacheKey = `${this.login} ${accept} ${request.path}`;
@@ -184,14 +183,11 @@ export class GitHubClient implements GitHubTransport {
         );
       }
       return { status: response.status, data, headers: response.headers, notModified: false };
-    } finally {
-      this.releaseRestSlot();
-    }
+    });
   }
 
-  async location(path: string): Promise<string | null> {
-    await this.acquireRestSlot();
-    try {
+  location(path: string): Promise<string | null> {
+    return this.restLane.run("interactive", async () => {
       const response = await this.send(`${API}${path}`, {
         method: "GET",
         headers: { accept: "application/vnd.github+json" },
@@ -199,9 +195,7 @@ export class GitHubClient implements GitHubTransport {
         manualRedirect: true,
       });
       return response.headers.get("location");
-    } finally {
-      this.releaseRestSlot();
-    }
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -327,20 +321,6 @@ export class GitHubClient implements GitHubTransport {
       );
     }
     await Bun.sleep(wait);
-  }
-
-  private async acquireRestSlot(): Promise<void> {
-    if (this.restInFlight < REST_CONCURRENCY) {
-      this.restInFlight++;
-      return;
-    }
-    await new Promise<void>((resolve) => this.restWaiters.push(resolve));
-    this.restInFlight++;
-  }
-
-  private releaseRestSlot(): void {
-    this.restInFlight--;
-    this.restWaiters.shift()?.();
   }
 
   private cachedResponse(key: string) {
