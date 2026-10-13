@@ -88,6 +88,13 @@ export class FakeGitHub implements GitHubPort {
     }));
   }
 
+  prId(repo: string, number: number): Promise<string | null> {
+    return this.call("prId", "graphql", () => {
+      const pr = this.world.prByNumber(repo, number);
+      return pr && this.canSee(pr) ? pr.id : null;
+    });
+  }
+
   search(query: string): Promise<SearchHit[]> {
     return this.call(
       "search",
@@ -418,6 +425,37 @@ export class FakeGitHub implements GitHubPort {
     return this.call("merge", "core", () =>
       this.world.requestMerge(this.restPr(repo, number).id, this.login, input),
     );
+  }
+
+  enqueue(prId: string, headOid: string, jump: boolean): Promise<void> {
+    return this.call("enqueue", "graphql", () =>
+      this.world.enqueue(this.visiblePr(prId).id, this.login, headOid, jump),
+    );
+  }
+
+  dequeue(prId: string): Promise<void> {
+    return this.call("dequeue", "graphql", () =>
+      this.world.dequeue(this.visiblePr(prId).id, this.login),
+    );
+  }
+
+  deleteBranch(repo: string, branch: string): Promise<void> {
+    return this.call("deleteBranch", "core", () =>
+      this.world.deleteBranch(repo, branch, this.login),
+    );
+  }
+
+  restoreBranch(repo: string, branch: string, _sha: string): Promise<void> {
+    return this.call("restoreBranch", "core", () =>
+      this.world.restoreBranch(repo, branch, this.login),
+    );
+  }
+
+  revert(prId: string, title?: string, body?: string): Promise<{ number: number; url: string }> {
+    return this.call("revert", "graphql", () => {
+      const pr = this.world.revert(this.visiblePr(prId).id, this.login, title, body);
+      return { number: pr.number, url: `https://github.com/${pr.repo.fullName}/pull/${pr.number}` };
+    });
   }
 
   mergeStatus(repo: string, number: number, uuid: string): Promise<MergeResult> {
@@ -805,7 +843,8 @@ export class FakeGitHub implements GitHubPort {
         open && (canWrite || pr.author === this.login) && pr.baseRefOid !== pr.repo.headOid,
       canEnableAutoMerge: open && canWrite && pr.repo.autoMergeAllowed,
       autoMerge: pr.autoMerge ? { method: pr.autoMerge.method } : null,
-      mergeQueue: null,
+      mergeQueue:
+        pr.queuePosition === null ? null : { position: pr.queuePosition, state: "QUEUED" },
       messages: {
         MERGE: {
           headline: `Merge pull request #${pr.number} from ${pr.repo.owner}/${pr.headRefName}`,
@@ -819,6 +858,8 @@ export class FakeGitHub implements GitHubPort {
       methods,
       defaultMethod: methods[0] ?? "MERGE",
       autoMergeAllowed: pr.repo.autoMergeAllowed,
+      canMergeAsAdmin: world.permission(pr.repo, this.login) === "ADMIN",
+      mergeQueueEnabled: pr.repo.mergeQueue,
     };
   }
 
@@ -927,6 +968,14 @@ export class FakeGitHub implements GitHubPort {
       bodyHTML: html(pr.body),
       reactions: reactionsOf(pr.reactions, this.login),
       canEdit: world.canEditWriting(pr, pr.author, this.login),
+      headBranch: {
+        exists: !pr.repo.deletedBranches.has(pr.headRefName),
+        canDelete:
+          pr.state !== "OPEN" &&
+          !pr.repo.deletedBranches.has(pr.headRefName) &&
+          world.canWrite(pr.repo, this.login),
+        crossRepo: false,
+      },
       linkedIssues: [],
       requiredChecks: pr.repo.checkNames.filter((name) => name !== "e2e"),
       locked: pr.locked,

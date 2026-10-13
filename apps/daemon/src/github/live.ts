@@ -32,21 +32,25 @@ import {
   ConvertToDraftMutation,
   DeleteIssueCommentMutation,
   DeleteReviewCommentMutation,
+  DequeueMutation,
   DismissReviewMutation,
   CommentsByQuery,
   DisableAutoMergeMutation,
   EnableAutoMergeMutation,
+  EnqueueMutation,
   HistoryQuery,
   HydrateQuery,
   MarkReadyMutation,
   MarkViewedMutation,
   MinimizeMutation,
   PendingReviewQuery,
+  PrIdQuery,
   MergeInfoQuery,
   PrDetailQuery,
   RemoveReactionMutation,
   ReopenPrMutation,
   RequestReviewsMutation,
+  RevertMutation,
   ReplyMutation,
   ResolveThreadMutation,
   ReviewsByAuthorQuery,
@@ -106,6 +110,18 @@ export class LiveGitHub implements GitHubPort {
   async viewer() {
     const data = await this.client.graphql(ViewerQuery, {}, "interactive");
     return { login: data.viewer.login, avatarUrl: data.viewer.avatarUrl };
+  }
+
+  async prId(repo: string, number: number): Promise<string | null> {
+    const [owner = "", name = ""] = repo.split("/");
+    try {
+      const data = await this.client.graphql(PrIdQuery, { owner, name, number }, "interactive");
+      return data.repository?.pullRequest?.id ?? null;
+    } catch (error) {
+      // "Could not resolve to a Repository/PullRequest": not there, or not visible to this account.
+      if (error instanceof GitHubError && error.kind === "graphql") return null;
+      throw error;
+    }
   }
 
   async search(query: string): Promise<SearchHit[]> {
@@ -575,13 +591,21 @@ export class LiveGitHub implements GitHubPort {
         ? repo.viewerDefaultMergeMethod
         : (methods[0] ?? "MERGE"),
       autoMergeAllowed: repo.autoMergeAllowed,
+      canMergeAsAdmin: node.viewerCanMergeAsAdmin,
+      mergeQueueEnabled: node.isMergeQueueEnabled,
     };
   }
 
   async merge(
     repo: string,
     number: number,
-    input: { sha: string; method: MergeMethod; title?: string; message?: string },
+    input: {
+      sha: string;
+      method: MergeMethod;
+      title?: string;
+      message?: string;
+      action?: "direct_merge" | "merge_queue";
+    },
   ): Promise<MergeResult> {
     const response = await this.client.rest<AsyncMerge>({
       method: "PUT",
@@ -591,10 +615,42 @@ export class LiveGitHub implements GitHubPort {
         merge_method: input.method.toLowerCase(),
         ...(input.title ? { commit_title: input.title } : {}),
         ...(input.message !== undefined ? { commit_message: input.message } : {}),
+        ...(input.action ? { merge_action: input.action } : {}),
       },
       priority: "interactive",
     });
     return toMergeResult(response.data);
+  }
+
+  async enqueue(prId: string, headOid: string, jump: boolean): Promise<void> {
+    await this.client.graphql(EnqueueMutation, { prId, head: headOid, jump }, "interactive");
+  }
+
+  async dequeue(prId: string): Promise<void> {
+    await this.client.graphql(DequeueMutation, { prId }, "interactive");
+  }
+
+  async deleteBranch(repo: string, branch: string): Promise<void> {
+    await this.write("DELETE", `/repos/${repo}/git/refs/heads/${branch}`);
+  }
+
+  async restoreBranch(repo: string, branch: string, sha: string): Promise<void> {
+    await this.write("POST", `/repos/${repo}/git/refs`, { ref: `refs/heads/${branch}`, sha });
+  }
+
+  async revert(
+    prId: string,
+    title?: string,
+    body?: string,
+  ): Promise<{ number: number; url: string }> {
+    const data = await this.client.graphql(
+      RevertMutation,
+      { prId, title: title ?? null, body: body ?? null },
+      "interactive",
+    );
+    const pr = data.revertPullRequest?.revertPullRequest;
+    if (!pr) throw new GitHubError("GitHub didn't open the revert PR", "graphql", null);
+    return { number: pr.number, url: pr.url };
   }
 
   async mergeStatus(repo: string, number: number, uuid: string): Promise<MergeResult> {

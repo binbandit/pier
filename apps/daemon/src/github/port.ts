@@ -92,6 +92,8 @@ export type MergeInfo = {
   methods: MergeMethod[];
   defaultMethod: MergeMethod;
   autoMergeAllowed: boolean;
+  canMergeAsAdmin: boolean;
+  mergeQueueEnabled: boolean;
 };
 
 export type MergeResult = {
@@ -103,6 +105,8 @@ export type MergeResult = {
 export interface GitHubPort {
   readonly login: string;
   viewer(): Promise<{ login: string; avatarUrl: string }>;
+  /** A PR's node id from its number, or null when this account can't see it. */
+  prId(repo: string, number: number): Promise<string | null>;
   /** Every PR matching the query, splitting by creation date past GitHub's 1,000-result cap. */
   search(query: string): Promise<SearchHit[]>;
   sweep(ids: string[]): Promise<VolatileState[]>;
@@ -145,8 +149,21 @@ export interface GitHubPort {
   merge(
     repo: string,
     number: number,
-    input: { sha: string; method: MergeMethod; title?: string; message?: string },
+    input: {
+      sha: string;
+      method: MergeMethod;
+      title?: string;
+      message?: string;
+      /** Straight to the base (past any queue, and past rules an admin may bypass), or into the queue. */
+      action?: "direct_merge" | "merge_queue";
+    },
   ): Promise<MergeResult>;
+  enqueue(prId: string, headOid: string, jump: boolean): Promise<void>;
+  dequeue(prId: string): Promise<void>;
+  deleteBranch(repo: string, branch: string): Promise<void>;
+  restoreBranch(repo: string, branch: string, sha: string): Promise<void>;
+  /** Opens a PR that reverts this merged one. */
+  revert(prId: string, title?: string, body?: string): Promise<{ number: number; url: string }>;
   mergeStatus(repo: string, number: number, uuid: string): Promise<MergeResult>;
   setAutoMerge(prId: string, method: MergeMethod | null, headOid: string): Promise<void>;
   updateBranch(prId: string, rebase: boolean, headOid: string): Promise<void>;

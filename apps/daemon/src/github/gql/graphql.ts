@@ -389,7 +389,7 @@ export type PrDetailQueryVariables = Exact<{
 
 
 export type PrDetailQuery = { node:
-    | { id: string, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, locked: boolean, activeLockReason: LockReason | null, headChecks: { nodes: Array<{ commit: { statusCheckRollup: { contexts: { nodes: Array<
+    | { id: string, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, viewerCanDeleteHeadRef: boolean, isCrossRepository: boolean, locked: boolean, activeLockReason: LockReason | null, headRef: { id: string } | null, headChecks: { nodes: Array<{ commit: { statusCheckRollup: { contexts: { nodes: Array<
                   | { __typename: 'CheckRun', name: string, isRequired: boolean }
                   | { __typename: 'StatusContext', context: string, isRequired: boolean }
                  | null> | null } } | null } } | null> | null }, closingIssuesReferences: { nodes: Array<{ number: number, title: string, url: string, state: IssueState, repository: { nameWithOwner: string } } | null> | null } | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, viewerLatestReview: { state: PullRequestReviewState, submittedAt: string | null, commit: { oid: string } | null } | null, pendingReviews: { nodes: Array<{ id: string, commit: { oid: string } | null, comments: { nodes: Array<{ id: string, body: string, path: string, line: number | null, startLine: number | null, originalLine: number | null, diffHunk: string } | null> | null } } | null> | null } | null, reviewThreads: { nodes: Array<{ id: string, isResolved: boolean, isOutdated: boolean, path: string, line: number | null, startLine: number | null, originalLine: number | null, originalStartLine: number | null, diffSide: DiffSide, startDiffSide: DiffSide | null, subjectType: PullRequestReviewThreadSubjectType, viewerCanResolve: boolean, viewerCanUnresolve: boolean, viewerCanReply: boolean, resolvedBy: { login: string } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, diffHunk: string, state: PullRequestReviewCommentState, viewerCanUpdate: boolean, viewerCanDelete: boolean, viewerCanMinimize: boolean, isMinimized: boolean, minimizedReason: string | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, author:
@@ -806,7 +806,7 @@ export type MergeInfoQueryVariables = Exact<{
 
 
 export type MergeInfoQuery = { node:
-    | { id: string, isDraft: boolean, mergeable: MergeableState, mergeStateStatus: MergeStateStatus, reviewDecision: PullRequestReviewDecision | null, viewerCanUpdateBranch: boolean, viewerCanEnableAutoMerge: boolean, viewerCanMergeAsAdmin: boolean, mergeHeadline: string, mergeBody: string, squashHeadline: string, squashBody: string, autoMergeRequest: { enabledAt: string | null, mergeMethod: PullRequestMergeMethod } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, repository: { mergeCommitAllowed: boolean, squashMergeAllowed: boolean, rebaseMergeAllowed: boolean, autoMergeAllowed: boolean, viewerDefaultMergeMethod: PullRequestMergeMethod } }
+    | { id: string, isDraft: boolean, mergeable: MergeableState, mergeStateStatus: MergeStateStatus, reviewDecision: PullRequestReviewDecision | null, viewerCanUpdateBranch: boolean, viewerCanEnableAutoMerge: boolean, viewerCanMergeAsAdmin: boolean, isMergeQueueEnabled: boolean, mergeHeadline: string, mergeBody: string, squashHeadline: string, squashBody: string, autoMergeRequest: { enabledAt: string | null, mergeMethod: PullRequestMergeMethod } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, repository: { mergeCommitAllowed: boolean, squashMergeAllowed: boolean, rebaseMergeAllowed: boolean, autoMergeAllowed: boolean, viewerDefaultMergeMethod: PullRequestMergeMethod } }
     | Record<PropertyKey, never>
    | null };
 
@@ -1104,6 +1104,40 @@ export type RequestReviewsMutationVariables = Exact<{
 
 export type RequestReviewsMutation = { requestReviewsByLogin: { pullRequest: { id: string } | null } | null };
 
+export type EnqueueMutationVariables = Exact<{
+  prId: string | number;
+  head: string;
+  jump?: boolean | null | undefined;
+}>;
+
+
+export type EnqueueMutation = { enqueuePullRequest: { mergeQueueEntry: { position: number } | null } | null };
+
+export type DequeueMutationVariables = Exact<{
+  prId: string | number;
+}>;
+
+
+export type DequeueMutation = { dequeuePullRequest: { mergeQueueEntry: { id: string } | null } | null };
+
+export type RevertMutationVariables = Exact<{
+  prId: string | number;
+  title?: string | null | undefined;
+  body?: string | null | undefined;
+}>;
+
+
+export type RevertMutation = { revertPullRequest: { revertPullRequest: { number: number, url: string } | null } | null };
+
+export type PrIdQueryVariables = Exact<{
+  owner: string;
+  name: string;
+  number: number;
+}>;
+
+
+export type PrIdQuery = { repository: { pullRequest: { id: string } | null } | null };
+
 export class TypedDocumentString<TResult, TVariables>
   extends String
   implements DocumentTypeDecoration<TResult, TVariables>
@@ -1400,6 +1434,11 @@ export const PrDetailDocument = new TypedDocumentString(`
       headRefOid
       bodyHTML
       viewerCanUpdate
+      viewerCanDeleteHeadRef
+      isCrossRepository
+      headRef {
+        id
+      }
       locked
       activeLockReason
       headChecks: commits(last: 1) {
@@ -2082,6 +2121,7 @@ export const MergeInfoDocument = new TypedDocumentString(`
       viewerCanUpdateBranch
       viewerCanEnableAutoMerge
       viewerCanMergeAsAdmin
+      isMergeQueueEnabled
       autoMergeRequest {
         enabledAt
         mergeMethod
@@ -2394,3 +2434,42 @@ export const RequestReviewsDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<RequestReviewsMutation, RequestReviewsMutationVariables>;
+export const EnqueueDocument = new TypedDocumentString(`
+    mutation Enqueue($prId: ID!, $head: GitObjectID!, $jump: Boolean) {
+  enqueuePullRequest(
+    input: { pullRequestId: $prId, expectedHeadOid: $head, jump: $jump }
+  ) {
+    mergeQueueEntry {
+      position
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<EnqueueMutation, EnqueueMutationVariables>;
+export const DequeueDocument = new TypedDocumentString(`
+    mutation Dequeue($prId: ID!) {
+  dequeuePullRequest(input: { id: $prId }) {
+    mergeQueueEntry {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<DequeueMutation, DequeueMutationVariables>;
+export const RevertDocument = new TypedDocumentString(`
+    mutation Revert($prId: ID!, $title: String, $body: String) {
+  revertPullRequest(input: { pullRequestId: $prId, title: $title, body: $body }) {
+    revertPullRequest {
+      number
+      url
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<RevertMutation, RevertMutationVariables>;
+export const PrIdDocument = new TypedDocumentString(`
+    query PrId($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<PrIdQuery, PrIdQueryVariables>;

@@ -43,6 +43,12 @@ export type CommandPayload = {
   environmentIds?: number[];
   /** Re-run with debug logging on. */
   debug?: boolean;
+  /** Merge straight past the rules, as an admin who confirmed it. */
+  bypass?: boolean;
+  /** Jump to the front of the merge queue. */
+  jump?: boolean;
+  /** The head branch to delete or restore. */
+  branch?: string;
   method?: MergeMethod;
   /** Merge commit title; `body` is its message. */
   headline?: string;
@@ -270,6 +276,21 @@ export class Outbox {
       )
       .all(prId, since > floor ? since : floor)
       .map((row) => ({ kind: row.kind, payload: JSON.parse(row.payload) as CommandPayload }));
+  }
+
+  /** How one write went, and what GitHub answered. */
+  result(commandId: string): { state: OutboxState; detail: string | null; result: unknown } | null {
+    const row = this.db
+      .query<{ state: OutboxState; detail: string | null; result: string | null }, [string]>(
+        "SELECT state, detail, result FROM outbox WHERE id = ?",
+      )
+      .get(commandId);
+    if (!row) return null;
+    return {
+      state: row.state,
+      detail: row.detail,
+      result: row.result === null ? null : (JSON.parse(row.result) as unknown),
+    };
   }
 
   /** Unresolved writes for one PR, for showing pending replies, resolves and viewed marks. */
@@ -529,6 +550,15 @@ export class Outbox {
       else this.update(command, "queued", "Not found on GitHub; sending again");
       return;
     }
+    // A second revert would open a second PR, so this one is for a person to check.
+    if (command.kind === "revert") {
+      this.update(
+        command,
+        "failed",
+        "Couldn't tell whether the revert PR opened; check GitHub first",
+      );
+      return;
+    }
     // Reacting twice leaves one reaction, so sending again is safe.
     if (command.kind === "react") {
       this.update(command, "queued", "Sending again");
@@ -687,8 +717,28 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
       return port.dismissReview(payload.subjectId ?? "", payload.body ?? "");
     case "lock":
       return port.setLocked(command.repo, command.number, payload.lockReason ?? null);
+    case "enqueue":
+      return port.enqueue(command.prId, command.expectedHead, payload.jump ?? false);
+    case "dequeue":
+      return port.dequeue(command.prId);
+    case "delete-branch":
+    case "restore-branch":
+      return changeBranch(port, command);
+    case "revert":
+      return port.revert(command.prId, payload.title, payload.body);
     default:
       return Promise.reject(new Error(`unknown command kind ${String(command.kind)}`));
+  }
+}
+
+/** Deletes or restores the head branch; already gone (or already back) after a resend is done. */
+async function changeBranch(port: GitHubPort, command: Command): Promise<void> {
+  const branch = command.payload.branch ?? "";
+  try {
+    if (command.kind === "delete-branch") await port.deleteBranch(command.repo, branch);
+    else await port.restoreBranch(command.repo, branch, command.expectedHead);
+  } catch (error) {
+    if (!(error instanceof GitHubError && error.kind === "validation")) throw error;
   }
 }
 
@@ -698,6 +748,7 @@ async function mergeAndWait(port: GitHubPort, command: Command): Promise<unknown
   let result = await port.merge(command.repo, command.number, {
     sha: command.expectedHead,
     method: payload.method ?? "MERGE",
+    ...(payload.bypass ? { action: "direct_merge" as const } : {}),
     ...(payload.headline ? { title: payload.headline } : {}),
     ...(payload.body !== undefined ? { message: payload.body } : {}),
   });

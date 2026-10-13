@@ -132,7 +132,12 @@ export type CommandKind =
   | "rerun-job"
   | "cancel-run"
   | "approve-run"
-  | "approve-deployment";
+  | "approve-deployment"
+  | "enqueue"
+  | "dequeue"
+  | "delete-branch"
+  | "restore-branch"
+  | "revert";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -476,6 +481,8 @@ export type PrView = {
   linkedIssues: LinkedIssue[];
   /** Names of checks branch rules require to pass before merging. */
   requiredChecks: string[];
+  /** The head branch: whether it's still there, and what you can do about it. */
+  headBranch: { exists: boolean; canDelete: boolean; canRestore: boolean };
   account: string;
   approvedByYou: boolean;
   /** The commit your last review was against, if you've reviewed before. */
@@ -524,6 +531,10 @@ export type Runway = {
   autoMerge: { method: MergeMethod } | null;
   mergeQueue: { position: number; state: string } | null;
   canUpdateBranch: boolean;
+  /** The base branch merges through a queue, so "merge" means "add to the queue". */
+  queued: boolean;
+  /** Rules block it, but you're an admin who may merge anyway (after typing the repo's name). */
+  canBypass: boolean;
 };
 
 export type CheckRunView = {

@@ -107,6 +107,39 @@ export class GitStore {
     });
   }
 
+  /**
+   * The files that conflict when merging `head` into `base`, given their merge base (the clones
+   * are shallow, so git can't find it itself). Empty when the merge would be clean.
+   */
+  conflicts(
+    repo: string,
+    account: string,
+    commits: { mergeBase: string; base: string; head: string },
+  ): Promise<string[]> {
+    const { mergeBase, base, head } = commits;
+    return this.exclusive(repo, async (dir) => {
+      await this.fetchMissing(dir, account, [mergeBase, base, head]);
+      const output = await this.online(
+        dir,
+        account,
+        [
+          "merge-tree",
+          "--write-tree",
+          "--name-only",
+          "--no-messages",
+          `--merge-base=${mergeBase}`,
+          base,
+          head,
+        ],
+        [0, 1],
+      );
+      if (output.exitCode === 0) return [];
+      // The new tree's id, then one line per conflicted file.
+      const [, ...files] = decoder.decode(output.stdout).trim().split("\n");
+      return [...new Set(files.filter(Boolean))];
+    });
+  }
+
   /** File text at a commit, or null if missing/binary. */
   show(repo: string, account: string, oid: string, path: string): Promise<string | null> {
     return this.exclusive(repo, async (dir) => {

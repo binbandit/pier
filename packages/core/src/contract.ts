@@ -9,6 +9,7 @@ import type {
   GroupView,
   Label,
   LogEntry,
+  OutboxState,
   Milestone,
   Person,
   PlanPreview,
@@ -76,7 +77,13 @@ export const inputs = {
     method: "'MERGE' | 'SQUASH' | 'REBASE'",
     "headline?": "string",
     "body?": "string",
+    /** Merge past the rules as an admin; the UI asks for the repo's name first. */
+    "bypass?": "boolean",
   }),
+  queue: type({ prId: "string", action: "'add' | 'jump' | 'remove'" }),
+  branch: type({ prId: "string", action: "'delete' | 'restore'" }),
+  revert: type({ prId: "string", "title?": "string > 0", "body?": "string" }),
+  commandResult: type({ commandId: "string" }),
   setAutoMerge: type({
     prId: "string",
     enabled: "boolean",
@@ -163,6 +170,11 @@ export type Outputs = {
   runAction: { commandIds: string[] };
   runway: Runway | null;
   merge: { commandIds: string[] };
+  queue: { commandIds: string[] };
+  branch: { commandIds: string[] };
+  revert: { commandIds: string[] };
+  /** How a write went, and what GitHub answered (a revert's new PR, for one). */
+  commandResult: { state: OutboxState; detail: string | null; result: unknown } | null;
   setAutoMerge: { commandIds: string[] };
   updateBranch: { commandIds: string[] };
   editMetadata: { commandIds: string[] };

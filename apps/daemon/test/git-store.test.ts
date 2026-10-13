@@ -231,3 +231,26 @@ describe("show and auth", () => {
     expect(await gitVersionOk()).toBe(true);
   });
 });
+
+describe("conflicts", () => {
+  test("names the files a merge would conflict on, and nothing when it's clean", async () => {
+    sh(work, "checkout", "-q", "main");
+    const mergeBase = commit("conflicts: base", { "notes.md": "one\n", "other.md": "a\n" });
+    sh(work, "checkout", "-q", "-b", "conflicting");
+    const head = commit("conflicts: change notes", { "notes.md": "head\n" });
+    sh(work, "checkout", "-q", "main");
+    const base = commit("conflicts: change notes on main", { "notes.md": "main\n" });
+    publish();
+    expect(await store.conflicts("acme/api", "alice", { mergeBase, base, head })).toEqual([
+      "notes.md",
+    ]);
+
+    sh(work, "checkout", "-q", "-b", "clean", mergeBase);
+    const cleanHead = commit("conflicts: change other", { "other.md": "b\n" });
+    sh(work, "checkout", "-q", "main");
+    publish();
+    expect(
+      await store.conflicts("acme/api", "alice", { mergeBase, base, head: cleanHead }),
+    ).toEqual([]);
+  });
+});

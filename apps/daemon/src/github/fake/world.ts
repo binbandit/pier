@@ -52,6 +52,10 @@ export type FakeRepo = {
   autoMergeAllowed: boolean;
   /** The repo's label catalogue, by name. */
   labels: Map<string, { color: string; description: string | null }>;
+  /** Merges to the default branch go through a queue. */
+  mergeQueue: boolean;
+  /** Branches deleted (after their PR merged or closed). */
+  deletedBranches: Set<string>;
   milestones: { number: number; title: string; dueOn: string | null }[];
 };
 
@@ -67,6 +71,7 @@ export type RepoOptions = Partial<
     | "checkNames"
     | "mergeMethods"
     | "autoMergeAllowed"
+    | "mergeQueue"
   >
 > & { collaborators?: Record<string, Permission>; watchers?: string[] };
 
@@ -167,6 +172,8 @@ export type FakePr = {
   reactions: Map<ReactionContent, Set<string>>;
   /** The lock reason ("resolved", "off-topic", …) while the conversation is locked. */
   locked: string | null;
+  /** Place in the merge queue, while it's in one. */
+  queuePosition: number | null;
   /** Check runs per commit; a commit with no entry has reported nothing. */
   checks: Map<string, FakeCheckRun[]>;
   reviews: FakeReview[];
@@ -462,6 +469,8 @@ export class FakeWorld {
       mergeMethods: options.mergeMethods ?? ["MERGE", "SQUASH", "REBASE"],
       autoMergeAllowed: options.autoMergeAllowed ?? true,
       labels: new Map(DEFAULT_LABELS.map(({ name: label, ...rest }) => [label, rest])),
+      mergeQueue: options.mergeQueue ?? false,
+      deletedBranches: new Set(),
       milestones: [
         { number: 1, title: "Next release", dueOn: this.iso(this.now() + 14 * 86_400_000) },
         { number: 2, title: "Backlog", dueOn: null },
@@ -657,6 +666,7 @@ export class FakeWorld {
       mentions: new Set(),
       reactions: new Map(),
       locked: null,
+      queuePosition: null,
       autoMerge: null,
       bases: new Map(),
       bumps: input.bumps ?? [],
@@ -856,8 +866,8 @@ export class FakeWorld {
   requestMerge(
     prId: string,
     by: string,
-    input: { sha: string; method: MergeMethod },
-  ): { status: "pending"; message: string; uuid: string } {
+    input: { sha: string; method: MergeMethod; action?: "direct_merge" | "merge_queue" },
+  ): { status: "pending" | "enqueued"; message: string; uuid: string } {
     const pr = this.mustPr(prId);
     if (!this.canWrite(pr.repo, by))
       throw new GitHubError("403 Resource not accessible by integration", "forbidden", 403);
@@ -873,10 +883,21 @@ export class FakeWorld {
         405,
       );
     }
+    // An admin merging directly goes past the rules (not past conflicts); a queue takes it in turn.
+    const bypass = input.action === "direct_merge" && this.permission(pr.repo, by) === "ADMIN";
     const blocked = this.mergeBlocker(pr);
-    if (blocked) throw new GitHubError(`405 ${blocked}`, "validation", 405);
+    if (blocked && !(bypass && pr.mergeable !== "conflicting"))
+      throw new GitHubError(`405 ${blocked}`, "validation", 405);
 
     const r = this.random;
+    if (pr.repo.mergeQueue && input.action !== "direct_merge") {
+      this.enqueue(prId, by, input.sha, false);
+      return {
+        status: "enqueued",
+        message: "Added to the merge queue",
+        uuid: `${r.hex(8)}-queued`,
+      };
+    }
     const uuid = `${r.hex(8)}-${r.hex(4)}-4${r.hex(3)}-a${r.hex(3)}-${r.hex(12)}`;
     const request = { prId, status: "pending" as const, message: "Merge request accepted" };
     this.mergeRequests.set(uuid, request);
@@ -890,6 +911,72 @@ export class FakeWorld {
       });
     });
     return { ...request, uuid };
+  }
+
+  enqueue(prId: string, by: string, headOid: string, jump: boolean): void {
+    const pr = this.mustPr(prId);
+    if (!pr.repo.mergeQueue) throw graphqlError("Merge queue is not enabled for this branch");
+    if (!this.canWrite(pr.repo, by)) throw graphqlError(`${by} cannot add to the merge queue`);
+    if (this.head(pr) !== headOid) throw graphqlError("Head ref has changed");
+    const queue = [...this.prs.values()].filter(
+      (p) => p.repo === pr.repo && p.queuePosition !== null,
+    );
+    if (jump) for (const other of queue) other.queuePosition = (other.queuePosition ?? 0) + 1;
+    pr.queuePosition = jump ? 1 : queue.length + 1;
+    pr.events.push({
+      kind: "event",
+      text: "added this to the merge queue",
+      actor: by,
+      at: this.iso(),
+    });
+  }
+
+  dequeue(prId: string, by: string): void {
+    const pr = this.mustPr(prId);
+    if (pr.queuePosition === null) throw graphqlError("Pull request is not in the merge queue");
+    const removed = pr.queuePosition;
+    pr.queuePosition = null;
+    for (const other of this.prs.values())
+      if (other.repo === pr.repo && (other.queuePosition ?? 0) > removed)
+        other.queuePosition = (other.queuePosition ?? 1) - 1;
+    pr.events.push({
+      kind: "event",
+      text: "removed this from the merge queue",
+      actor: by,
+      at: this.iso(),
+    });
+  }
+
+  deleteBranch(repo: string, branch: string, by: string): void {
+    const found = this.repos.get(repo);
+    if (!found || !this.canWrite(found, by))
+      throw new GitHubError("404 Not Found", "not-found", 404);
+    if (found.deletedBranches.has(branch))
+      throw new GitHubError("422 Reference does not exist", "validation", 422);
+    found.deletedBranches.add(branch);
+  }
+
+  restoreBranch(repo: string, branch: string, by: string): void {
+    const found = this.repos.get(repo);
+    if (!found || !this.canWrite(found, by))
+      throw new GitHubError("404 Not Found", "not-found", 404);
+    if (!found.deletedBranches.delete(branch))
+      throw new GitHubError("422 Reference already exists", "validation", 422);
+  }
+
+  /** Opens a PR that takes a merged one back out, as GitHub's "Revert" does. */
+  revert(prId: string, by: string, title?: string, body?: string): FakePr {
+    const pr = this.mustPr(prId);
+    if (pr.state !== "MERGED") throw graphqlError("Only merged pull requests can be reverted");
+    if (!this.canWrite(pr.repo, by)) throw graphqlError(`${by} cannot revert this pull request`);
+    return this.openPr({
+      repo: pr.repo.fullName,
+      author: by,
+      title: title ?? `Revert "${pr.title}"`,
+      body: body ?? `Reverts ${pr.repo.fullName}#${pr.number}`,
+      headRefName: `revert-${pr.number}-${pr.headRefName}`,
+      files: pr.files.map((f) => ({ path: f.path, patch: f.patch ?? "" })),
+    });
   }
 
   setAutoMerge(prId: string, by: string, method: MergeMethod | null, headOid: string): void {

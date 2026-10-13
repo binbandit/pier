@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { errorText, rerun } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
@@ -110,12 +110,25 @@ function Loaded({
     }
   };
 
-  const merge = async () => {
-    if (!runway.ready) return;
+  // Merging past the rules is offered to admins, and only goes once they've typed the repo's name.
+  const [bypassing, setBypassing] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const confirmBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (bypassing) confirmBox.current?.focus();
+  }, [bypassing]);
+
+  const merge = async (bypass = false) => {
+    if (!runway.ready && !bypass) return;
     const sent = await act(
       () =>
-        rpc("merge", { prId: pr.id, method, ...(method !== "REBASE" ? { headline, body } : {}) }),
-      "Merging in 5s",
+        rpc("merge", {
+          prId: pr.id,
+          method,
+          ...(method !== "REBASE" ? { headline, body } : {}),
+          ...(bypass ? { bypass } : {}),
+        }),
+      runway.queued && !bypass ? "Adding to the merge queue in 5s" : "Merging in 5s",
       true,
     );
     if (sent) {
@@ -123,6 +136,11 @@ function Loaded({
       onMerged();
     }
   };
+  const queue = (action: "jump" | "remove") =>
+    void act(
+      () => rpc("queue", { prId: pr.id, action }),
+      action === "jump" ? "Jumped to the front of the merge queue" : "Taken out of the merge queue",
+    );
   const toggleAutoMerge = () =>
     void act(
       () => rpc("setAutoMerge", { prId: pr.id, enabled: !runway.autoMerge, method }),
@@ -140,11 +158,55 @@ function Loaded({
     // Plain Enter merges from the panel; inside the message fields it's a newline, so there it's ⌘⏎.
     {
       id: "runway.merge",
-      title: "Merge",
+      title: runway.queued ? "Add to the merge queue" : "Merge",
       keys: ["enter"],
       scope: "panel",
       run: () => void merge(),
     },
+    ...(runway.canBypass
+      ? [
+          {
+            id: "runway.bypass",
+            title: "Merge as an admin, past the rules",
+            keys: ["b"],
+            scope: "panel" as const,
+            run: () => setBypassing(true),
+          },
+          {
+            id: "runway.bypass-confirm",
+            title: "Merge past the rules",
+            keys: ["enter"],
+            scope: "panel" as const,
+            inInputs: true,
+            hidden: true,
+            run: () => {
+              if (bypassing && confirmation.trim() === pr.repo) void merge(true);
+            },
+          },
+        ]
+      : []),
+    ...(runway.queued && !runway.mergeQueue && runway.ready
+      ? [
+          {
+            id: "runway.jump",
+            title: "Jump to the front of the merge queue",
+            keys: ["j"],
+            scope: "panel" as const,
+            run: () => queue("jump"),
+          },
+        ]
+      : []),
+    ...(runway.mergeQueue
+      ? [
+          {
+            id: "runway.dequeue",
+            title: "Take it out of the merge queue",
+            keys: ["x"],
+            scope: "panel" as const,
+            run: () => queue("remove"),
+          },
+        ]
+      : []),
     {
       id: "runway.merge-typing",
       title: "Merge",
@@ -213,8 +275,11 @@ function Loaded({
             </span>
           )}
           {runway.mergeQueue && (
-            <span className="text-meta text-auto">
+            <span className="flex items-center gap-3 text-meta text-auto">
               In the merge queue, position {runway.mergeQueue.position}
+              <span className="flex items-center gap-1.5 text-faint">
+                <Keys sequence="x" /> take it out
+              </span>
             </span>
           )}
         </div>
@@ -272,11 +337,40 @@ function Loaded({
                 <Keys sequence="a" /> {runway.autoMerge ? "turn off auto-merge" : "auto-merge"}
               </span>
             )}
+            {runway.canBypass && (
+              <span className="flex items-center gap-1.5">
+                <Keys sequence="b" /> merge as admin
+              </span>
+            )}
+            {runway.queued && !runway.mergeQueue && runway.ready && (
+              <span className="flex items-center gap-1.5">
+                <Keys sequence="j" /> jump the queue
+              </span>
+            )}
             <span className={clsx("flex items-center gap-1.5", !runway.ready && "opacity-40")}>
-              <Keys sequence="enter" /> {LABELS[method]}
+              <Keys sequence="enter" /> {runway.queued ? "Add to the queue" : LABELS[method]}
             </span>
           </span>
         </div>
+
+        {bypassing && (
+          <div className="mb-3 rounded-md border border-bad/50 px-3 py-2">
+            <p className="mb-2 text-meta text-fg">
+              This merges past the branch's rules (
+              {runway.blockers.map((b) => b.text.toLowerCase()).join("; ")}). Type{" "}
+              <span className="font-code text-strong">{pr.repo}</span> and press Enter to do it.
+            </p>
+            <input
+              autoComplete="off"
+              spellCheck={false}
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              aria-label="Type the repository name to confirm"
+              ref={confirmBox}
+              className="h-9 w-full rounded-sm border border-line-strong bg-canvas px-3 font-code text-meta text-strong outline-none"
+            />
+          </div>
+        )}
 
         {method !== "REBASE" && (
           <div className="rounded-md border border-line-strong bg-canvas">

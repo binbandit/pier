@@ -19,6 +19,7 @@ import { ActivityRail } from "./activity";
 import { Checks } from "./checks";
 import { FileTree } from "./file-tree";
 import { type MetadataKind, MetadataPicker } from "./metadata";
+import { RevertPanel } from "./revert";
 import { type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
 import { RunwayPanel } from "./runway";
@@ -36,7 +37,8 @@ type Raised =
   | { kind: "review"; event: ReviewEvent }
   | { kind: "runway" }
   | { kind: "picker"; field: MetadataKind }
-  | { kind: "title" };
+  | { kind: "title" }
+  | { kind: "revert" };
 
 const PICKERS: { field: MetadataKind; key: string; title: string }[] = [
   { field: "labels", key: "l", title: "Edit labels" },
@@ -68,7 +70,8 @@ function Untracked({ repo, number }: { repo: string; number: number }) {
   return (
     <div className="px-8 pt-16">
       <p className="text-prose text-muted">
-        pier isn't tracking {repo}#{number} yet.
+        None of your accounts can see {repo}#{number}. It may not exist, or it's in a repo they
+        aren't part of.
       </p>
       <p className="mt-2 flex items-center gap-2 text-ui text-faint">
         <Keys sequence="shift+o" /> opens it on github.com
@@ -175,6 +178,25 @@ function Loaded({ pr }: { pr: PrView }) {
       to: "/$owner/$repo/pull/$number",
       params: { owner, repo: name, number: next.number },
     });
+  };
+
+  const branch = async (action: "delete" | "restore") => {
+    try {
+      await rpc("branch", { prId: pr.id, action });
+      void client.invalidateQueries();
+      toast(
+        {
+          text: action === "delete" ? `Deleted ${pr.headRefName}` : `Restored ${pr.headRefName}`,
+          tone: "ok",
+          ...(action === "delete"
+            ? { undo: () => void rpc("branch", { prId: pr.id, action: "restore" }) }
+            : {}),
+        },
+        6_000,
+      );
+    } catch (error) {
+      toast({ text: errorText(error), tone: "bad" });
+    }
   };
 
   const setDraft = async (draft: boolean) => {
@@ -389,6 +411,30 @@ function Loaded({ pr }: { pr: PrView }) {
       group: "Edit",
       run: () => setRaised({ kind: "title" }),
     },
+    ...(pr.state === "MERGED"
+      ? [
+          {
+            id: "pr.revert",
+            title: "Revert",
+            keys: ["s v"],
+            scope: "surface" as const,
+            group: "Edit",
+            run: () => setRaised({ kind: "revert" }),
+          },
+        ]
+      : []),
+    ...(pr.headBranch.canDelete || pr.headBranch.canRestore
+      ? [
+          {
+            id: "pr.branch",
+            title: pr.headBranch.exists ? "Delete the head branch" : "Restore the head branch",
+            keys: ["s x"],
+            scope: "surface" as const,
+            group: "Edit",
+            run: () => void branch(pr.headBranch.exists ? "delete" : "restore"),
+          },
+        ]
+      : []),
     {
       id: "pr.draft",
       title: pr.isDraft ? "Mark ready for review" : "Convert to draft",
@@ -512,6 +558,7 @@ function Loaded({ pr }: { pr: PrView }) {
         <MetadataPicker key={raised.field} pr={pr} kind={raised.field} onClose={lower} />
       )}
       {raised?.kind === "title" && <TitlePanel pr={pr} onClose={lower} />}
+      {raised?.kind === "revert" && <RevertPanel pr={pr} onClose={lower} />}
     </div>
   );
 }
@@ -546,7 +593,20 @@ function Header({ pr }: { pr: PrView }) {
           <span className="text-bad">−{pr.deletions}</span>
         </span>
         {pr.state !== "OPEN" ? (
-          <span className="text-faint">{pr.state === "MERGED" ? "Merged" : "Closed"}</span>
+          <span className="flex items-center gap-3 text-faint">
+            {pr.state === "MERGED" ? "Merged" : "Closed"}
+            {(pr.headBranch.canDelete || pr.headBranch.canRestore) && (
+              <span className="flex items-center gap-1.5">
+                <Keys sequence="s x" />
+                {pr.headBranch.exists ? "delete the branch" : "restore the branch"}
+              </span>
+            )}
+            {pr.state === "MERGED" && (
+              <span className="flex items-center gap-1.5">
+                <Keys sequence="s v" /> revert
+              </span>
+            )}
+          </span>
         ) : (
           pr.pending?.kind === "close" && <span className="text-warn">Closing</span>
         )}
@@ -657,7 +717,9 @@ function TurnLine({
     .find((e) => e.kind === "review" && e.author?.login === pr.account);
   const pushedSince = pr.lastReviewedOid && pr.lastReviewedOid !== pr.headRefOid;
   let text: string;
-  if (pr.approvedByYou) text = "You approved this commit.";
+  // A merged or closed PR isn't anyone's turn.
+  if (pr.state !== "OPEN") text = "";
+  else if (pr.approvedByYou) text = "You approved this commit.";
   else if (pushedSince && lastReview)
     text = `Your turn: ${pr.author?.login ?? "the author"} pushed after your review ${since(lastReview.at)}.`;
   else if (pr.reviewers.some((r) => r.login === pr.account && r.state === "requested"))

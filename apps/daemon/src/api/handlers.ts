@@ -59,9 +59,13 @@ export function createHandlers(app: App): Handlers {
       }),
     }),
     runway: ({ repo, number }) => app.review.runway(repo, number),
-    merge: ({ prId, method, headline, body }) => ({
-      commandIds: app.review.merge(prId, method, headline, body),
+    merge: ({ prId, method, headline, body, bypass }) => ({
+      commandIds: app.review.merge(prId, method, headline, body, bypass ?? false),
     }),
+    queue: ({ prId, action }) => ({ commandIds: app.review.queue(prId, action) }),
+    branch: ({ prId, action }) => ({ commandIds: app.review.branch(prId, action) }),
+    revert: ({ prId, title, body }) => ({ commandIds: app.review.revert(prId, title, body) }),
+    commandResult: ({ commandId }) => app.outbox.result(commandId),
     setAutoMerge: ({ prId, enabled, method }) => ({
       commandIds: app.review.setAutoMerge(prId, enabled, method),
     }),

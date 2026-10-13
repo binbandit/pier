@@ -44,6 +44,7 @@ const HEAD_BOUND = new Set([
   "merge",
   "auto-merge",
   "update-branch",
+  "enqueue",
 ]);
 
 export function createApp(options: AppOptions) {

@@ -53,6 +53,11 @@ const KIND: Record<LogEntry["kind"], string> = {
   "cancel-run": "Cancel run",
   "approve-run": "Approve workflow",
   "approve-deployment": "Approve deployment",
+  enqueue: "Merge queue",
+  dequeue: "Leave merge queue",
+  "delete-branch": "Delete branch",
+  "restore-branch": "Restore branch",
+  revert: "Revert",
 };
 
 export function Log() {

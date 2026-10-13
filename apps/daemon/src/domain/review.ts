@@ -57,6 +57,11 @@ export type InterdiffSource = {
     to: string,
     options?: { ignoreWhitespace?: boolean },
   ): Promise<PrDiff["files"]>;
+  conflicts(
+    repo: string,
+    account: string,
+    commits: { mergeBase: string; base: string; head: string },
+  ): Promise<string[]>;
 };
 
 export type ReviewDeps = {
@@ -74,6 +79,8 @@ export type ReviewDeps = {
 export class ReviewService {
   /** Per repo, what its pickers last returned. */
   private readonly known = new Map<string, RepoKnown>();
+  /** PRs looked up by number and not found, with when. */
+  private readonly misses = new Map<string, number>();
 
   constructor(private readonly deps: ReviewDeps) {
     // Once GitHub accepts something we sent, our cached threads and drafts are out of date.
@@ -83,6 +90,26 @@ export class ReviewService {
         deps.drafts.clear(command.prId, command.account, command.payload.draftIds);
       }
     });
+  }
+
+  /**
+   * Starts tracking a PR none of your searches found (a pasted link, a revert pier just opened),
+   * through the first account that can see it. Misses are remembered for a minute.
+   */
+  private async track(repo: string, number: number): Promise<PrRecord | undefined> {
+    const key = `${repo}#${number}`;
+    if ((this.misses.get(key) ?? 0) > Date.now() - 60_000) return undefined;
+    for (const [login, port] of this.deps.ports) {
+      const id = await port.prId(repo, number).catch(() => null);
+      if (!id) continue;
+      const [read] = await port.hydrate([id]);
+      if (!read) continue;
+      this.deps.model.upsert(read.doc, read.viewer, login);
+      this.deps.model.addScope(id, login, "opened");
+      return this.deps.model.get(id);
+    }
+    this.misses.set(key, Date.now());
+    return undefined;
   }
 
   private knownFor(repo: string): RepoKnown {
@@ -105,7 +132,7 @@ export class ReviewService {
   }
 
   async view(repo: string, number: number): Promise<PrView | null> {
-    const record = this.find(repo, number);
+    const record = this.find(repo, number) ?? (await this.track(repo, number));
     if (!record) return null;
     const { doc } = record;
     const account = record.reader;
@@ -187,6 +214,17 @@ export class ReviewService {
       milestone: meta.milestone,
       linkedIssues: detail?.linkedIssues ?? [],
       requiredChecks: detail?.requiredChecks ?? [],
+      // A deleted branch can come back once the PR is closed or merged, from its last head.
+      headBranch: {
+        exists: detail?.headBranch.exists ?? true,
+        canDelete: detail?.headBranch.canDelete ?? false,
+        canRestore:
+          detail !== null &&
+          !detail.headBranch.exists &&
+          !detail.headBranch.crossRepo &&
+          canWrite &&
+          doc.state !== "OPEN",
+      },
       account,
       approvedByYou: review?.state === "APPROVED" && review.commitOid === doc.headRefOid,
       lastReviewedOid: detail?.viewerLatestReview?.commitOid ?? null,
@@ -416,7 +454,28 @@ export class ReviewService {
     const port = record && this.deps.ports.get(record.reader);
     if (!record || !port) return null;
     const info = await port.mergeInfo(record.doc.id);
-    return info ? buildRunway(record.doc, info) : null;
+    if (!info) return null;
+    return buildRunway(record.doc, info, await this.conflictingFiles(record, info.mergeable));
+  }
+
+  /** Which files conflict, worked out locally, so a conflict says where it is. */
+  private async conflictingFiles(record: PrRecord, mergeable: string): Promise<string[]> {
+    const git = this.deps.git();
+    const port = this.deps.ports.get(record.reader);
+    if (mergeable !== "CONFLICTING" || !git || !port) return [];
+    const { doc } = record;
+    try {
+      const mergeBase = await port.mergeBase(doc.repo, doc.baseRefOid, doc.headRefOid);
+      if (!mergeBase) return [];
+      return await git.conflicts(doc.repo, record.reader, {
+        mergeBase,
+        base: doc.baseRefOid,
+        head: doc.headRefOid,
+      });
+    } catch (error) {
+      console.warn(`conflicts for ${doc.repo}#${doc.number}: ${String(error)}`);
+      return [];
+    }
   }
 
   /** Merges after a short undo window, for the head commit on screen. */
@@ -425,12 +484,48 @@ export class ReviewService {
     method: MergeMethod,
     headline: string | undefined,
     body: string | undefined,
+    bypass = false,
   ): string[] {
     return this.enqueue(
       this.require(prId),
       "merge",
-      { method, ...(headline ? { headline } : {}), ...(body !== undefined ? { body } : {}) },
+      {
+        method,
+        ...(headline ? { headline } : {}),
+        ...(body !== undefined ? { body } : {}),
+        ...(bypass ? { bypass } : {}),
+      },
       MERGE_HOLD_MS,
+    );
+  }
+
+  /** Adds to (or jumps) the merge queue, or takes it back out. */
+  queue(prId: string, action: "add" | "jump" | "remove"): string[] {
+    const record = this.require(prId);
+    return action === "remove"
+      ? this.enqueue(record, "dequeue", {}, 0)
+      : this.enqueue(record, "enqueue", { jump: action === "jump" }, 0);
+  }
+
+  /** Deletes the head branch, or brings it back at the PR's last head. */
+  branch(prId: string, action: "delete" | "restore"): string[] {
+    const record = this.require(prId);
+    const branch = record.doc.headRefName;
+    return this.enqueue(
+      record,
+      action === "delete" ? "delete-branch" : "restore-branch",
+      { branch },
+      0,
+    );
+  }
+
+  /** Opens a PR that reverts this merged one; its number comes back as the command's result. */
+  revert(prId: string, title: string | undefined, body: string | undefined): string[] {
+    return this.enqueue(
+      this.require(prId),
+      "revert",
+      { ...(title ? { title } : {}), ...(body !== undefined ? { body } : {}) },
+      0,
     );
   }
 

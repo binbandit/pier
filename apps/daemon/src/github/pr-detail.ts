@@ -26,6 +26,7 @@ export type PrDetail = {
   linkedIssues: LinkedIssue[];
   /** Names of the head's checks that must pass to merge. */
   requiredChecks: string[];
+  headBranch: { exists: boolean; canDelete: boolean; crossRepo: boolean };
   viewerLatestReview: {
     state: string;
     commitOid: string | null;
@@ -186,6 +187,18 @@ export function toPrDetail(node: Node): PrDetail {
     if (entry) timeline.push(entry);
   }
   timeline.sort((a, b) => a.at.localeCompare(b.at));
+  // Every merge also records a close; GitHub shows only the merge, and so does pier.
+  const mergedAt = timeline.flatMap((e) =>
+    e.kind === "event" && e.text === "merged this" ? [Date.parse(e.at)] : [],
+  );
+  const shown = timeline.filter(
+    (e) =>
+      !(
+        e.kind === "event" &&
+        e.text === "closed this" &&
+        mergedAt.some((at) => Math.abs(Date.parse(e.at) - at) < 60_000)
+      ),
+  );
 
   const viewed: PrDetail["viewed"] = {};
   for (const file of node.files?.nodes ?? []) if (file) viewed[file.path] = file.viewerViewedState;
@@ -196,6 +209,11 @@ export function toPrDetail(node: Node): PrDetail {
     bodyHTML: node.bodyHTML,
     reactions: reactions(node.reactionGroups),
     canEdit: node.viewerCanUpdate,
+    headBranch: {
+      exists: node.headRef !== null && node.headRef !== undefined,
+      canDelete: node.viewerCanDeleteHeadRef,
+      crossRepo: node.isCrossRepository,
+    },
     requiredChecks: (
       node.headChecks.nodes?.[0]?.commit.statusCheckRollup?.contexts.nodes ?? []
     ).flatMap((ctx) => {
@@ -243,7 +261,7 @@ export function toPrDetail(node: Node): PrDetail {
         }
       : null,
     threads,
-    timeline,
+    timeline: shown,
     viewed,
   };
 }

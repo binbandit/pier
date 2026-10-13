@@ -17,6 +17,8 @@ const info = (overrides: Partial<MergeInfo> = {}): MergeInfo => ({
   methods: ["SQUASH", "MERGE"],
   defaultMethod: "SQUASH",
   autoMergeAllowed: true,
+  canMergeAsAdmin: false,
+  mergeQueueEnabled: false,
   ...overrides,
 });
 
@@ -59,5 +61,19 @@ describe("merge runway", () => {
     expect(
       buildRunway(doc("success"), info({ mergeStateStatus: "BLOCKED" })).blockers[0]?.text,
     ).toMatch(/branch rule/);
+  });
+
+  test("an admin can merge past rules but not past conflicts, and a queue changes what merging means", () => {
+    const blocked = info({ mergeStateStatus: "BLOCKED", canMergeAsAdmin: true });
+    expect(buildRunway(doc("success"), blocked).canBypass).toBe(true);
+    expect(
+      buildRunway(doc("success"), {
+        ...blocked,
+        mergeable: "CONFLICTING",
+        mergeStateStatus: "DIRTY",
+      }).canBypass,
+    ).toBe(false);
+    expect(buildRunway(doc("success"), info({ canMergeAsAdmin: true })).canBypass).toBe(false);
+    expect(buildRunway(doc("success"), info({ mergeQueueEnabled: true })).queued).toBe(true);
   });
 });

@@ -5,13 +5,19 @@ import type { Blocker, Runway } from "@pier/core/wire";
 // Why a PR can't merge yet, in plain words, each with the key that fixes it when one exists.
 // GitHub only says "blocked"; this puts the reasons back together from the PR's state.
 
-export function buildRunway(doc: PrDoc, info: MergeInfo): Runway {
+export function buildRunway(doc: PrDoc, info: MergeInfo, conflicts: string[] = []): Runway {
   const blockers: Blocker[] = [];
   const canAutoMerge = info.autoMergeAllowed && info.canEnableAutoMerge;
 
   if (info.isDraft) blockers.push({ text: "It's still a draft", fix: "ready" });
   if (info.mergeable === "CONFLICTING") {
-    blockers.push({ text: "It conflicts with the base branch", fix: null });
+    blockers.push({
+      text:
+        conflicts.length === 0
+          ? "It conflicts with the base branch"
+          : `It conflicts with the base branch in ${conflictList(conflicts)}`,
+      fix: null,
+    });
   } else if (info.mergeStateStatus === "BEHIND") {
     blockers.push({
       text: "It's behind the base branch",
@@ -52,10 +58,22 @@ export function buildRunway(doc: PrDoc, info: MergeInfo): Runway {
     autoMerge: info.autoMerge,
     mergeQueue: info.mergeQueue,
     canUpdateBranch: info.canUpdateBranch,
+    queued: info.mergeQueueEnabled,
+    // Conflicts can't be bypassed; failing rules can, by an admin who means it.
+    canBypass:
+      info.canMergeAsAdmin &&
+      blockers.length > 0 &&
+      info.mergeable !== "CONFLICTING" &&
+      !info.isDraft,
   };
 }
 
 export function checksFailing(count: number): string {
   if (count === 0) return "Some checks failing";
   return count === 1 ? "1 check failing" : `${count} checks failing`;
+}
+
+function conflictList(files: string[]): string {
+  const shown = files.slice(0, 3).join(", ");
+  return files.length > 3 ? `${shown} and ${files.length - 3} more` : shown;
 }

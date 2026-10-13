@@ -110,12 +110,12 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | MERGE-RUNWAY | Why it can't merge yet, with one-key fixes | `mergeStateStatus` + rollup (rules API not yet read, so a rule block is named only generically) | I3 | sandbox |
 | MERGE-METHODS | Merge / squash / rebase with the message | `merge-async` | I3 | sandbox |
 | MERGE-AUTO | Enable / disable auto-merge | `enablePullRequestAutoMerge` (private repos on a free plan can't use it, so not yet live-tested) | I3 | built |
-| MERGE-QUEUE | Add to / jump / remove from merge queue | `enqueuePullRequest` | I3 | - |
+| MERGE-QUEUE | Add to / jump / remove from merge queue | `enqueuePullRequest` (jump) / `dequeuePullRequest`; merging a queued base adds to the queue (needs an org repo to test live) | I3 | built |
 | MERGE-UPDATE | Update branch by merge or rebase | `updatePullRequestBranch` | I3 | sandbox |
-| MERGE-CONFLICTS | Web conflict editor | none | gap | - |
-| MERGE-BRANCH | Delete / restore head branch | refs API | I3 | - |
-| MERGE-REVERT | Revert a merged PR | `revertPullRequest` | I3 | - |
-| MERGE-BYPASS | Merge bypassing rules (with typed confirmation) | `merge-async bypass_rules` | I3 | - |
+| MERGE-CONFLICTS | Web conflict editor (pier names the conflicting files, from a local merge) | none | gap | gap |
+| MERGE-BRANCH | Delete / restore head branch | REST refs (delete; restore at the PR's last head) | I3 | sandbox |
+| MERGE-REVERT | Revert a merged PR | `revertPullRequest` | I3 | sandbox |
+| MERGE-BYPASS | Merge bypassing rules (with typed confirmation) | `merge-async` with `merge_action: direct_merge`, offered to admins after typing the repo's name (no rules on the sandbox's private repos, so tested in fake mode) | I3 | built |
 | STACKS | Stack map, move between layers, merge a stack | stacks REST, `merge-async` | I10 | - |
 
 ## F. Dependency bumps (beyond GitHub)

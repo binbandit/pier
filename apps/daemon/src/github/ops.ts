@@ -299,6 +299,11 @@ export const PrDetailQuery = graphql(`
         headRefOid
         bodyHTML
         viewerCanUpdate
+        viewerCanDeleteHeadRef
+        isCrossRepository
+        headRef {
+          id
+        }
         locked
         activeLockReason
         headChecks: commits(last: 1) {
@@ -996,6 +1001,7 @@ export const MergeInfoQuery = graphql(`
         viewerCanUpdateBranch
         viewerCanEnableAutoMerge
         viewerCanMergeAsAdmin
+        isMergeQueueEnabled
         autoMergeRequest {
           enabledAt
           mergeMethod
@@ -1335,6 +1341,47 @@ export const RequestReviewsMutation = graphql(`
       }
     ) {
       pullRequest {
+        id
+      }
+    }
+  }
+`);
+
+export const EnqueueMutation = graphql(`
+  mutation Enqueue($prId: ID!, $head: GitObjectID!, $jump: Boolean) {
+    enqueuePullRequest(input: { pullRequestId: $prId, expectedHeadOid: $head, jump: $jump }) {
+      mergeQueueEntry {
+        position
+      }
+    }
+  }
+`);
+
+export const DequeueMutation = graphql(`
+  mutation Dequeue($prId: ID!) {
+    dequeuePullRequest(input: { id: $prId }) {
+      mergeQueueEntry {
+        id
+      }
+    }
+  }
+`);
+
+export const RevertMutation = graphql(`
+  mutation Revert($prId: ID!, $title: String, $body: String) {
+    revertPullRequest(input: { pullRequestId: $prId, title: $title, body: $body }) {
+      revertPullRequest {
+        number
+        url
+      }
+    }
+  }
+`);
+
+export const PrIdQuery = graphql(`
+  query PrId($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
         id
       }
     }
