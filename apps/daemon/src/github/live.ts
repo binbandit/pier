@@ -28,6 +28,7 @@ import {
   AddReviewThreadMutation,
   ApproveMutation,
   ClosePrMutation,
+  CodeOwnersQuery,
   CommentMutation,
   ConvertToDraftMutation,
   DeleteIssueCommentMutation,
@@ -278,6 +279,27 @@ export class LiveGitHub implements GitHubPort {
     }
   }
 
+  async codeOwners(repo: string, ref: string): Promise<string | null> {
+    const [owner = "", name = ""] = repo.split("/");
+    const data = await this.client.graphql(CodeOwnersQuery, {
+      owner,
+      name,
+      github: `${ref}:.github/CODEOWNERS`,
+      root: `${ref}:CODEOWNERS`,
+      docs: `${ref}:docs/CODEOWNERS`,
+    });
+    const places = [data.repository?.github, data.repository?.root, data.repository?.docs];
+    for (const place of places) {
+      if (place && "text" in place && typeof place.text === "string") return place.text;
+    }
+    return null;
+  }
+
+  async teams(): Promise<string[]> {
+    const teams = await this.paged<components["schemas"]["team-full"]>("/user/teams");
+    return teams.map((t) => `${t.organization.login}/${t.slug}`);
+  }
+
   async fileText(repo: string, oid: string, path: string): Promise<string | null> {
     try {
       const response = await this.client.rest<components["schemas"]["content-file"]>({
@@ -423,6 +445,8 @@ export class LiveGitHub implements GitHubPort {
           startedAt: run.started_at ?? null,
           completedAt: run.completed_at ?? null,
           annotations: run.output.annotations_count,
+          workflow: null,
+          event: null,
         };
       }),
       ...status.statuses.map((s): CheckRunView => ({
@@ -437,6 +461,8 @@ export class LiveGitHub implements GitHubPort {
         startedAt: s.created_at,
         completedAt: s.state === "pending" ? null : s.updated_at,
         annotations: 0,
+        workflow: null,
+        event: null,
       })),
     ];
 
@@ -452,6 +478,7 @@ export class LiveGitHub implements GitHubPort {
         return {
           id: Number(run.id),
           name: run.name ?? run.display_title,
+          event: run.event,
           state: checkRunState(run.status ?? "queued", run.conclusion),
           needsApproval: run.status === "action_required" || run.conclusion === "action_required",
           waitingOn: waiting.flatMap((p) =>

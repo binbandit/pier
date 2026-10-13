@@ -193,7 +193,9 @@ export function Checks({ pr }: { pr: PrView }) {
                     run.state === "failure" ? "text-bad" : "text-muted",
                   )}
                 >
+                  {run.workflow && <span className="text-faint">{run.workflow} / </span>}
                   {run.name}
+                  {run.event && <span className="text-faint"> ({run.event})</span>}
                 </span>
                 {required.has(run.name) && <span className="shrink-0 text-faint">required</span>}
                 <span className="min-w-0 flex-1 truncate text-faint">{run.summary}</span>

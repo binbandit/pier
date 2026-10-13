@@ -247,3 +247,25 @@ test("one commit, or a run of them, can be looked at on its own", async ({ page 
   await page.keyboard.press("c");
   await expect(toast(page, "Comments go on the latest code; p shows it")).toBeVisible();
 });
+
+test("files you own are marked, and the filter can narrow to them", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-web/pull/7");
+  await expect(page.getByRole("heading", { name: "Paginate events with cursors" })).toBeVisible();
+  const routes = page.locator('[data-file="src/routes/events.ts"]');
+  const tests = page.locator('[data-file="test/events.test.ts"]');
+  await expect(routes.locator("header")).toContainText("Yours");
+  await expect(tests.locator("header")).not.toContainText("Yours");
+
+  // Ticking Viewed with the mouse leaves focus on its checkbox; the keys still work after.
+  await tests.getByRole("checkbox").click();
+  await expect(tests.getByRole("checkbox")).toBeChecked();
+  await page.keyboard.press("d");
+  await page.keyboard.press("f");
+  const picker = page.getByRole("region", { name: "Show files" });
+  await expect(picker).toContainText("Only files you own");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("1 of 2 files")).toBeVisible();
+  await expect(tests).toHaveCount(0);
+  await expect(routes).toBeVisible();
+});

@@ -22,8 +22,12 @@ const info = (overrides: Partial<MergeInfo> = {}): MergeInfo => ({
   ...overrides,
 });
 
-const doc = (checks: PrDoc["checks"]["state"], failing = 0, pending = 0) =>
-  ({ checks: { state: checks, total: 3, failing, pending, contexts: [] } }) as unknown as PrDoc;
+const doc = (
+  checks: PrDoc["checks"]["state"],
+  failing = 0,
+  pending = 0,
+  reviewRequests: PrDoc["reviewRequests"] = [],
+) => ({ checks: { state: checks, total: 3, failing, pending, contexts: [] }, reviewRequests });
 
 describe("merge runway", () => {
   test("a clean, green PR is ready with nothing in the way", () => {
@@ -75,5 +79,16 @@ describe("merge runway", () => {
     ).toBe(false);
     expect(buildRunway(doc("success"), info({ canMergeAsAdmin: true })).canBypass).toBe(false);
     expect(buildRunway(doc("success"), info({ mergeQueueEnabled: true })).queued).toBe(true);
+  });
+
+  test("an approval it's waiting on names the code owners GitHub asked", () => {
+    const asked = doc("success", 0, 0, [
+      { kind: "user", login: "binbandit", asCodeOwner: true },
+      { kind: "user", login: "sage-smudge", asCodeOwner: false },
+    ]);
+    const runway = buildRunway(asked, info({ reviewDecision: "REVIEW_REQUIRED" }));
+    expect(runway.blockers[0]?.text).toBe(
+      "It needs an approving review; binbandit was asked as code owner",
+    );
   });
 });

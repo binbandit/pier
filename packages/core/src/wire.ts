@@ -1,6 +1,8 @@
 // Everything the daemon sends to the web app. Plain types only: the daemon is trusted,
 // so outputs are typed rather than validated. Inputs live in `contract.ts` as ArkType schemas.
 
+import type { CodeOwnerRule } from "./codeowners";
+
 export type Ecosystem =
   | "npm"
   | "gomod"
@@ -473,8 +475,11 @@ export type PrView = {
   reviewDecision: ReviewDecision;
   mergeable: Mergeable;
   labels: { name: string; color: string }[];
-  /** `state` is "requested" for a pending request, else the review state (APPROVED, …). */
-  reviewers: { login: string; kind: "user" | "team" | "bot"; state: string }[];
+  /**
+   * `state` is "requested" for a pending request, else the review state (APPROVED, …).
+   * `codeOwner` marks a request GitHub made because the reviewer owns files here.
+   */
+  reviewers: { login: string; kind: "user" | "team" | "bot"; state: string; codeOwner: boolean }[];
   assignees: Person[];
   milestone: Milestone | null;
   /** Issues this PR closes when it merges. */
@@ -483,6 +488,8 @@ export type PrView = {
   requiredChecks: string[];
   /** The PR's commits, oldest first (the last 100). */
   commits: CommitView[];
+  /** Null when the base branch has no CODEOWNERS. */
+  codeOwners: CodeOwners | null;
   /** The head branch: whether it's still there, and what you can do about it. */
   headBranch: { exists: boolean; canDelete: boolean; canRestore: boolean };
   account: string;
@@ -512,6 +519,9 @@ export type DiffView =
   | { range: "commits"; from: string; to: string };
 
 export type DiffRange = DiffView["range"];
+
+/** The base branch's CODEOWNERS, and the owner names that mean you (`@login`, `@org/team`). */
+export type CodeOwners = { rules: CodeOwnerRule[]; you: string[] };
 
 /** One commit on the PR, for picking which ones to look at. */
 export type CommitView = {
@@ -575,12 +585,18 @@ export type CheckRunView = {
   completedAt: string | null;
   /** Annotations the check left on the code. */
   annotations: number;
+  /** For an Actions job, its workflow's name; GitHub calls the check "workflow / job". */
+  workflow: string | null;
+  /** What triggered the workflow, when another run of it on this commit had a different trigger. */
+  event: string | null;
 };
 
 /** An Actions workflow run on the head, for what's done to a run as a whole. */
 export type WorkflowRunView = {
   id: number;
   name: string;
+  /** What triggered it: "pull_request", "push", "pull_request_review", … */
+  event: string;
   state: CheckRun["state"];
   /** Held until someone with write access approves it (a first-time or fork contributor). */
   needsApproval: boolean;

@@ -1143,6 +1143,26 @@ export type PrIdQueryVariables = Exact<{
 
 export type PrIdQuery = { repository: { pullRequest: { id: string } | null } | null };
 
+export type CodeOwnersQueryVariables = Exact<{
+  owner: string;
+  name: string;
+  github: string;
+  root: string;
+  docs: string;
+}>;
+
+
+export type CodeOwnersQuery = { repository: { github:
+      | { text: string | null }
+      | Record<PropertyKey, never>
+     | null, root:
+      | { text: string | null }
+      | Record<PropertyKey, never>
+     | null, docs:
+      | { text: string | null }
+      | Record<PropertyKey, never>
+     | null } | null };
+
 export class TypedDocumentString<TResult, TVariables>
   extends String
   implements DocumentTypeDecoration<TResult, TVariables>
@@ -2481,3 +2501,24 @@ export const PrIdDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<PrIdQuery, PrIdQueryVariables>;
+export const CodeOwnersDocument = new TypedDocumentString(`
+    query CodeOwners($owner: String!, $name: String!, $github: String!, $root: String!, $docs: String!) {
+  repository(owner: $owner, name: $name) {
+    github: object(expression: $github) {
+      ... on Blob {
+        text
+      }
+    }
+    root: object(expression: $root) {
+      ... on Blob {
+        text
+      }
+    }
+    docs: object(expression: $docs) {
+      ... on Blob {
+        text
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<CodeOwnersQuery, CodeOwnersQueryVariables>;

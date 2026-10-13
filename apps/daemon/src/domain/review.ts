@@ -3,6 +3,7 @@ import type { PrDetail } from "@/github/pr-detail";
 import type { CommandPayload, NewCommand, Outbox } from "@/outbox/outbox";
 import type { Planner } from "@/outbox/planner";
 import type { SyncEngine } from "@/sync/engine";
+import { codeOwnersMatcher } from "@pier/core/codeowners";
 import type {
   Annotation,
   CheckLog,
@@ -26,6 +27,8 @@ import type {
   ViewedState,
 } from "@pier/core/wire";
 
+import { latestRuns } from "./checks";
+import type { CodeOwnersCache } from "./codeowners";
 import { overlayConversation } from "./conversation";
 import type { Details } from "./details";
 import type { Drafts } from "./drafts";
@@ -72,6 +75,7 @@ export type ReviewDeps = {
   details: Details;
   sync: SyncEngine;
   planner: Planner;
+  codeOwners: CodeOwnersCache;
   /** The git store, once it's available; without it, diffs come from GitHub's patches. */
   git: () => InterdiffSource | null;
 };
@@ -139,8 +143,9 @@ export class ReviewService {
     const port = this.deps.ports.get(account);
     this.deps.sync.nudge([doc.id]);
 
-    const [detail] = await Promise.all([
+    const [detail, codeOwners] = await Promise.all([
       this.detail(record),
+      this.deps.codeOwners.forPr(doc.repo, doc.baseRefName, account),
       record.files === null && doc.filesTotal <= 3000 && port
         ? port
             .files(doc.repo, doc.number)
@@ -167,6 +172,17 @@ export class ReviewService {
     );
 
     const canWrite = ["ADMIN", "MAINTAIN", "WRITE"].includes(doc.viewerPermission ?? "");
+    // Code owners of what this PR changes: whoever GitHub asked as one, or CODEOWNERS names.
+    const ownersOf = codeOwners ? codeOwnersMatcher(codeOwners.rules) : null;
+    const owning = new Set(
+      (ownersOf
+        ? (this.deps.model.get(doc.id)?.files ?? []).flatMap((f) => ownersOf(f.path))
+        : []
+      ).map((owner) => owner.toLowerCase()),
+    );
+    const isOwner = (login: string) =>
+      owning.has(`@${login}`.toLowerCase()) ||
+      doc.reviewRequests.some((r) => r.asCodeOwner && r.login === login);
     const view: PrView = {
       id: doc.id,
       repo: doc.repo,
@@ -203,10 +219,18 @@ export class ReviewService {
               ? ("team" as const)
               : ("user" as const),
           state: "requested",
+          codeOwner: isOwner(key.startsWith("bot:") ? key.slice(4) : key),
         })),
         ...doc.latestReviews.flatMap((r) =>
           r.author && !meta.requested.includes(r.author)
-            ? [{ login: r.author, kind: "user" as const, state: r.state }]
+            ? [
+                {
+                  login: r.author,
+                  kind: "user" as const,
+                  state: r.state,
+                  codeOwner: isOwner(r.author),
+                },
+              ]
             : [],
         ),
       ],
@@ -215,6 +239,7 @@ export class ReviewService {
       linkedIssues: detail?.linkedIssues ?? [],
       requiredChecks: detail?.requiredChecks ?? [],
       commits: detail?.commits ?? [],
+      codeOwners,
       // A deleted branch can come back once the PR is closed or merged, from its last head.
       headBranch: {
         exists: detail?.headBranch.exists ?? true,
@@ -438,7 +463,7 @@ export class ReviewService {
     const record = this.find(repo, number);
     const port = record && this.deps.ports.get(record.reader);
     if (!record || !port) return { runs: [], workflows: [], deployments: [] };
-    return port.checks(repo, record.doc.headRefOid);
+    return latestRuns(await port.checks(repo, record.doc.headRefOid));
   }
 
   /** What the head's checks left on the code, for showing on the lines they point at. */
@@ -446,7 +471,7 @@ export class ReviewService {
     const record = this.find(repo, number);
     const port = record && this.deps.ports.get(record.reader);
     if (!record || !port) return [];
-    const { runs } = await port.checks(repo, record.doc.headRefOid);
+    const { runs } = latestRuns(await port.checks(repo, record.doc.headRefOid));
     const annotated = runs.filter((run) => run.kind === "check" && run.annotations > 0);
     return annotated.length > 0 ? port.annotations(repo, annotated.slice(0, 20)) : [];
   }
@@ -664,7 +689,9 @@ export class ReviewService {
       const record = this.deps.model.get(prId);
       const port = record && this.deps.ports.get(record.reader);
       if (!record || !port) continue;
-      const { runs: checks } = await port.checks(record.doc.repo, record.doc.headRefOid);
+      const { runs: checks } = latestRuns(
+        await port.checks(record.doc.repo, record.doc.headRefOid),
+      );
       const failing = checks.filter((run) => run.state === "failure" && run.runId !== null);
       for (const runId of new Set(failing.map((run) => run.runId ?? 0))) {
         commandIds.push(...this.enqueue(record, "rerun-failed", { runId, debug }, 0));

@@ -126,6 +126,10 @@ export interface GitHubPort {
   commitParent(repo: string, oid: string): Promise<string | null>;
   /** Per-file diffs between two commits, for commit-range views without the git store. */
   compareFiles(repo: string, base: string, head: string): Promise<DiffFile[]>;
+  /** The CODEOWNERS file on a branch, from the first of GitHub's three places that has one. */
+  codeOwners(repo: string, ref: string): Promise<string | null>;
+  /** The teams this account is in, as "org/slug". */
+  teams(): Promise<string[]>;
   /** A file's contents at a commit, or null if it doesn't exist there (or is binary). */
   fileText(repo: string, oid: string, path: string): Promise<string | null>;
   submitReview(input: SubmitReviewInput): Promise<ReviewSummary>;

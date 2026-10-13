@@ -25,6 +25,8 @@ type PickerProps = {
   single?: boolean;
   /** For one-of pickers: whether picking the current value clears it. */
   clearable?: boolean;
+  /** Keep the options' order instead of floating what's set to the top. */
+  keepOrder?: boolean;
   onSave: (change: { add: string[]; remove: string[] }) => void;
   onClose: () => void;
 };
@@ -35,6 +37,7 @@ export function Picker({
   selected,
   single = false,
   clearable = true,
+  keepOrder = false,
   onSave,
   onClose,
 }: PickerProps) {
@@ -49,7 +52,9 @@ export function Picker({
   const needle = query.trim().toLowerCase();
   const visible = (options ?? [])
     .filter((o) => !needle || `${o.label} ${o.detail ?? ""}`.toLowerCase().includes(needle))
-    .toSorted((a, b) => Number(selected.includes(b.key)) - Number(selected.includes(a.key)));
+    .toSorted((a, b) =>
+      keepOrder ? 0 : Number(selected.includes(b.key)) - Number(selected.includes(a.key)),
+    );
   const index = Math.min(cursor, Math.max(0, visible.length - 1));
   const add = [...chosen].filter((key) => !selected.includes(key));
   const remove = selected.filter((key) => !chosen.has(key));

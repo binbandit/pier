@@ -113,10 +113,14 @@ const DISPLAY: Record<string, string> = {
   backspace: "⌫",
 };
 
+/** Where keys type text. A checkbox you just clicked (Viewed) keeps focus but takes no typing. */
 function isEditable(target: EventTarget | null): boolean {
+  if (target instanceof HTMLInputElement) return !NOT_TYPED.has(target.type);
   if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+  return target.isContentEditable || ["TEXTAREA", "SELECT"].includes(target.tagName);
 }
+
+const NOT_TYPED = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color"]);
 
 const CHORD_TIMEOUT_MS = 1500;
 

@@ -2,6 +2,7 @@ import type { DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import { PatchDiff } from "@pierre/diffs/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
+import { ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DIFF_OPTIONS, LOCKFILE, toPatch } from "@/diff/adapter";
@@ -60,6 +61,8 @@ type Props = {
   composing: NewComment | null;
   selection: SelectedLineRange | null;
   anchors: Anchors;
+  /** Who owns the file under CODEOWNERS, when the repo has one. */
+  ownership: { owners: string[]; yours: boolean } | null;
   onSelect: (path: string, range: SelectedLineRange | null) => void;
   onCompose: (comment: NewComment | null) => void;
 };
@@ -79,6 +82,7 @@ export function ReviewFile(props: Props) {
     composing,
     selection,
     anchors,
+    ownership,
     onSelect,
     onCompose,
   } = props;
@@ -179,6 +183,7 @@ export function ReviewFile(props: Props) {
         <button
           type="button"
           onClick={() => setExpanded(!open)}
+          title={ownership?.owners.length ? `Owned by ${ownership.owners.join(", ")}` : undefined}
           className="min-w-0 truncate text-left font-code text-meta text-fg hover:text-strong"
         >
           {file.previousPath ? (
@@ -194,6 +199,15 @@ export function ReviewFile(props: Props) {
           <span className="text-ok">+{file.additions}</span>{" "}
           <span className="text-bad">−{file.deletions}</span>
         </span>
+        {ownership?.yours && (
+          <span
+            title={`Owned by ${ownership.owners.join(", ")}, including you`}
+            className="flex shrink-0 items-center gap-1 text-meta text-muted"
+          >
+            <ShieldCheck aria-hidden size={13} className="text-off" />
+            Yours
+          </span>
+        )}
         {threads.length > 0 && (
           <span className="shrink-0 text-meta text-faint">
             {threads.length} {threads.length === 1 ? "thread" : "threads"}

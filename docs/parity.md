@@ -62,7 +62,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | FILES-WHITESPACE | Hide whitespace, without a reload | git store `-w` | M1b | built |
 | FILES-CONTEXT | Expand context around hunks | git store blobs | I9 | - |
 | FILES-TREE | File tree with viewed and comment markers | derived | M1b | built |
-| FILES-FILTER | Filter by extension, owned by you, viewed, deleted | CODEOWNERS parse | I5 | - |
+| FILES-FILTER | Filter by extension, owned by you, viewed, deleted | CODEOWNERS parse | I5 | sandbox |
 | FILES-VIEWED | Viewed checkbox, synced to GitHub, resets when the file changes | `markFileAsViewed`, `viewerViewedState` | M1b | built |
 | FILES-SINCE-REVIEW | Only what changed since your last review, without rebase noise | git store merge-tree | M1b | sandbox |
 | FILES-COMMITS | Commit list, single commit, any range | git store / `commits` | I4 | sandbox |
@@ -87,7 +87,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | THREAD-RESOLVE | Resolve / unresolve | `resolveReviewThread` | M1b | built |
 | THREAD-NAV | Jump between open threads | client | M1b | built |
 | REVIEW-DISMISS | Dismiss someone's review | `dismissPullRequestReview` | I6 | sandbox |
-| CODEOWNERS | Who owns what, code-owner requests | CODEOWNERS parse, `asCodeOwner` | I5 | - |
+| CODEOWNERS | Who owns what, code-owner requests | CODEOWNERS parse, `asCodeOwner` | I5 | sandbox |
 | COPILOT-REVIEW | Request a Copilot review | `requestReviewsByLogin` bot `copilot-pull-request-reviewer`, offered when GitHub suggests it (the sandbox accounts don't have Copilot review, so not live-tested) | I6 | built |
 
 ## D. Checks

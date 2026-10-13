@@ -5,7 +5,11 @@ import type { Blocker, Runway } from "@pier/core/wire";
 // Why a PR can't merge yet, in plain words, each with the key that fixes it when one exists.
 // GitHub only says "blocked"; this puts the reasons back together from the PR's state.
 
-export function buildRunway(doc: PrDoc, info: MergeInfo, conflicts: string[] = []): Runway {
+export function buildRunway(
+  doc: Pick<PrDoc, "checks" | "reviewRequests">,
+  info: MergeInfo,
+  conflicts: string[] = [],
+): Runway {
   const blockers: Blocker[] = [];
   const canAutoMerge = info.autoMergeAllowed && info.canEnableAutoMerge;
 
@@ -35,8 +39,13 @@ export function buildRunway(doc: PrDoc, info: MergeInfo, conflicts: string[] = [
   if (info.reviewDecision === "CHANGES_REQUESTED") {
     blockers.push({ text: "Changes were requested", fix: null });
   } else if (info.reviewDecision === "REVIEW_REQUIRED") {
+    // GitHub asks code owners itself; naming who it asked says whose approval would count.
+    const owners = doc.reviewRequests.filter((r) => r.asCodeOwner).map((r) => r.login);
     blockers.push({
-      text: "It needs an approving review",
+      text:
+        owners.length === 0
+          ? "It needs an approving review"
+          : `It needs an approving review; ${owners.join(", ")} ${owners.length === 1 ? "was" : "were"} asked as code ${owners.length === 1 ? "owner" : "owners"}`,
       fix: canAutoMerge ? "auto-merge" : null,
     });
   }

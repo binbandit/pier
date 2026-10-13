@@ -120,6 +120,12 @@ export function fakeRegistryFetch(world: FakeWorld): typeof fetch {
 
 type Stack = "node-service" | "web-app" | "go-service" | "rust-tool" | "library";
 
+/** Teams own org code, so files come out "yours" through team membership. */
+const ORG_CODEOWNERS: Record<string, string> = {
+  northwind: "* @northwind/platform\n/docs/ @northwind/writers\n",
+  "lumen-labs": "/src/ @lumen-labs/web\n*.md @lumen-labs/docs\n",
+};
+
 const STACKS: Record<Stack, { ecosystems: [CatalogEcosystem, number][]; checks: string[] }> = {
   "node-service": {
     ecosystems: [
@@ -312,8 +318,15 @@ class Builder {
         checkNames: STACKS[stack].checks,
         ...options,
       });
+    // Owned by the repo's owner, except the routes (yours) and the tests and docs (the other's).
+    const codeOwners = [
+      `* @${owner}`,
+      `/src/routes/ @${you}`,
+      `/test/ @${other}`,
+      `*.md @${other}`,
+    ].join("\n");
     const web = this.plan(
-      repo("sandbox-web", "web-app", { automergeOnApproval: true }),
+      repo("sandbox-web", "web-app", { automergeOnApproval: true, codeOwners }),
       "web-app",
       "dependabot",
     );
@@ -434,6 +447,7 @@ class Builder {
           dismissStaleReviews: rng.chance(0.15),
           automergeOnApproval: rng.chance(0.4),
           checkNames: STACKS[stack].checks,
+          codeOwners: ORG_CODEOWNERS[org] ?? null,
         });
         plans.push(
           this.plan(repo, stack, npmStack && rng.chance(0.12) ? "renovate" : "dependabot"),

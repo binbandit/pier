@@ -1,6 +1,7 @@
 import { GitHubError } from "@/github/client";
 import type { DraftThreadInput, GitHubPort, ReviewEvent } from "@/github/port";
 import type { CheckContext, PrCommit, PrState } from "@/github/pr-doc";
+import { codeOwnersMatcher, parseCodeOwners } from "@pier/core/codeowners";
 import type {
   Actor,
   Bump,
@@ -57,6 +58,8 @@ export type FakeRepo = {
   /** Branches deleted (after their PR merged or closed). */
   deletedBranches: Set<string>;
   milestones: { number: number; title: string; dueOn: string | null }[];
+  /** The default branch's CODEOWNERS, if it has one. */
+  codeOwners: string | null;
 };
 
 export type RepoOptions = Partial<
@@ -72,6 +75,7 @@ export type RepoOptions = Partial<
     | "mergeMethods"
     | "autoMergeAllowed"
     | "mergeQueue"
+    | "codeOwners"
   >
 > & { collaborators?: Record<string, Permission>; watchers?: string[] };
 
@@ -470,6 +474,7 @@ export class FakeWorld {
       autoMergeAllowed: options.autoMergeAllowed ?? true,
       labels: new Map(DEFAULT_LABELS.map(({ name: label, ...rest }) => [label, rest])),
       mergeQueue: options.mergeQueue ?? false,
+      codeOwners: options.codeOwners ?? null,
       deletedBranches: new Set(),
       milestones: [
         { number: 1, title: "Next release", dueOn: this.iso(this.now() + 14 * 86_400_000) },
@@ -1335,6 +1340,14 @@ export class FakeWorld {
     this.touched(pr, author, [body]);
     this.botCommand(pr, body);
     return comment;
+  }
+
+  /** Whether a reviewer (a login, or "org/slug") owns any of the PR's files under CODEOWNERS. */
+  ownsAny(pr: FakePr, reviewer: string): boolean {
+    if (!pr.repo.codeOwners) return false;
+    const ownersOf = codeOwnersMatcher(parseCodeOwners(pr.repo.codeOwners));
+    const name = `@${reviewer}`.toLowerCase();
+    return pr.files.some((f) => ownersOf(f.path).some((owner) => owner.toLowerCase() === name));
   }
 
   requestReview(prId: string, reviewer: string, by?: string): void {

@@ -137,6 +137,18 @@ export class FakeGitHub implements GitHubPort {
     return this.call("commitParent", "core", () => this.world.parentOf(repo, oid));
   }
 
+  codeOwners(repo: string, _ref: string): Promise<string | null> {
+    return this.call("codeOwners", "graphql", () =>
+      this.canSeeRepo(repo) ? (this.world.repos.get(repo)?.codeOwners ?? null) : null,
+    );
+  }
+
+  teams(): Promise<string[]> {
+    return this.call("teams", "core", () =>
+      [...this.world.teams].flatMap(([slug, members]) => (members.has(this.login) ? [slug] : [])),
+    );
+  }
+
   compareFiles(repo: string, base: string, head: string): Promise<DiffFile[]> {
     return this.call("compareFiles", "core", () => this.world.compare(repo, base, head));
   }
@@ -321,11 +333,14 @@ export class FakeGitHub implements GitHubPort {
         completedAt: run.completedAt,
         // Every failed job points at the code it failed on, as linters and test reporters do.
         annotations: run.state === "failure" ? 1 : 0,
+        workflow: null,
+        event: null,
       }));
       const workflows = [...Map.groupBy(jobs, (job) => job.runId)].map(
         ([runId, group]): WorkflowRunView => ({
           id: runId,
           name: "CI",
+          event: "pull_request",
           state: group.some((j) => j.state === "failure")
             ? "failure"
             : group.some((j) => j.state === "pending")
@@ -812,7 +827,7 @@ export class FakeGitHub implements GitHubPort {
       reviewRequests: [...pr.requested].slice(0, 20).map((login) => ({
         kind: world.teams.has(login) ? "team" : world.users.get(login)?.isBot ? "bot" : "user",
         login,
-        asCodeOwner: false,
+        asCodeOwner: world.ownsAny(pr, login),
       })),
       latestReviews: world.latestOpinions(pr).map((r) => ({
         state: r.state,

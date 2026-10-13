@@ -2,7 +2,7 @@ import type { SelectedLineRange } from "@pierre/diffs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { clsx } from "clsx";
-import { CircleDot, Lock, Milestone, UserRound, Users } from "lucide-react";
+import { CircleDot, Lock, Milestone, ShieldCheck, UserRound, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { errorText, markDone, openOnGitHub } from "@/features/actions";
@@ -18,6 +18,13 @@ import type { DiffView, PrView, QueueItem } from "@pier/core/wire";
 import { ActivityRail } from "./activity";
 import { Checks } from "./checks";
 import { CommitPicker, describeView } from "./commits";
+import {
+  type FileFilter,
+  FileFilterPicker,
+  NO_FILTER,
+  filterFiles,
+  ownershipOf,
+} from "./file-filter";
 import { FileTree } from "./file-tree";
 import { type MetadataKind, MetadataPicker } from "./metadata";
 import { RevertPanel } from "./revert";
@@ -40,7 +47,8 @@ type Raised =
   | { kind: "picker"; field: MetadataKind }
   | { kind: "title" }
   | { kind: "revert" }
-  | { kind: "commits" };
+  | { kind: "commits" }
+  | { kind: "filter" };
 
 const PICKERS: { field: MetadataKind; key: string; title: string }[] = [
   { field: "labels", key: "l", title: "Edit labels" },
@@ -98,6 +106,7 @@ function Loaded({ pr }: { pr: PrView }) {
       : picked;
   const anchors = anchorsOf(view, pr.headRefOid);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
+  const [filter, setFilter] = useState<FileFilter>(NO_FILTER);
   const [rail, setRail] = useState(() => window.innerWidth >= WIDE);
   const [raised, setRaised] = useState<Raised | null>(null);
   const lower = () => setRaised(null);
@@ -121,7 +130,10 @@ function Loaded({ pr }: { pr: PrView }) {
     enabled: view.range !== "all" || ignoreWhitespace,
   });
   const files = view.range === "all" && !ignoreWhitespace ? (pr.files ?? []) : (diff?.files ?? []);
-  const ordered = reviewOrder(files);
+  const ownership = ownershipOf(pr.codeOwners);
+  const listed = reviewOrder(files);
+  const ordered = filterFiles(listed, filter, pr.viewed, ownership);
+  const filtered = ordered.length !== listed.length;
   const { data: queue = [] } = useQuery(q("inbox", { split: "review" }));
 
   // Comments belong to the latest code, so an earlier commit's diff shows none of them.
@@ -387,6 +399,14 @@ function Loaded({ pr }: { pr: PrView }) {
       run: () => setRaised({ kind: "commits" }),
     },
     {
+      id: "pr.filter",
+      title: "Choose which files to show",
+      keys: ["d f"],
+      scope: "surface",
+      group: "Display",
+      run: () => setRaised({ kind: "filter" }),
+    },
+    {
       id: "pr.whitespace",
       title: ignoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes",
       keys: ["d w"],
@@ -500,7 +520,7 @@ function Loaded({ pr }: { pr: PrView }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1">
-        {ordered.length > 10 && (
+        {listed.length > 10 && (
           <FileTree
             files={ordered}
             viewed={pr.viewed}
@@ -547,13 +567,29 @@ function Loaded({ pr }: { pr: PrView }) {
                   </span>
                 )}
                 <span className="shrink-0 text-ui text-faint">
-                  {plural(ordered.length, "file")}
+                  {filtered
+                    ? `${ordered.length} of ${plural(listed.length, "file")}`
+                    : plural(listed.length, "file")}
                 </span>
+                {filtered && (
+                  <button
+                    type="button"
+                    onClick={() => setRaised({ kind: "filter" })}
+                    className="flex shrink-0 items-center gap-1.5 text-meta text-faint hover:text-fg"
+                  >
+                    filtered <Keys sequence="d f" />
+                  </button>
+                )}
                 {ignoreWhitespace && (
                   <span className="text-meta text-faint">whitespace hidden</span>
                 )}
               </h2>
-              {view.range === "since-review" && diff && ordered.length === 0 && (
+              {filtered && ordered.length === 0 && (
+                <p className="text-ui text-muted">
+                  No files match the filter. <Keys sequence="d f" /> changes it.
+                </p>
+              )}
+              {view.range === "since-review" && diff && listed.length === 0 && (
                 <p className="text-ui text-muted">
                   Nothing has changed since you reviewed {pr.lastReviewedOid?.slice(0, 7)}.
                 </p>
@@ -576,6 +612,7 @@ function Loaded({ pr }: { pr: PrView }) {
                     selection={selection?.path === file.path ? selection.range : null}
                     onSelect={(path, r) => setSelection(r ? { path, range: r } : null)}
                     anchors={anchors}
+                    ownership={ownership?.(file.path) ?? null}
                     onCompose={compose}
                   />
                 ))}
@@ -594,6 +631,16 @@ function Loaded({ pr }: { pr: PrView }) {
       )}
       {raised?.kind === "title" && <TitlePanel pr={pr} onClose={lower} />}
       {raised?.kind === "revert" && <RevertPanel pr={pr} onClose={lower} />}
+      {raised?.kind === "filter" && (
+        <FileFilterPicker
+          files={listed}
+          filter={filter}
+          viewed={pr.viewed}
+          ownership={ownership}
+          onChange={setFilter}
+          onClose={lower}
+        />
+      )}
       {raised?.kind === "commits" && (
         <CommitPicker
           pr={pr}
@@ -677,10 +724,13 @@ function Header({ pr }: { pr: PrView }) {
                 <span
                   key={`${r.kind}:${r.login}`}
                   className="flex items-center gap-1.5"
-                  title={r.state}
+                  title={r.codeOwner ? `${r.state}, code owner` : r.state}
                 >
                   <Dot tone={REVIEWER_TONE[r.state] ?? "faint"} />
                   {r.login}
+                  {r.codeOwner && (
+                    <ShieldCheck aria-label="Code owner" size={12} className="text-off" />
+                  )}
                 </span>
               ))}
             </span>

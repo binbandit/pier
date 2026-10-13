@@ -1,6 +1,7 @@
 import { type Account, OPTIONAL_SCOPES, REQUIRED_SCOPES, missingScopes } from "@/accounts/gh";
 import { VERSION } from "@/config";
 import { bumpKey } from "@/domain/bumps";
+import { CodeOwnersCache } from "@/domain/codeowners";
 import { DoneItems, Verdicts } from "@/domain/decisions";
 import { Details } from "@/domain/details";
 import { Drafts } from "@/domain/drafts";
@@ -177,6 +178,7 @@ export function createApp(options: AppOptions) {
     details,
     sync,
     planner,
+    codeOwners: new CodeOwnersCache(ports),
     git: () => options.git ?? null,
   });
 

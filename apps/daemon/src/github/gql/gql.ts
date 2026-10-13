@@ -61,6 +61,7 @@ type Documents = {
     "\n  mutation Dequeue($prId: ID!) {\n    dequeuePullRequest(input: { id: $prId }) {\n      mergeQueueEntry {\n        id\n      }\n    }\n  }\n": typeof types.DequeueDocument,
     "\n  mutation Revert($prId: ID!, $title: String, $body: String) {\n    revertPullRequest(input: { pullRequestId: $prId, title: $title, body: $body }) {\n      revertPullRequest {\n        number\n        url\n      }\n    }\n  }\n": typeof types.RevertDocument,
     "\n  query PrId($owner: String!, $name: String!, $number: Int!) {\n    repository(owner: $owner, name: $name) {\n      pullRequest(number: $number) {\n        id\n      }\n    }\n  }\n": typeof types.PrIdDocument,
+    "\n  query CodeOwners(\n    $owner: String!\n    $name: String!\n    $github: String!\n    $root: String!\n    $docs: String!\n  ) {\n    repository(owner: $owner, name: $name) {\n      github: object(expression: $github) {\n        ... on Blob {\n          text\n        }\n      }\n      root: object(expression: $root) {\n        ... on Blob {\n          text\n        }\n      }\n      docs: object(expression: $docs) {\n        ... on Blob {\n          text\n        }\n      }\n    }\n  }\n": typeof types.CodeOwnersDocument,
 };
 const documents: Documents = {
     "\n  query Viewer {\n    viewer {\n      login\n      avatarUrl(size: 64)\n    }\n  }\n": types.ViewerDocument,
@@ -109,6 +110,7 @@ const documents: Documents = {
     "\n  mutation Dequeue($prId: ID!) {\n    dequeuePullRequest(input: { id: $prId }) {\n      mergeQueueEntry {\n        id\n      }\n    }\n  }\n": types.DequeueDocument,
     "\n  mutation Revert($prId: ID!, $title: String, $body: String) {\n    revertPullRequest(input: { pullRequestId: $prId, title: $title, body: $body }) {\n      revertPullRequest {\n        number\n        url\n      }\n    }\n  }\n": types.RevertDocument,
     "\n  query PrId($owner: String!, $name: String!, $number: Int!) {\n    repository(owner: $owner, name: $name) {\n      pullRequest(number: $number) {\n        id\n      }\n    }\n  }\n": types.PrIdDocument,
+    "\n  query CodeOwners(\n    $owner: String!\n    $name: String!\n    $github: String!\n    $root: String!\n    $docs: String!\n  ) {\n    repository(owner: $owner, name: $name) {\n      github: object(expression: $github) {\n        ... on Blob {\n          text\n        }\n      }\n      root: object(expression: $root) {\n        ... on Blob {\n          text\n        }\n      }\n      docs: object(expression: $docs) {\n        ... on Blob {\n          text\n        }\n      }\n    }\n  }\n": types.CodeOwnersDocument,
 };
 
 /**
@@ -295,6 +297,10 @@ export function graphql(source: "\n  mutation Revert($prId: ID!, $title: String,
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query PrId($owner: String!, $name: String!, $number: Int!) {\n    repository(owner: $owner, name: $name) {\n      pullRequest(number: $number) {\n        id\n      }\n    }\n  }\n"): typeof import('./graphql').PrIdDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query CodeOwners(\n    $owner: String!\n    $name: String!\n    $github: String!\n    $root: String!\n    $docs: String!\n  ) {\n    repository(owner: $owner, name: $name) {\n      github: object(expression: $github) {\n        ... on Blob {\n          text\n        }\n      }\n      root: object(expression: $root) {\n        ... on Blob {\n          text\n        }\n      }\n      docs: object(expression: $docs) {\n        ... on Blob {\n          text\n        }\n      }\n    }\n  }\n"): typeof import('./graphql').CodeOwnersDocument;
 
 
 export function graphql(source: string) {

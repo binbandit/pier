@@ -1390,3 +1390,32 @@ export const PrIdQuery = graphql(`
     }
   }
 `);
+
+/** CODEOWNERS on a branch, from each place GitHub looks (it uses the first it finds). */
+export const CodeOwnersQuery = graphql(`
+  query CodeOwners(
+    $owner: String!
+    $name: String!
+    $github: String!
+    $root: String!
+    $docs: String!
+  ) {
+    repository(owner: $owner, name: $name) {
+      github: object(expression: $github) {
+        ... on Blob {
+          text
+        }
+      }
+      root: object(expression: $root) {
+        ... on Blob {
+          text
+        }
+      }
+      docs: object(expression: $docs) {
+        ... on Blob {
+          text
+        }
+      }
+    }
+  }
+`);
