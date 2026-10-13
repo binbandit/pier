@@ -29,7 +29,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | ID | GitHub behaviour | API | Milestone | Status |
 |---|---|---|---|---|
 | CONV-BODY | Rendered description (mentions, refs, task lists, alerts) | `bodyHTML` | M1b | sandbox |
-| CONV-MERMAID | Mermaid, math, GeoJSON rendering | client render | I9 | - |
+| CONV-MERMAID | Mermaid (in a sandboxed frame) and math (KaTeX); GeoJSON, TopoJSON and STL show as source | client render | I9 | sandbox |
 | CONV-TIMELINE | Commits, reviews, comments, requests, force-pushes, labels, renames, merges | `timelineItems` | M1b | sandbox |
 | CONV-TIMELINE-ALL | Every other timeline event type (about 70) with a generic fallback | `timelineItems` (the ~35 event types a reviewer sees; the rest are noise like subscriptions) | I6 | built |
 | CONV-COMMENT | Add a conversation comment | `addComment` | M1b | built |
@@ -58,18 +58,18 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | ID | GitHub behaviour | API | Milestone | Status |
 |---|---|---|---|---|
 | FILES-UNIFIED | Unified diff with syntax and word highlighting | REST files / git store | M1b | sandbox |
-| FILES-SPLIT | Split (side by side) view | renderer option | I9 | - |
+| FILES-SPLIT | Split (side by side) view, remembered (`d s`) | renderer option | I9 | sandbox |
 | FILES-WHITESPACE | Hide whitespace, without a reload | git store `-w` | M1b | built |
-| FILES-CONTEXT | Expand context around hunks | git store blobs | I9 | - |
+| FILES-CONTEXT | Expand context around hunks | git store blobs | I9 | sandbox |
 | FILES-TREE | File tree with viewed and comment markers | derived | M1b | built |
 | FILES-FILTER | Filter by extension, owned by you, viewed, deleted | CODEOWNERS parse | I5 | sandbox |
 | FILES-VIEWED | Viewed checkbox, synced to GitHub, resets when the file changes | `markFileAsViewed`, `viewerViewedState` | M1b | built |
 | FILES-SINCE-REVIEW | Only what changed since your last review, without rebase noise | git store merge-tree | M1b | sandbox |
 | FILES-COMMITS | Commit list, single commit, any range | git store / `commits` | I4 | sandbox |
-| FILES-RICH | Rich diffs: images, markdown prose, notebooks, CSV, SVG | client | I9 | - |
-| FILES-LARGE | Very large PRs (over 300 / 3,000 files, truncated patches) | git store | I9 | - |
+| FILES-RICH | Rich diffs: images side by side, SVG, rendered Markdown, CSV, notebooks (`d r`) | client | I9 | sandbox |
+| FILES-LARGE | Very large PRs: lazy drawing, past 3,000 files and truncated patches from git | git store | I9 | built |
 | FILES-LOCKFILE | Lockfiles collapsed, dependency summary | dependency review API | M1a | built |
-| FILES-PERMALINK | Line permalinks and `.diff` / `.patch` | client | I9 | - |
+| FILES-PERMALINK | Line permalinks (`y`, github.com `#diff-` links open here) and `.diff` / `.patch` | client; REST diff media types | I9 | sandbox |
 | COMMENT-LINE | Comment on a line | review `threads[]` | M1b | sandbox |
 | COMMENT-RANGE | Comment on a range of lines | `startLine` | M1b | built |
 | COMMENT-DELETED-LINE | Comment on a removed line | `side: LEFT` | M1b | built |

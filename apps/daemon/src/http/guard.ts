@@ -61,3 +61,16 @@ export const CONTENT_SECURITY_POLICY = [
   "base-uri 'none'",
   "frame-ancestors 'none'",
 ].join("; ");
+
+/**
+ * For the sandboxed frames pier draws diagrams from PRs in: only pier may embed them, their only
+ * script is pier's, and they have nothing to fetch or connect to.
+ */
+export const FRAME_CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'unsafe-inline'",
+  "img-src data:",
+  "font-src 'self' data:",
+  "frame-ancestors 'self'",
+].join("; ");

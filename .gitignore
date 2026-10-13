@@ -9,3 +9,5 @@ dist/
 .build/
 # the router plugin's scratch files
 .tanstack/
+# built from apps/web/src/frames at build time
+apps/web/public/frames/*.js

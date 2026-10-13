@@ -12,6 +12,7 @@ import { embeddedAssets } from "./assets";
 import type { EventHub } from "./events";
 import {
   CONTENT_SECURITY_POLICY,
+  FRAME_CONTENT_SECURITY_POLICY,
   type GuardConfig,
   checkEvents,
   checkHost,
@@ -142,7 +143,11 @@ function asset(webDir: string | null, pathname: string): Response {
       ? "public, max-age=31536000, immutable"
       : "no-cache",
   };
-  if (found.name.endsWith(".html")) headers["content-security-policy"] = CONTENT_SECURITY_POLICY;
+  if (found.name.endsWith(".html")) {
+    headers["content-security-policy"] = found.name.startsWith("/frames/")
+      ? FRAME_CONTENT_SECURITY_POLICY
+      : CONTENT_SECURITY_POLICY;
+  }
   return new Response(Bun.file(found.file), { headers });
 }
 
