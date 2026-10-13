@@ -78,7 +78,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | COMMENT-OUTSIDE | Threads on lines outside the shown diff stay visible | derived | M1b | sandbox |
 | COMMENT-OUTDATED | Outdated threads shown with their original code | `diffHunk` | M1b | built |
 | SUGGEST-WRITE | Write a suggestion block from the selected code (Cmd+G) | client | M1b | built |
-| SUGGEST-APPLY | Apply one or a batch of suggestions as a commit | none; `createCommitOnBranch` | I7 | - |
+| SUGGEST-APPLY | Apply one or a batch of suggestions as a commit (signed by GitHub, co-authored, threads resolved; keeps file modes, CRLF, BOM and a missing final newline, all checked live) | none; `createCommitOnBranch` with `expectedHeadOid` | I7 | sandbox |
 | REVIEW-DRAFTS | Inline comments held as drafts until the review is sent | local | M1b | sandbox |
 | REVIEW-SUBMIT | Comment / approve / request changes, with a summary | `addPullRequestReview` | M1b | sandbox |
 | REVIEW-UNDO | Take a review back within 5 seconds | outbox hold | M1b | sandbox |

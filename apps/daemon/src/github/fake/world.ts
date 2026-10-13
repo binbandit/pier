@@ -16,7 +16,7 @@ import type {
   TimelineEntry,
 } from "@pier/core/wire";
 
-import { countPatch, diffHunkAt, unifiedDiff } from "./diff";
+import { countPatch, diffHunkAt, movedLine, unifiedDiff } from "./diff";
 import { Random } from "./random";
 
 // The whole fake GitHub, in memory: users, orgs, repos, PRs and everything that happens to them.
@@ -710,6 +710,54 @@ export class FakeWorld {
     const oid = this.addCommit(pr, input, this.now(), input.files ?? []);
     this.afterPush(pr, input.checks);
     return oid;
+  }
+
+  /** Commits whole files onto an open PR's branch (createCommitOnBranch), guarded on its head. */
+  commitFiles(
+    repo: string,
+    branch: string,
+    input: {
+      expectedHeadOid: string;
+      message: string;
+      files: { path: string; contents: string }[];
+    },
+    by: string,
+  ): string {
+    const pr = this.prOnBranch(repo, branch);
+    if (!pr || pr.state !== "OPEN")
+      throw graphqlError(`Could not resolve to a branch named '${branch}'`);
+    if (!this.canWrite(pr.repo, by))
+      throw graphqlError(`${by} does not have push access to ${repo}`);
+    if (this.head(pr) !== input.expectedHeadOid) {
+      throw graphqlError(
+        `Expected branch to point to "${input.expectedHeadOid}" but it did not. Pull and try again.`,
+      );
+    }
+    return this.pushCommit(pr.id, {
+      message: input.message,
+      author: by,
+      // GitHub signs commits made through its API.
+      signed: true,
+      files: input.files.map((file) => ({ path: file.path, after: file.contents })),
+    });
+  }
+
+  /** A branch's latest commit, if a PR in the repo has it as its head. */
+  branchHead(
+    repo: string,
+    branch: string,
+  ): { oid: string; parents: string[]; message: string } | null {
+    const pr = this.prOnBranch(repo, branch);
+    const head = pr?.commits.at(-1);
+    if (!pr || !head) return null;
+    const parent = this.parentOf(repo, head.oid);
+    return { oid: head.oid, parents: parent ? [parent] : [], message: head.message };
+  }
+
+  private prOnBranch(repo: string, branch: string): FakePr | undefined {
+    return [...this.prs.values()].find(
+      (pr) => pr.repo.fullName === repo && pr.headRefName === branch,
+    );
   }
 
   /** Rewrites the head commit (amend and force-push). Returns the new head. */
@@ -1602,14 +1650,27 @@ export class FakeWorld {
     const head = this.tree(pr.repo.fullName, oid);
     for (const change of changes) {
       const existing = pr.files.find((f) => f.path === change.path);
+      const before = head.get(change.path);
       const file = "patch" in change ? patchFile(change) : textFile(change, base, head);
+      const after = head.get(change.path);
       file.revision = (existing?.revision ?? 0) + 1;
       pr.files = existing
         ? pr.files.map((f) => (f === existing ? file : f))
         : [...pr.files, file].toSorted((a, b) => a.path.localeCompare(b.path));
-      // A push that changes a file outdates the threads written against it.
+      // Threads on the new code follow their lines through the push, as GitHub's do, and go
+      // outdated when the push changed those lines. Without both texts, every thread goes.
       if (existing) {
-        for (const thread of pr.threads) if (thread.path === change.path) thread.line = null;
+        for (const thread of pr.threads) {
+          if (thread.path !== change.path || thread.side !== "RIGHT" || thread.line === null)
+            continue;
+          const shift = (line: number) =>
+            before !== undefined && after !== undefined ? movedLine(before, after, line) : null;
+          const line = shift(thread.line);
+          const startLine = thread.startLine === null ? null : shift(thread.startLine);
+          const moved = line !== null && (thread.startLine === null || startLine !== null);
+          thread.line = moved ? line : null;
+          thread.startLine = moved ? startLine : thread.startLine;
+        }
       }
     }
   }

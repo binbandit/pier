@@ -269,3 +269,26 @@ test("files you own are marked, and the filter can narrow to them", async ({ pag
   await expect(tests).toHaveCount(0);
   await expect(routes).toBeVisible();
 });
+
+test("a reviewer's suggestion goes in as a commit on your branch", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-web/pull/9");
+  await expect(page.getByRole("heading", { name: "Paginate events with cursors" })).toBeVisible();
+  const thread = page.locator("[data-thread]").filter({ hasText: "Smaller pages keep this fast" });
+  await thread.getByRole("button", { name: "Apply suggestion" }).click();
+
+  const panel = page.getByRole("region", { name: "Apply suggestions" });
+  await expect(panel).toContainText("commit 1 suggestion");
+  await page.keyboard.press("Enter");
+  await expect(toast(page, "Applying 1 suggestion in 5s")).toBeVisible();
+
+  await page.goto("/log");
+  await expect(page.getByRole("listitem").filter({ hasText: "Suggestions" })).toContainText(
+    "Sent",
+    { timeout: 15_000 },
+  );
+  await page.goto("/WastedHippie/sandbox-web/pull/9");
+  await expect(page.locator('[data-file="src/routes/events.ts"]')).toContainText(
+    "max(100).default(25)",
+  );
+  await expect(thread).toContainText("Resolved");
+});

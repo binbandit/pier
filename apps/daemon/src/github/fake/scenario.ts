@@ -403,6 +403,43 @@ class Builder {
     }
     this.humanPr(api.repo, owner, bigChange(), now - 26 * HOUR, [you], "success");
     this.authored(web.repo, other, "changes-requested", now - 30 * HOUR);
+
+    // The owner suggests changes on your PR, to apply one at a time or together.
+    const yours = [...world.prs.values()].find(
+      (pr) => pr.author === you && pr.state === "OPEN" && pr.repo === web.repo,
+    );
+    const routes = yours?.files.find((f) => f.path === "src/routes/events.ts");
+    if (yours && routes) {
+      world.review(yours.id, owner, {
+        event: "COMMENT",
+        body: "Two small things.",
+        threads: [
+          {
+            subject: "line",
+            path: routes.path,
+            line: 10,
+            side: "RIGHT",
+            body: [
+              "Smaller pages keep this fast:",
+              "```suggestion",
+              "  limit: z.coerce.number().int().min(1).max(100).default(25),",
+              "```",
+            ].join("\n"),
+          },
+          {
+            subject: "line",
+            path: "test/events.test.ts",
+            line: 9,
+            side: "RIGHT",
+            body: [
+              "```suggestion",
+              "    expect(res.body.next).toEqual(expect.any(String));",
+              "```",
+            ].join("\n"),
+          },
+        ],
+      });
+    }
   }
 
   work(): void {

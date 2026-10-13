@@ -142,6 +142,15 @@ export const inputs = {
   milestones: type({ repo: "string" }),
   flight: type({}),
   log: type({ "limit?": "1 <= number.integer <= 500" }),
+  /** Commits the suggestions in these review comments to the PR's branch, in one commit. */
+  applySuggestions: type({
+    prId: "string",
+    /** The head you saw them against; anything newer is refused. */
+    headOid: "string",
+    commentIds: "string[] > 0",
+    headline: "string > 0",
+    body: "string",
+  }),
   /** The Log was looked at, so its failures stop showing in the status line. */
   seenLog: type({}),
   planAction: type({
@@ -204,6 +213,7 @@ export type Outputs = {
   flight: FlightItem[];
   log: LogEntry[];
   seenLog: { ok: true };
+  applySuggestions: { commandIds: string[] };
   planAction: PlanPreview;
   commitPlan: { commandIds: string[] };
   cancelCommands: { cancelled: number };

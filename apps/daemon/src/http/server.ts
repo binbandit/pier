@@ -5,6 +5,7 @@ import { type } from "arktype";
 
 import type { Handlers } from "@/api/handlers";
 import { DEV_HOST, HOST, PORT } from "@/config";
+import { Refusal } from "@/domain/refusal";
 import { inputs, type ProcedureName } from "@pier/core/contract";
 
 import { embeddedAssets } from "./assets";
@@ -90,6 +91,7 @@ async function rpc(name: string, req: Request, handlers: Handlers): Promise<Resp
     const handler = handlers[name] as (input: unknown) => unknown;
     return json(await handler(parsed));
   } catch (error) {
+    if (error instanceof Refusal) return json({ error: error.message }, 409);
     console.error(`rpc ${name}:`, error);
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);
   }

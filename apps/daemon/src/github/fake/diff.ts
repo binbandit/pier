@@ -159,3 +159,18 @@ function middleOps(a: string[], b: string[]): Op[] {
   }
   return [...ops, ...removed.slice(i), ...added.slice(j)];
 }
+
+/** Where line `line` of `before` sits in `after`, or null when the change touched it. */
+export function movedLine(before: string, after: string, line: number): number | null {
+  let shift = 0;
+  for (const changed of patchHunks(unifiedDiff(before, after).patch)) {
+    const first = changed.lines.find((l) => l.oldLine !== null)?.oldLine ?? Infinity;
+    if (line < first) break;
+    const at = changed.lines.find((l) => l.oldLine === line);
+    if (at) return at.kind === " " ? at.newLine : null;
+    const added = changed.lines.filter((l) => l.kind === "+").length;
+    const removed = changed.lines.filter((l) => l.kind === "-").length;
+    shift += added - removed;
+  }
+  return line + shift;
+}

@@ -16,14 +16,21 @@ import { Writing } from "./writing";
 // Conversation that sits inside the diff, on the lines it's about. Replies post straight away;
 // resolving collapses the thread to one line so the code stays readable.
 
+const NONE: ReadonlySet<string> = new Set();
+
 export function ThreadCard({
   prId,
   thread,
   focused,
+  applicable = NONE,
+  onApply,
 }: {
   prId: string;
   thread: Thread;
   focused: boolean;
+  /** Comments whose suggestion can be committed as written. */
+  applicable?: ReadonlySet<string>;
+  onApply?: (commentId: string) => void;
 }) {
   const client = useQueryClient();
   const toast = useUi((s) => s.toast);
@@ -93,6 +100,16 @@ export function ThreadCard({
                 </div>
               }
             />
+            {/* Under the suggestion, clear of the comment's own actions along its top. */}
+            {onApply && applicable.has(comment.id) && (
+              <button
+                type="button"
+                onClick={() => onApply(comment.id)}
+                className="mt-2 rounded-sm border border-line-strong px-2.5 py-1 text-meta text-fg hover:bg-hover"
+              >
+                Apply suggestion
+              </button>
+            )}
           </li>
         ))}
       </ul>

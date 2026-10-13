@@ -108,6 +108,11 @@ export function createHandlers(app: App): Handlers {
     milestones: ({ repo }) => app.review.milestones(repo),
     flight: () => app.views.flight(),
     log: ({ limit }) => app.outbox.log(limit ?? 100),
+    async applySuggestions(input) {
+      const commandIds = await app.review.applySuggestions(input);
+      app.events.emit(["pr", "log"]);
+      return { commandIds };
+    },
     seenLog() {
       app.settings.set("logSeenAt", new Date().toISOString());
       app.events.emit(["status"]);

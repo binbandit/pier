@@ -300,7 +300,12 @@ export const PrDetailQuery = graphql(`
         bodyHTML
         viewerCanUpdate
         viewerCanDeleteHeadRef
+        viewerCanEditFiles
         isCrossRepository
+        headRefName
+        headRepository {
+          nameWithOwner
+        }
         headRef {
           id
         }
@@ -414,6 +419,12 @@ export const PrDetailQuery = graphql(`
                 author {
                   login
                   avatarUrl(size: 64)
+                  ... on User {
+                    databaseId
+                  }
+                  ... on Bot {
+                    databaseId
+                  }
                 }
                 originalCommit {
                   oid
@@ -1415,6 +1426,17 @@ export const CodeOwnersQuery = graphql(`
         ... on Blob {
           text
         }
+      }
+    }
+  }
+`);
+
+/** Commits whole-file changes onto a branch, only if it still points where we think. */
+export const CommitOnBranchMutation = graphql(`
+  mutation CommitOnBranch($input: CreateCommitOnBranchInput!) {
+    createCommitOnBranch(input: $input) {
+      commit {
+        oid
       }
     }
   }

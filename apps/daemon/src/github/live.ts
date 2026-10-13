@@ -29,6 +29,7 @@ import {
   ApproveMutation,
   ClosePrMutation,
   CodeOwnersQuery,
+  CommitOnBranchMutation,
   CommentMutation,
   ConvertToDraftMutation,
   DeleteIssueCommentMutation,
@@ -72,6 +73,8 @@ import {
   ViewerQuery,
 } from "./ops";
 import type {
+  BranchHead,
+  CommitFilesInput,
   DraftThreadInput,
   GitHubPort,
   MergeInfo,
@@ -279,6 +282,43 @@ export class LiveGitHub implements GitHubPort {
     }
   }
 
+  async commitFiles(input: CommitFilesInput): Promise<{ oid: string }> {
+    const data = await this.client.graphql(
+      CommitOnBranchMutation,
+      {
+        input: {
+          branch: { repositoryNameWithOwner: input.repo, branchName: input.branch },
+          expectedHeadOid: input.expectedHeadOid,
+          message: { headline: input.headline, body: input.body },
+          fileChanges: {
+            additions: input.files.map((file) => ({
+              path: file.path,
+              contents: Buffer.from(file.contents, "utf8").toString("base64"),
+            })),
+          },
+        },
+      },
+      "interactive",
+    );
+    const oid = data.createCommitOnBranch?.commit?.oid;
+    if (!oid) throw new GitHubError("GitHub didn't say which commit it made", "graphql", null);
+    return { oid };
+  }
+
+  async branchHead(repo: string, branch: string): Promise<BranchHead | null> {
+    try {
+      const response = await this.client.rest<components["schemas"]["commit"]>({
+        path: `/repos/${repo}/commits/${encodeURIComponent(branch)}`,
+        priority: "interactive",
+      });
+      const { sha, parents, commit } = response.data;
+      return { oid: sha, parents: parents.map((p) => p.sha), message: commit.message };
+    } catch (error) {
+      if (error instanceof GitHubError && error.kind === "not-found") return null;
+      throw error;
+    }
+  }
+
   async codeOwners(repo: string, ref: string): Promise<string | null> {
     const [owner = "", name = ""] = repo.split("/");
     const data = await this.client.graphql(CodeOwnersQuery, {
@@ -307,7 +347,13 @@ export class LiveGitHub implements GitHubPort {
         cache: true,
         priority: "interactive",
       });
-      if (Array.isArray(response.data) || response.data.type !== "file") return null;
+      // Over 1 MB the contents API leaves the content out ("encoding": "none").
+      if (
+        Array.isArray(response.data) ||
+        response.data.type !== "file" ||
+        response.data.encoding !== "base64"
+      )
+        return null;
       return Buffer.from(response.data.content, "base64").toString("utf8");
     } catch (error) {
       if (error instanceof GitHubError && error.kind === "not-found") return null;

@@ -321,6 +321,46 @@ describe("writes", () => {
 });
 
 describe("commits", () => {
+  test("committing files onto a branch that moved on is refused", async () => {
+    const { world, you } = setup("sandbox");
+    const pr = [...world.prs.values()].find(
+      (p) => p.author === "binbandit" && p.title === "Paginate events with cursors",
+    )!;
+    const commit = (expectedHeadOid: string) =>
+      you.commitFiles({
+        repo: pr.repo.fullName,
+        branch: pr.headRefName,
+        expectedHeadOid,
+        headline: "Apply suggestion from code review",
+        body: "",
+        files: [{ path: "notes.md", contents: "hi\n" }],
+      });
+    const stale = world.head(pr);
+    await commit(stale);
+    const refused = await commit(stale).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(String(refused)).toContain("Expected branch to point to");
+  });
+  test("a push moves threads with their lines, and outdates the ones it changed", () => {
+    const { world } = setup("sandbox");
+    const pr = [...world.prs.values()].find(
+      (p) => p.author === "binbandit" && p.title === "Paginate events with cursors",
+    )!;
+    const path = "src/routes/events.ts";
+    const onLine = (line: number) => pr.threads.find((t) => t.path === path && t.line === line)!;
+    const kept = onLine(18);
+    const changed = onLine(10);
+    const text = world.fileText(pr.repo.fullName, world.head(pr), path)!.split("\n");
+    text[9] = "  limit: z.coerce.number().int().min(1).max(100).default(25),";
+    world.pushCommit(pr.id, {
+      message: "Tighten the page size",
+      files: [{ path, after: ["// Events, newest first.", ...text].join("\n") }],
+    });
+    expect([kept.line, changed.line]).toEqual([19, null]);
+  });
+
   test("a commit's view holds only what it changed; a run of them adds up", async () => {
     const { world, you } = setup("sandbox");
     const pr = [...world.prs.values()].find((p) => p.title === "Paginate events with cursors")!;

@@ -19,6 +19,17 @@ function configure() {
       node.setAttribute("rel", "noreferrer noopener");
     }
   });
+  // GitHub draws a review suggestion as a small diff that only its classes tell apart; classes
+  // don't survive sanitising, so the old and new lines are marked in pier's own terms first.
+  DOMPurify.addHook("beforeSanitizeAttributes", (node) => {
+    // Typed as an element, but text and comment nodes come through here too.
+    if (!(node instanceof Element)) return;
+    const classes = node.getAttribute("class") ?? "";
+    if (classes.includes("js-suggested-changes-blob")) node.setAttribute("data-suggestion", "");
+    else if (classes.includes("blob-code-deletion")) node.setAttribute("data-diff", "old");
+    else if (classes.includes("blob-code-addition")) node.setAttribute("data-diff", "new");
+    else if (classes.includes("blob-num")) node.setAttribute("data-diff", "number");
+  });
   DOMPurify.addHook("uponSanitizeElement", (node, data) => {
     if (data.tagName !== "img" || !(node instanceof HTMLImageElement)) return;
     const src = node.getAttribute("src") ?? "";

@@ -31,6 +31,7 @@ import { RevertPanel } from "./revert";
 import { type Anchors, type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
 import { RunwayPanel } from "./runway";
+import { SuggestionsPanel, applicableSuggestions } from "./suggestions";
 import { TitlePanel } from "./title";
 import { Writing } from "./writing";
 
@@ -48,7 +49,8 @@ type Raised =
   | { kind: "title" }
   | { kind: "revert" }
   | { kind: "commits" }
-  | { kind: "filter" };
+  | { kind: "filter" }
+  | { kind: "suggestions"; initial: string[] };
 
 const PICKERS: { field: MetadataKind; key: string; title: string }[] = [
   { field: "labels", key: "l", title: "Edit labels" },
@@ -131,6 +133,10 @@ function Loaded({ pr }: { pr: PrView }) {
   });
   const files = view.range === "all" && !ignoreWhitespace ? (pr.files ?? []) : (diff?.files ?? []);
   const ownership = ownershipOf(pr.codeOwners);
+  const suggestions = applicableSuggestions(pr);
+  const applicable = new Set(suggestions.map((s) => s.comment.id));
+  const applySuggestion = (commentId: string) =>
+    setRaised({ kind: "suggestions", initial: [commentId] });
   const listed = reviewOrder(files);
   const ordered = filterFiles(listed, filter, pr.viewed, ownership);
   const filtered = ordered.length !== listed.length;
@@ -399,6 +405,15 @@ function Loaded({ pr }: { pr: PrView }) {
       run: () => setRaised({ kind: "commits" }),
     },
     {
+      id: "pr.suggestions",
+      title: "Apply suggestions",
+      keys: ["shift+s"],
+      scope: "surface",
+      hint: suggestions.length > 0 ? "suggestions" : undefined,
+      group: "Review",
+      run: () => setRaised({ kind: "suggestions", initial: [] }),
+    },
+    {
       id: "pr.filter",
       title: "Choose which files to show",
       keys: ["d f"],
@@ -613,6 +628,8 @@ function Loaded({ pr }: { pr: PrView }) {
                     onSelect={(path, r) => setSelection(r ? { path, range: r } : null)}
                     anchors={anchors}
                     ownership={ownership?.(file.path) ?? null}
+                    applicable={applicable}
+                    onApply={applySuggestion}
                     onCompose={compose}
                   />
                 ))}
@@ -631,6 +648,9 @@ function Loaded({ pr }: { pr: PrView }) {
       )}
       {raised?.kind === "title" && <TitlePanel pr={pr} onClose={lower} />}
       {raised?.kind === "revert" && <RevertPanel pr={pr} onClose={lower} />}
+      {raised?.kind === "suggestions" && (
+        <SuggestionsPanel pr={pr} initial={raised.initial} onClose={lower} />
+      )}
       {raised?.kind === "filter" && (
         <FileFilterPicker
           files={listed}

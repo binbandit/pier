@@ -30,6 +30,10 @@ export type PrDetail = {
   requiredChecks: string[];
   commits: CommitView[];
   headBranch: { exists: boolean; canDelete: boolean; crossRepo: boolean };
+  /** Where the head branch lives, for committing to it (applying suggestions). */
+  head: { repo: string | null; branch: string; canEditFiles: boolean };
+  /** GitHub's numeric ids of the people commenting in threads, for Co-authored-by trailers. */
+  userIds: Record<string, number>;
   viewerLatestReview: {
     state: string;
     commitOid: string | null;
@@ -81,9 +85,14 @@ function actor(author: { login: string; avatarUrl: string } | null | undefined):
 
 export function toPrDetail(node: Node): PrDetail {
   const pending = node.pendingReviews?.nodes?.[0] ?? null;
+  const userIds: Record<string, number> = {};
 
   const threads = (node.reviewThreads.nodes ?? []).flatMap((thread) => {
     if (!thread) return [];
+    for (const c of thread.comments.nodes ?? []) {
+      if (c?.author && "databaseId" in c.author && c.author.databaseId)
+        userIds[c.author.login] = c.author.databaseId;
+    }
     const comments = (thread.comments.nodes ?? []).flatMap((c) =>
       // Comments in someone's unsubmitted review aren't visible to anyone else.
       c && c.state !== "PENDING"
@@ -226,6 +235,12 @@ export function toPrDetail(node: Node): PrDetail {
       canDelete: node.viewerCanDeleteHeadRef,
       crossRepo: node.isCrossRepository,
     },
+    head: {
+      repo: node.headRepository?.nameWithOwner ?? null,
+      branch: node.headRefName,
+      canEditFiles: node.viewerCanEditFiles,
+    },
+    userIds,
     requiredChecks: (
       node.headChecks.nodes?.[0]?.commit.statusCheckRollup?.contexts.nodes ?? []
     ).flatMap((ctx) => {

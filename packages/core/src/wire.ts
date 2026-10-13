@@ -139,7 +139,8 @@ export type CommandKind =
   | "dequeue"
   | "delete-branch"
   | "restore-branch"
-  | "revert";
+  | "revert"
+  | "suggestions";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -490,6 +491,8 @@ export type PrView = {
   commits: CommitView[];
   /** Null when the base branch has no CODEOWNERS. */
   codeOwners: CodeOwners | null;
+  /** You can push to the head branch, so review suggestions can be committed to it. */
+  canApplySuggestions: boolean;
   /** The head branch: whether it's still there, and what you can do about it. */
   headBranch: { exists: boolean; canDelete: boolean; canRestore: boolean };
   account: string;

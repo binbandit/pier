@@ -63,6 +63,9 @@ type Props = {
   anchors: Anchors;
   /** Who owns the file under CODEOWNERS, when the repo has one. */
   ownership: { owners: string[]; yours: boolean } | null;
+  /** Comments whose suggestion can be committed, and how to start committing one. */
+  applicable: ReadonlySet<string>;
+  onApply: (commentId: string) => void;
   onSelect: (path: string, range: SelectedLineRange | null) => void;
   onCompose: (comment: NewComment | null) => void;
 };
@@ -83,6 +86,8 @@ export function ReviewFile(props: Props) {
     selection,
     anchors,
     ownership,
+    applicable,
+    onApply,
     onSelect,
     onCompose,
   } = props;
@@ -236,6 +241,8 @@ export function ReviewFile(props: Props) {
             <p className="px-1 text-meta text-faint">On the whole file</p>
             {onFile.map((thread) => (
               <ThreadCard
+                applicable={applicable}
+                onApply={onApply}
                 key={thread.id}
                 prId={prId}
                 thread={thread}
@@ -295,6 +302,8 @@ export function ReviewFile(props: Props) {
               if (note.kind === "thread")
                 return (
                   <ThreadCard
+                    applicable={applicable}
+                    onApply={onApply}
                     prId={prId}
                     thread={note.thread}
                     focused={note.thread.id === focusedThread}
@@ -355,7 +364,13 @@ export function ReviewFile(props: Props) {
                 <p className="mb-1 px-1 font-code text-meta text-faint">
                   Line {thread.line}, not in this diff
                 </p>
-                <ThreadCard prId={prId} thread={thread} focused={thread.id === focusedThread} />
+                <ThreadCard
+                  applicable={applicable}
+                  onApply={onApply}
+                  prId={prId}
+                  thread={thread}
+                  focused={thread.id === focusedThread}
+                />
               </div>
             ))}
             {otherDrafts.map((draft) => (
@@ -389,7 +404,13 @@ export function ReviewFile(props: Props) {
               <pre className="mb-1 max-w-[820px] overflow-x-auto rounded-sm border border-line px-3 py-2 font-code text-[12px] leading-5 text-muted">
                 {lastLines(thread.diffHunk, 4)}
               </pre>
-              <ThreadCard prId={prId} thread={thread} focused={thread.id === focusedThread} />
+              <ThreadCard
+                applicable={applicable}
+                onApply={onApply}
+                prId={prId}
+                thread={thread}
+                focused={thread.id === focusedThread}
+              />
             </div>
           ))}
         </div>

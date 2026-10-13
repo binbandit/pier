@@ -74,11 +74,17 @@ export type CommandPayload = {
   title?: string;
   base?: string;
   lockReason?: LockReason | null;
+  /** Whole new contents of the files suggestions change, the threads they came from, and the
+   * repo the head branch lives in (a fork's, for a PR from one). */
+  files?: { path: string; contents: string }[];
+  threadIds?: string[];
+  headRepo?: string;
 };
 
 /** Kinds that create content on GitHub and so count against its 500-per-hour limit. */
 const CONTENT_KINDS = new Set<CommandKind>([
   "approve",
+  "suggestions",
   "review",
   "reply",
   "comment",
@@ -551,6 +557,22 @@ export class Outbox {
       else this.update(command, "queued", "Not found on GitHub; sending again");
       return;
     }
+    // The commit landed if the branch's head now sits on top of the head we committed onto.
+    if (command.kind === "suggestions") {
+      const head = await port.branchHead(
+        command.payload.headRepo ?? command.repo,
+        command.payload.branch ?? "",
+      );
+      if (
+        head?.parents.includes(command.expectedHead) &&
+        head.message.startsWith(command.payload.headline ?? "")
+      )
+        this.acked(command, "Confirmed on GitHub after an interrupted send", { oid: head.oid });
+      else if (head?.oid === command.expectedHead)
+        this.update(command, "queued", "Not found on GitHub; sending again");
+      else this.update(command, "failed", "The branch moved; check whether the suggestions landed");
+      return;
+    }
     // A second revert would open a second PR, so this one is for a person to check.
     if (command.kind === "revert") {
       this.update(
@@ -657,6 +679,8 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
       return port.approveDeployment(command.repo, payload.runId ?? 0, payload.environmentIds ?? []);
     case "merge":
       return mergeAndWait(port, command);
+    case "suggestions":
+      return commitSuggestions(port, command);
     case "auto-merge":
       return port.setAutoMerge(
         command.prId,
@@ -789,4 +813,33 @@ function fromRow(row: Row): Command {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+/** One commit with every applied suggestion, then their threads resolved, as GitHub does. */
+async function commitSuggestions(port: GitHubPort, command: Command): Promise<{ oid: string }> {
+  const { payload } = command;
+  const result = await port
+    .commitFiles({
+      repo: payload.headRepo ?? command.repo,
+      branch: payload.branch ?? "",
+      expectedHeadOid: command.expectedHead,
+      headline: payload.headline ?? "Apply suggestions from code review",
+      body: payload.body ?? "",
+      files: payload.files ?? [],
+    })
+    .catch((error: unknown) => {
+      if (error instanceof GitHubError && error.message.includes("Expected branch to point to")) {
+        throw new GitHubError(
+          "Someone pushed to the branch first, so the suggestions weren't applied",
+          "conflict",
+          error.status,
+        );
+      }
+      throw error;
+    });
+  // The commit is what matters; a thread left open is easy to resolve by hand.
+  for (const threadId of payload.threadIds ?? []) {
+    await port.setResolved(threadId, true).catch(() => undefined);
+  }
+  return result;
 }

@@ -102,6 +102,18 @@ export type MergeResult = {
   uuid: string | null;
 };
 
+export type CommitFilesInput = {
+  repo: string;
+  branch: string;
+  expectedHeadOid: string;
+  headline: string;
+  body: string;
+  /** Each file's whole new contents. */
+  files: { path: string; contents: string }[];
+};
+
+export type BranchHead = { oid: string; parents: string[]; message: string };
+
 export interface GitHubPort {
   readonly login: string;
   viewer(): Promise<{ login: string; avatarUrl: string }>;
@@ -126,6 +138,10 @@ export interface GitHubPort {
   commitParent(repo: string, oid: string): Promise<string | null>;
   /** Per-file diffs between two commits, for commit-range views without the git store. */
   compareFiles(repo: string, base: string, head: string): Promise<DiffFile[]>;
+  /** Commits whole files onto a branch, only if it still points at `expectedHeadOid`. */
+  commitFiles(input: CommitFilesInput): Promise<{ oid: string }>;
+  /** A branch's latest commit, to check whether a commit we sent landed. */
+  branchHead(repo: string, branch: string): Promise<BranchHead | null>;
   /** The CODEOWNERS file on a branch, from the first of GitHub's three places that has one. */
   codeOwners(repo: string, ref: string): Promise<string | null>;
   /** The teams this account is in, as "org/slug". */

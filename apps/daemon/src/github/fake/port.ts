@@ -1,6 +1,8 @@
 import { GitHubError, type RateWindow } from "@/github/client";
 import { byStep, parseJobLog } from "@/github/job-log";
 import type {
+  BranchHead,
+  CommitFilesInput,
   GitHubPort,
   MergeInfo,
   MergeResult,
@@ -135,6 +137,25 @@ export class FakeGitHub implements GitHubPort {
 
   commitParent(repo: string, oid: string): Promise<string | null> {
     return this.call("commitParent", "core", () => this.world.parentOf(repo, oid));
+  }
+
+  commitFiles(input: CommitFilesInput): Promise<{ oid: string }> {
+    return this.call("commitFiles", "graphql", () => ({
+      oid: this.world.commitFiles(
+        input.repo,
+        input.branch,
+        {
+          expectedHeadOid: input.expectedHeadOid,
+          message: input.body ? `${input.headline}\n\n${input.body}` : input.headline,
+          files: input.files,
+        },
+        this.login,
+      ),
+    }));
+  }
+
+  branchHead(repo: string, branch: string): Promise<BranchHead | null> {
+    return this.call("branchHead", "core", () => this.world.branchHead(repo, branch));
   }
 
   codeOwners(repo: string, _ref: string): Promise<string | null> {
@@ -1001,6 +1022,19 @@ export class FakeGitHub implements GitHubPort {
       },
       linkedIssues: [],
       requiredChecks: pr.repo.checkNames.filter((name) => name !== "e2e"),
+      head: {
+        repo: pr.repo.fullName,
+        branch: pr.headRefName,
+        canEditFiles: pr.state === "OPEN" && world.canWrite(pr.repo, this.login),
+      },
+      userIds: Object.fromEntries(
+        pr.threads.flatMap((t) =>
+          t.comments.flatMap((c) => {
+            const user = world.users.get(c.author);
+            return user ? [[user.login, user.databaseId] as const] : [];
+          }),
+        ),
+      ),
       commits: pr.commits.slice(-100).map((c) => ({
         oid: c.oid,
         headline: c.message.split("\n")[0] ?? "",

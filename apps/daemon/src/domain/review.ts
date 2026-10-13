@@ -4,6 +4,7 @@ import type { CommandPayload, NewCommand, Outbox } from "@/outbox/outbox";
 import type { Planner } from "@/outbox/planner";
 import type { SyncEngine } from "@/sync/engine";
 import { codeOwnersMatcher } from "@pier/core/codeowners";
+import { suggestionIn } from "@pier/core/suggestion";
 import type {
   Annotation,
   CheckLog,
@@ -35,6 +36,7 @@ import type { Drafts } from "./drafts";
 import { overlayMetadata, type RepoKnown } from "./metadata";
 import type { Model, PrRecord } from "./model";
 import { buildRunway } from "./runway";
+import { SuggestionError, applySplices, hunkLines } from "./suggestions";
 
 // Everything the PR canvas reads and writes: the view of one PR (doc + detail + your drafts +
 // writes still in flight), its diff, and the review actions. Writes all go through the outbox.
@@ -240,6 +242,8 @@ export class ReviewService {
       requiredChecks: detail?.requiredChecks ?? [],
       commits: detail?.commits ?? [],
       codeOwners,
+      canApplySuggestions:
+        doc.state === "OPEN" && detail !== null && detail.head.canEditFiles && !!detail.head.repo,
       // A deleted branch can come back once the PR is closed or merged, from its last head.
       headBranch: {
         exists: detail?.headBranch.exists ?? true,
@@ -733,6 +737,95 @@ export class ReviewService {
         },
       ],
       holdMs,
+    );
+  }
+
+  /**
+   * Commits the suggestions in these comments to the PR's branch in one commit, as GitHub's
+   * "Commit suggestions" does, after five seconds to take it back. If any one can't apply
+   * cleanly, none are.
+   */
+  async applySuggestions(input: {
+    prId: string;
+    headOid: string;
+    commentIds: string[];
+    headline: string;
+    body: string;
+  }): Promise<string[]> {
+    const record = this.require(input.prId);
+    const { doc } = record;
+    if (doc.headRefOid !== input.headOid) {
+      throw new SuggestionError("The PR has new commits; look at them before applying suggestions");
+    }
+    const detail = await this.detail(record);
+    const port = this.deps.ports.get(record.reader);
+    const headRepo = detail?.head.repo;
+    if (!detail || !port || !headRepo || !detail.head.canEditFiles || doc.state !== "OPEN") {
+      throw new SuggestionError("You can't push to this PR's branch");
+    }
+
+    const chosen = input.commentIds.map((id) => {
+      const thread = detail.threads.find((t) => t.comments.some((c) => c.id === id));
+      const comment = thread?.comments.find((c) => c.id === id);
+      if (!thread || !comment) throw new SuggestionError("A suggestion was deleted; look again");
+      const label = `${thread.path}:${thread.line ?? thread.originalLine ?? "?"}`;
+      const lines = suggestionIn(comment.body);
+      if (!lines) throw new SuggestionError(`${label} doesn't hold exactly one suggestion`);
+      if (thread.resolved) throw new SuggestionError(`${label} is resolved`);
+      if (thread.outdated || thread.line === null || thread.side !== "RIGHT") {
+        throw new SuggestionError(`The code under ${label} has changed since it was suggested`);
+      }
+      const start = thread.startLine ?? thread.line;
+      return {
+        thread,
+        author: comment.author?.login ?? null,
+        splice: {
+          start,
+          end: thread.line,
+          lines,
+          expected: hunkLines(thread.diffHunk, thread.line - start + 1),
+          label,
+        },
+      };
+    });
+
+    const files = await Promise.all(
+      [...Map.groupBy(chosen, (c) => c.thread.path)].map(async ([path, list]) => {
+        const text = await port.fileText(doc.repo, doc.headRefOid, path);
+        if (text === null || text.startsWith("version https://git-lfs.github.com/spec/")) {
+          throw new SuggestionError(
+            `${path} isn't a text file pier can change (binary, a link or LFS)`,
+          );
+        }
+        return {
+          path,
+          contents: applySplices(
+            text,
+            list.map((c) => c.splice),
+          ),
+        };
+      }),
+    );
+    // Credit whoever wrote each suggestion, the way GitHub's commits do.
+    const authors = new Set(
+      chosen.flatMap((c) => (c.author && c.author !== record.reader ? [c.author] : [])),
+    );
+    const trailers = [...authors].map((login) => {
+      const id = detail.userIds[login];
+      return `Co-authored-by: ${login} <${id ? `${id}+` : ""}${login}@users.noreply.github.com>`;
+    });
+    return this.enqueue(
+      record,
+      "suggestions",
+      {
+        files,
+        threadIds: [...new Set(chosen.map((c) => c.thread.id))],
+        headRepo,
+        branch: detail.head.branch,
+        headline: input.headline,
+        body: [input.body.trim(), trailers.join("\n")].filter(Boolean).join("\n\n"),
+      },
+      REVIEW_HOLD_MS,
     );
   }
 
