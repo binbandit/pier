@@ -13,7 +13,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | FIND-REREVIEW | PRs with new commits since you reviewed | search + viewerLatestReview | M1b | sandbox |
 | FIND-MINE | Your PRs that need you (changes requested, red, conflicts, approved and idle) | search `involves:@me` | M1b | sandbox |
 | FIND-BOTS | Dependabot / Renovate PRs across owned repos and orgs | search `author:app/dependabot user:X` | M1a | sandbox |
-| FIND-INFLIGHT | Things waiting on others | derived | M1a | built |
+| FIND-INFLIGHT | Things waiting on others | derived | M1a | sandbox |
 | FIND-SEARCH | Search with every qualifier (`is:`, `review:`, `label:`, `status:`, `sort:` ...), plus pier's (`turn:`, `checks:`, `size:`, `acct:`, `bot:`, `semver:`, `cohort:`); instant over the replica, ⌘⏎ asks GitHub for the rest | replica; search API | I8 | sandbox |
 | FIND-VIEWS | Saved views / custom inbox sections (⌘S on a search; in the sidebar with counts) | local | I8 | sandbox |
 | FIND-REPO-LIST | Per-repo PR list with filters, at github.com's `/:owner/:repo/pulls` | replica `repo:` | I8 | sandbox |
@@ -126,7 +126,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | BOT-GROUP | One decision per bump across every repo it landed in | derived | M1a | sandbox |
 | BOT-GATES | Safety gates: version, release age, files, transitive deps, provenance, install scripts, advisories, checks | deps.dev, npm, GitHub | M1a | sandbox |
 | BOT-APPROVE | Approve a cohort through a paced write plan | `addPullRequestReview` | M1a | sandbox |
-| BOT-COMMANDS | `@dependabot rebase` / `recreate` (`b r`, `b c`); `b i` closes and skips the version (`@dependabot ignore this version`, or closing a Renovate PR) | `addComment`, `closePullRequest` | M1a | built |
+| BOT-COMMANDS | `@dependabot rebase` / `recreate` (`b r`, `b c`); `b i` closes and skips the version (`@dependabot ignore this version`, or closing a Renovate PR; checked on the fake world) | `addComment`, `closePullRequest` | M1a | sandbox |
 | BOT-VERDICTS | Remember verdicts so new PRs for the same bump need one key | local | M1a | built |
 | BOT-REVOKE | Hourly, every version with a standing verdict is looked up again; an advisory that wasn't known when you decided withdraws the verdict, cancels approvals not yet sent, and puts a notice on Deps (open PRs, with which can still merge; merged ones) until dismissed. Verified on the fake world (E2E); live needs a real advisory to land. | deps.dev | M3 | built |
 
