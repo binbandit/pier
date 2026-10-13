@@ -32,6 +32,7 @@ export function Toasts() {
   return (
     <div
       className="pointer-events-none fixed bottom-[calc(var(--dock,0px)+2.5rem)] left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-2"
+      role="status"
       aria-live="polite"
     >
       {toasts.map((t) => (

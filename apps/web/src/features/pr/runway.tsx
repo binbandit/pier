@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { errorText, rerun } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
-import { q, rpc } from "@/lib/rpc";
+import { qLive, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Dock } from "@/ui/dock";
 import { Dot } from "@/ui/dot";
@@ -31,7 +31,16 @@ export function RunwayPanel({
   onClose: () => void;
   onMerged: () => void;
 }) {
-  const { data: runway, isPending } = useQuery(q("runway", { repo: pr.repo, number: pr.number }));
+  const { data: runway, isPending } = useQuery(
+    qLive(
+      "runway",
+      { repo: pr.repo, number: pr.number },
+      pr.headRefOid,
+      pr.reviewDecision,
+      pr.mergeable,
+      pr.checks.state,
+    ),
+  );
   // Registered here rather than in Loaded so the panel owns the keys while it loads too, and an
   // early Enter can't fall through to the canvas.
   useCommands([

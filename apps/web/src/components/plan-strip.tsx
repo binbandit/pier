@@ -20,6 +20,12 @@ const VERBS = {
   recreate: "Ask Dependabot to recreate",
 } as const;
 
+const SENDING = {
+  approve: "Approving",
+  rebase: "Asking Dependabot to rebase",
+  recreate: "Asking Dependabot to recreate",
+} as const;
+
 export function PlanStrip({ preview, label }: { preview: PlanPreview; label: string }) {
   const client = useQueryClient();
   const close = useUi((s) => s.closePanel);
@@ -52,7 +58,8 @@ export function PlanStrip({ preview, label }: { preview: PlanPreview; label: str
       void client.invalidateQueries();
       toast(
         {
-          text: `${VERBS[preview.action]}: ${plural(commandIds.length, "PR")} ${commandIds.length === 1 ? "sends in 5s" : "queued"}`,
+          // One write waits out the undo window; more go out paced, a second apart.
+          text: `${SENDING[preview.action]} ${plural(commandIds.length, "PR")}${commandIds.length === 1 ? " in 5s" : ""}`,
           tone: "ok",
           undo: () => void undo(commandIds),
         },

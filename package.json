@@ -10,6 +10,7 @@
     "dev": "bun run --filter '@pier/daemon' dev & bun run --filter '@pier/web' dev",
     "build": "bun run --filter '@pier/web' build && bun run --filter '@pier/daemon' build",
     "test": "bun test",
+    "e2e": "bun run build && playwright test -c e2e/playwright.config.ts",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt .",

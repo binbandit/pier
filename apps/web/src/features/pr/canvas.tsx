@@ -153,7 +153,7 @@ function Loaded({ pr }: { pr: PrView }) {
       void client.invalidateQueries();
       toast(
         {
-          text: `Approve ${pr.repo.split("/")[1]}#${pr.number} sends in 5s`,
+          text: `Approving ${pr.repo.split("/")[1]}#${pr.number} in 5s`,
           tone: "ok",
           undo: () => void rpc("cancelCommands", { commandIds }),
         },

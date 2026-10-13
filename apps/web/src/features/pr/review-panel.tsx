@@ -19,10 +19,10 @@ import { Composer } from "./composer";
 
 export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
-const EVENTS: { event: ReviewEvent; label: string; key: string }[] = [
-  { event: "COMMENT", label: "Comment", key: "1" },
-  { event: "APPROVE", label: "Approve", key: "2" },
-  { event: "REQUEST_CHANGES", label: "Request changes", key: "3" },
+const EVENTS: { event: ReviewEvent; label: string; sending: string }[] = [
+  { event: "COMMENT", label: "Comment", sending: "Commenting" },
+  { event: "APPROVE", label: "Approve", sending: "Approving" },
+  { event: "REQUEST_CHANGES", label: "Request changes", sending: "Requesting changes" },
 ];
 
 export function ReviewPanel({
@@ -68,7 +68,7 @@ export function ReviewPanel({
       void client.invalidateQueries();
       toast(
         {
-          text: `${EVENTS.find((e) => e.event === event)?.label ?? "Review"} sends in 5s`,
+          text: `${EVENTS.find((e) => e.event === event)?.sending ?? "Sending"} in 5s`,
           tone: "ok",
           undo: () =>
             void rpc("cancelCommands", { commandIds }).then(({ cancelled }) =>

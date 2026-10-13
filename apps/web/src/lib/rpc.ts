@@ -41,3 +41,14 @@ export function q<N extends ProcedureName>(name: N, input: Input<N>) {
     queryFn: () => rpc(name, input),
   });
 }
+
+/**
+ * For answers read live from GitHub instead of the local replica (merge state, check runs). The
+ * key also carries the PR fields they depend on, so they're asked again exactly when those move.
+ */
+export function qLive<N extends ProcedureName>(name: N, input: Input<N>, ...dependsOn: unknown[]) {
+  return queryOptions({
+    queryKey: [name, input, ...dependsOn] as const,
+    queryFn: () => rpc(name, input),
+  });
+}

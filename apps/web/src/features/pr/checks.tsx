@@ -3,7 +3,7 @@ import { clsx } from "clsx";
 import { useState } from "react";
 
 import { since } from "@/lib/format";
-import { q } from "@/lib/rpc";
+import { q, qLive } from "@/lib/rpc";
 import { Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
 import type { CheckRunView, PrView } from "@pier/core/wire";
@@ -20,7 +20,16 @@ const TONE: Record<CheckRunView["state"], Tone> = {
 };
 
 export function Checks({ pr }: { pr: PrView }) {
-  const { data: runs = [] } = useQuery(q("checks", { repo: pr.repo, number: pr.number }));
+  const { data: runs = [] } = useQuery(
+    qLive(
+      "checks",
+      { repo: pr.repo, number: pr.number },
+      pr.headRefOid,
+      pr.checks.state,
+      pr.checks.failing,
+      pr.checks.pending,
+    ),
+  );
   const failing = runs.filter((r) => r.state === "failure");
   // The first failing log opens by itself once checks load; after that it's whatever you chose.
   const [chosen, setOpen] = useState<number | null | undefined>(undefined);
