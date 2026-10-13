@@ -6,7 +6,10 @@ import type {
   CheckRunView,
   FlightItem,
   GroupView,
+  Label,
   LogEntry,
+  Milestone,
+  Person,
   PlanPreview,
   PrDiff,
   PrView,
@@ -67,6 +70,18 @@ export const inputs = {
     "method?": "'MERGE' | 'SQUASH' | 'REBASE'",
   }),
   updateBranch: type({ prId: "string", rebase: "boolean" }),
+  editMetadata: type({
+    prId: "string",
+    field: "'labels' | 'assignees' | 'reviewers'",
+    add: "string[]",
+    remove: "string[]",
+  }),
+  setMilestone: type({ prId: "string", milestone: "number.integer > 0 | null" }),
+  setDraft: type({ prId: "string", draft: "boolean" }),
+  setOpen: type({ prId: "string", open: "boolean" }),
+  repoLabels: type({ repo: "string" }),
+  assignable: type({ repo: "string" }),
+  milestones: type({ repo: "string" }),
   flight: type({}),
   log: type({ "limit?": "1 <= number.integer <= 500" }),
   planAction: type({
@@ -102,6 +117,13 @@ export type Outputs = {
   merge: { commandIds: string[] };
   setAutoMerge: { commandIds: string[] };
   updateBranch: { commandIds: string[] };
+  editMetadata: { commandIds: string[] };
+  setMilestone: { commandIds: string[] };
+  setDraft: { commandIds: string[] };
+  setOpen: { commandIds: string[] };
+  repoLabels: Label[];
+  assignable: Person[];
+  milestones: Milestone[];
   flight: FlightItem[];
   log: LogEntry[];
   planAction: PlanPreview;

@@ -13,6 +13,8 @@ export type PrRecord = {
   doc: PrDoc;
   reader: string;
   fetchedAt: string;
+  /** Stored by an older build in an older shape: usable, but due a fresh read. */
+  stale: boolean;
   viewers: Map<string, PrViewer>;
   /** `${account}:${scopeId}` entries that found this PR. */
   scopes: Set<string>;
@@ -68,6 +70,7 @@ export class Model {
       doc,
       reader: keepReader ? existing.reader : reader,
       fetchedAt,
+      stale: false,
       viewers: existing?.viewers ?? new Map(),
       scopes: existing?.scopes ?? new Set(),
       files:
@@ -81,9 +84,9 @@ export class Model {
 
     this.cache
       .query(
-        `INSERT INTO pr_doc (id, reader, tier, fetched_at, json) VALUES (?, ?, 'bot', ?, ?)
+        `INSERT INTO pr_doc (id, reader, tier, fetched_at, json, reread) VALUES (?, ?, 'bot', ?, ?, 0)
          ON CONFLICT (id) DO UPDATE SET reader = excluded.reader, tier = excluded.tier,
-           fetched_at = excluded.fetched_at, json = excluded.json`,
+           fetched_at = excluded.fetched_at, json = excluded.json, reread = 0`,
       )
       .run(doc.id, record.reader, fetchedAt, JSON.stringify(doc));
     this.cache
@@ -187,8 +190,8 @@ export class Model {
 
   private load(): void {
     const docs = this.cache
-      .query<{ id: string; reader: string; fetched_at: string; json: string }, []>(
-        "SELECT id, reader, fetched_at, json FROM pr_doc",
+      .query<{ id: string; reader: string; fetched_at: string; json: string; reread: number }, []>(
+        "SELECT id, reader, fetched_at, json, reread FROM pr_doc",
       )
       .all();
     for (const row of docs) {
@@ -197,6 +200,7 @@ export class Model {
         doc,
         reader: row.reader,
         fetchedAt: row.fetched_at,
+        stale: row.reread === 1,
         viewers: new Map(),
         scopes: new Set(),
         files: this.loadFiles(row.id, doc.headRefOid),

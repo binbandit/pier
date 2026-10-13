@@ -3,6 +3,7 @@ import type {
   GitHubPort,
   MergeInfo,
   MergeResult,
+  MetadataField,
   NotificationPoll,
   ReviewEvent,
   ReviewSummary,
@@ -15,8 +16,11 @@ import type {
   CheckLog,
   CheckRunView,
   DiffFile,
+  Label,
   Mergeable,
   MergeMethod,
+  Milestone,
+  Person,
   ReviewDecision,
   TimelineEntry,
 } from "@pier/core/wire";
@@ -325,6 +329,64 @@ export class FakeGitHub implements GitHubPort {
     );
   }
 
+  editMetadata(
+    repo: string,
+    number: number,
+    field: MetadataField,
+    { add, remove }: { add: string[]; remove: string[] },
+  ): Promise<void> {
+    return this.call("editMetadata", "core", () => {
+      const pr = this.restPr(repo, number);
+      if (field === "labels") this.world.editLabels(pr.id, this.login, add, remove);
+      else if (field === "assignees") this.world.editAssignees(pr.id, this.login, add, remove);
+      else {
+        if (add.length > 0) this.world.requestReviews(pr.id, this.login, add);
+        if (remove.length > 0) this.world.removeReviewRequests(pr.id, this.login, remove);
+      }
+    });
+  }
+
+  setMilestone(repo: string, number: number, milestone: number | null): Promise<void> {
+    return this.call("setMilestone", "core", () =>
+      this.world.setMilestone(this.restPr(repo, number).id, this.login, milestone),
+    );
+  }
+
+  setDraft(prId: string, draft: boolean): Promise<void> {
+    return this.call("setDraft", "graphql", () =>
+      this.world.setDraft(this.visiblePr(prId).id, this.login, draft),
+    );
+  }
+
+  setOpen(prId: string, open: boolean): Promise<void> {
+    return this.call("setOpen", "graphql", () => {
+      const pr = this.visiblePr(prId);
+      if (!this.world.canWrite(pr.repo, this.login) && pr.author !== this.login)
+        throw graphqlError(`${this.login} does not have permission to update this pull request`);
+      if (open) this.world.reopen(pr.id, this.login);
+      else this.world.close(pr.id, this.login);
+    });
+  }
+
+  repoLabels(repo: string): Promise<Label[]> {
+    return this.call("repoLabels", "core", () =>
+      [...this.restRepo(repo).labels].map(([name, label]) => ({ name, ...label })),
+    );
+  }
+
+  assignable(repo: string): Promise<Person[]> {
+    return this.call("assignable", "core", () => {
+      const found = this.restRepo(repo);
+      return [...this.world.users.keys()]
+        .filter((login) => !this.world.users.get(login)?.isBot && this.world.canWrite(found, login))
+        .map((login) => ({ login, avatarUrl: this.world.avatarUrl(login) }));
+    });
+  }
+
+  milestones(repo: string): Promise<Milestone[]> {
+    return this.call("milestones", "core", () => [...this.restRepo(repo).milestones]);
+  }
+
   releaseDate(repo: string, tag: string): Promise<string | null> {
     return this.call("releaseDate", "core", () => {
       const releases = this.world.packages.get(`github-actions:${repo}`)?.releases;
@@ -429,6 +491,13 @@ export class FakeGitHub implements GitHubPort {
     return pr;
   }
 
+  private restRepo(fullName: string) {
+    const repo = this.world.repos.get(fullName);
+    if (!repo || !this.canSeeRepo(fullName))
+      throw new GitHubError("404 Not Found", "not-found", 404);
+    return repo;
+  }
+
   private restPr(repo: string, number: number): FakePr {
     const pr = this.world.prByNumber(repo, number);
     if (!pr || !this.canSee(pr)) throw new GitHubError("404 Not Found", "not-found", 404);
@@ -493,6 +562,8 @@ export class FakeGitHub implements GitHubPort {
       autoMerge: pr.autoMerge,
       mergeQueue: null,
       labels: pr.labels.slice(0, 20),
+      assignees: pr.assignees.map((login) => ({ login, avatarUrl: world.avatarUrl(login) })),
+      milestone: pr.repo.milestones.find((m) => m.number === pr.milestone) ?? null,
       files: pr.files.slice(0, 100).map((f) => ({
         path: f.path,
         additions: f.additions,

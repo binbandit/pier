@@ -73,6 +73,10 @@ export type Actor = {
   isBot: boolean;
 };
 
+export type Person = { login: string; avatarUrl: string };
+export type Label = { name: string; color: string; description: string | null };
+export type Milestone = { number: number; title: string; dueOn: string | null };
+
 export type Split = "review" | "deps" | "mine";
 
 export type OutboxState =
@@ -100,7 +104,14 @@ export type CommandKind =
   | "rerun-failed"
   | "merge"
   | "auto-merge"
-  | "update-branch";
+  | "update-branch"
+  | "labels"
+  | "assignees"
+  | "reviewers"
+  | "milestone"
+  | "draft"
+  | "close"
+  | "reopen";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -359,6 +370,8 @@ export type PrView = {
   labels: { name: string; color: string }[];
   /** `state` is "requested" for a pending request, else the review state (APPROVED, …). */
   reviewers: { login: string; kind: "user" | "team" | "bot"; state: string }[];
+  assignees: Person[];
+  milestone: Milestone | null;
   account: string;
   approvedByYou: boolean;
   /** The commit your last review was against, if you've reviewed before. */

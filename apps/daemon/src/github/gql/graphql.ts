@@ -272,7 +272,7 @@ export type HydrateQuery = { nodes: Array<
         | { __typename: 'Mannequin', login: string, avatarUrl: string }
         | { __typename: 'Organization', login: string, avatarUrl: string }
         | { __typename: 'User', login: string, avatarUrl: string }
-       | null, repository: { id: string, nameWithOwner: string, isPrivate: boolean, viewerPermission: RepositoryPermission | null }, autoMergeRequest: { enabledAt: string | null, mergeMethod: PullRequestMergeMethod } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, labels: { nodes: Array<{ name: string, color: string } | null> | null } | null, files: { totalCount: number, nodes: Array<{ path: string, additions: number, deletions: number, changeType: PatchStatus } | null> | null } | null, commits: { totalCount: number, nodes: Array<{ commit: { oid: string, message: string, committedDate: string, author: { name: string | null, email: string | null, user: { login: string } | null } | null, signature:
+       | null, repository: { id: string, nameWithOwner: string, isPrivate: boolean, viewerPermission: RepositoryPermission | null }, autoMergeRequest: { enabledAt: string | null, mergeMethod: PullRequestMergeMethod } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, labels: { nodes: Array<{ name: string, color: string } | null> | null } | null, assignees: { nodes: Array<{ login: string, avatarUrl: string } | null> | null }, milestone: { number: number, title: string, dueOn: string | null } | null, files: { totalCount: number, nodes: Array<{ path: string, additions: number, deletions: number, changeType: PatchStatus } | null> | null } | null, commits: { totalCount: number, nodes: Array<{ commit: { oid: string, message: string, committedDate: string, author: { name: string | null, email: string | null, user: { login: string } | null } | null, signature:
               | { isValid: boolean }
               | { isValid: boolean }
               | { isValid: boolean }
@@ -358,7 +358,16 @@ export type PrDetailQuery = { node:
           | { __typename: 'AddedToProjectEvent' }
           | { __typename: 'AddedToProjectV2Event' }
           | { __typename: 'AddedToStackEvent' }
-          | { __typename: 'AssignedEvent' }
+          | { __typename: 'AssignedEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, assignee:
+              | { login: string }
+              | Record<PropertyKey, never>
+             | null }
           | { __typename: 'AutoMergeDisabledEvent' }
           | { __typename: 'AutoMergeEnabledEvent' }
           | { __typename: 'AutoRebaseEnabledEvent' }
@@ -398,7 +407,13 @@ export type PrDetailQuery = { node:
           | { __typename: 'ConvertedNoteToIssueEvent' }
           | { __typename: 'ConvertedToDiscussionEvent' }
           | { __typename: 'CrossReferencedEvent' }
-          | { __typename: 'DemilestonedEvent' }
+          | { __typename: 'DemilestonedEvent', createdAt: string, milestoneTitle: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'DeployedEvent' }
           | { __typename: 'DeploymentEnvironmentChangedEvent' }
           | { __typename: 'DisconnectedEvent' }
@@ -437,7 +452,13 @@ export type PrDetailQuery = { node:
               | { login: string }
               | { login: string }
              | null }
-          | { __typename: 'MilestonedEvent' }
+          | { __typename: 'MilestonedEvent', createdAt: string, milestoneTitle: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'MovedColumnsInProjectEvent' }
           | { __typename: 'ParentIssueAddedEvent' }
           | { __typename: 'ParentIssueRemovedEvent' }
@@ -481,7 +502,19 @@ export type PrDetailQuery = { node:
               | { login: string }
               | { login: string }
              | null }
-          | { __typename: 'ReviewRequestRemovedEvent' }
+          | { __typename: 'ReviewRequestRemovedEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, requestedReviewer:
+              | { __typename: 'Bot' }
+              | { __typename: 'EnterpriseTeam' }
+              | { __typename: 'Mannequin' }
+              | { __typename: 'Team', slug: string }
+              | { __typename: 'User', login: string }
+             | null }
           | { __typename: 'ReviewRequestedEvent', createdAt: string, actor:
               | { login: string }
               | { login: string }
@@ -499,7 +532,16 @@ export type PrDetailQuery = { node:
           | { __typename: 'SubIssueRemovedEvent' }
           | { __typename: 'SubscribedEvent' }
           | { __typename: 'TransferredEvent' }
-          | { __typename: 'UnassignedEvent' }
+          | { __typename: 'UnassignedEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, assignee:
+              | { login: string }
+              | Record<PropertyKey, never>
+             | null }
           | { __typename: 'UnlabeledEvent', createdAt: string, actor:
               | { login: string }
               | { login: string }
@@ -621,6 +663,34 @@ export type UpdateBranchMutationVariables = Exact<{
 
 
 export type UpdateBranchMutation = { updatePullRequestBranch: { pullRequest: { id: string } | null } | null };
+
+export type ConvertToDraftMutationVariables = Exact<{
+  prId: string | number;
+}>;
+
+
+export type ConvertToDraftMutation = { convertPullRequestToDraft: { pullRequest: { id: string } | null } | null };
+
+export type MarkReadyMutationVariables = Exact<{
+  prId: string | number;
+}>;
+
+
+export type MarkReadyMutation = { markPullRequestReadyForReview: { pullRequest: { id: string } | null } | null };
+
+export type ClosePrMutationVariables = Exact<{
+  prId: string | number;
+}>;
+
+
+export type ClosePrMutation = { closePullRequest: { pullRequest: { id: string } | null } | null };
+
+export type ReopenPrMutationVariables = Exact<{
+  prId: string | number;
+}>;
+
+
+export type ReopenPrMutation = { reopenPullRequest: { pullRequest: { id: string } | null } | null };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -747,6 +817,17 @@ export const HydrateDocument = new TypedDocumentString(`
           name
           color
         }
+      }
+      assignees(first: 10) {
+        nodes {
+          login
+          avatarUrl(size: 64)
+        }
+      }
+      milestone {
+        number
+        title
+        dueOn
       }
       files(first: 100) {
         totalCount
@@ -1034,6 +1115,11 @@ export const PrDetailDocument = new TypedDocumentString(`
           RENAMED_TITLE_EVENT
           REVIEW_DISMISSED_EVENT
           BASE_REF_FORCE_PUSHED_EVENT
+          ASSIGNED_EVENT
+          UNASSIGNED_EVENT
+          MILESTONED_EVENT
+          DEMILESTONED_EVENT
+          REVIEW_REQUEST_REMOVED_EVENT
         ]
       ) {
         nodes {
@@ -1111,6 +1197,57 @@ export const PrDetailDocument = new TypedDocumentString(`
             }
             label {
               name
+            }
+          }
+          ... on AssignedEvent {
+            createdAt
+            actor {
+              login
+            }
+            assignee {
+              ... on User {
+                login
+              }
+            }
+          }
+          ... on UnassignedEvent {
+            createdAt
+            actor {
+              login
+            }
+            assignee {
+              ... on User {
+                login
+              }
+            }
+          }
+          ... on MilestonedEvent {
+            createdAt
+            actor {
+              login
+            }
+            milestoneTitle
+          }
+          ... on DemilestonedEvent {
+            createdAt
+            actor {
+              login
+            }
+            milestoneTitle
+          }
+          ... on ReviewRequestRemovedEvent {
+            createdAt
+            actor {
+              login
+            }
+            requestedReviewer {
+              __typename
+              ... on User {
+                login
+              }
+              ... on Team {
+                slug
+              }
             }
           }
           ... on RenamedTitleEvent {
@@ -1309,3 +1446,39 @@ export const UpdateBranchDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<UpdateBranchMutation, UpdateBranchMutationVariables>;
+export const ConvertToDraftDocument = new TypedDocumentString(`
+    mutation ConvertToDraft($prId: ID!) {
+  convertPullRequestToDraft(input: { pullRequestId: $prId }) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ConvertToDraftMutation, ConvertToDraftMutationVariables>;
+export const MarkReadyDocument = new TypedDocumentString(`
+    mutation MarkReady($prId: ID!) {
+  markPullRequestReadyForReview(input: { pullRequestId: $prId }) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<MarkReadyMutation, MarkReadyMutationVariables>;
+export const ClosePrDocument = new TypedDocumentString(`
+    mutation ClosePr($prId: ID!) {
+  closePullRequest(input: { pullRequestId: $prId }) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ClosePrMutation, ClosePrMutationVariables>;
+export const ReopenPrDocument = new TypedDocumentString(`
+    mutation ReopenPr($prId: ID!) {
+  reopenPullRequest(input: { pullRequestId: $prId }) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ReopenPrMutation, ReopenPrMutationVariables>;

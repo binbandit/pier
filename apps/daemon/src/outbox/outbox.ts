@@ -41,6 +41,13 @@ export type CommandPayload = {
   enabled?: boolean;
   /** Update the branch by rebasing instead of merging the base in. */
   rebase?: boolean;
+  /** Label names, or logins for assignees and reviewers. */
+  add?: string[];
+  remove?: string[];
+  /** The milestone number, or null to clear it. */
+  milestone?: number | null;
+  /** To draft (true) or ready for review (false). */
+  draft?: boolean;
 };
 
 /** Kinds that create content on GitHub and so count against its 500-per-hour limit. */
@@ -226,6 +233,22 @@ export class Outbox {
     return row
       ? { commandId: row.id, kind: row.kind, state: row.state, sendAt: row.send_at }
       : null;
+  }
+
+  /**
+   * Writes that GitHub accepted after `since` (when the PR was last read), so a change stays on
+   * screen between its ack and the next read instead of flicking back.
+   */
+  ackedSince(prId: string, since: string): { kind: CommandKind; payload: CommandPayload }[] {
+    // A fresh read lands within seconds of an ack, so never look further back than ten minutes.
+    const floor = new Date(Date.now() - 10 * 60_000).toISOString();
+    return this.db
+      .query<{ kind: CommandKind; payload: string }, [string, string]>(
+        `SELECT kind, payload FROM outbox
+         WHERE pr_id = ? AND state = 'acked' AND updated_at > ? ORDER BY created_at`,
+      )
+      .all(prId, since > floor ? since : floor)
+      .map((row) => ({ kind: row.kind, payload: JSON.parse(row.payload) as CommandPayload }));
   }
 
   /** Unresolved writes for one PR, for showing pending replies, resolves and viewed marks. */
@@ -493,7 +516,8 @@ export class Outbox {
       else this.update(command, "queued", "Not found on GitHub; sending again");
       return;
     }
-    // Resolving, marking viewed and clearing notifications are idempotent: just send again.
+    // Everything else (resolving, viewed marks, labels, reviewers, draft, close) lands the same
+    // however many times it's sent.
     this.update(command, "queued", "Sending again");
   }
 
@@ -571,6 +595,20 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
       );
     case "update-branch":
       return port.updateBranch(command.prId, payload.rebase ?? false, command.expectedHead);
+    case "labels":
+    case "assignees":
+    case "reviewers":
+      return port.editMetadata(command.repo, command.number, command.kind, {
+        add: payload.add ?? [],
+        remove: payload.remove ?? [],
+      });
+    case "milestone":
+      return port.setMilestone(command.repo, command.number, payload.milestone ?? null);
+    case "draft":
+      return port.setDraft(command.prId, payload.draft ?? true);
+    case "close":
+    case "reopen":
+      return port.setOpen(command.prId, command.kind === "reopen");
     default:
       return Promise.reject(new Error(`unknown command kind ${String(command.kind)}`));
   }

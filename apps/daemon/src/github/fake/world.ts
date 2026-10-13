@@ -48,6 +48,9 @@ export type FakeRepo = {
   /** Allowed merge methods; the first is the default. */
   mergeMethods: MergeMethod[];
   autoMergeAllowed: boolean;
+  /** The repo's label catalogue, by name. */
+  labels: Map<string, { color: string; description: string | null }>;
+  milestones: { number: number; title: string; dueOn: string | null }[];
 };
 
 export type RepoOptions = Partial<
@@ -138,6 +141,8 @@ export type FakePr = {
   files: FakeFile[];
   mergeable: Mergeable;
   labels: { name: string; color: string }[];
+  assignees: string[];
+  milestone: number | null;
   /** Check runs per commit; a commit with no entry has reported nothing. */
   checks: Map<string, FakeCheckRun[]>;
   reviews: FakeReview[];
@@ -245,6 +250,25 @@ export type WorldOptions = {
 };
 
 const BOT_APPS = ["dependabot", "renovate", "github-actions"];
+
+// GitHub's starter labels, plus the ones Dependabot adds.
+const DEFAULT_LABELS = [
+  { name: "bug", color: "d73a4a", description: "Something isn't working" },
+  {
+    name: "documentation",
+    color: "0075ca",
+    description: "Improvements or additions to documentation",
+  },
+  { name: "enhancement", color: "a2eeef", description: "New feature or request" },
+  { name: "good first issue", color: "7057ff", description: "Good for newcomers" },
+  { name: "help wanted", color: "008672", description: "Extra attention is needed" },
+  { name: "question", color: "d876e3", description: "Further information is requested" },
+  {
+    name: "dependencies",
+    color: "0366d6",
+    description: "Pull requests that update a dependency file",
+  },
+];
 const BOT_USER_IDS: Record<string, number> = {
   dependabot: 49699333,
   renovate: 29139614,
@@ -413,6 +437,11 @@ export class FakeWorld {
       checkNames: options.checkNames ?? ["build", "test", "lint"],
       mergeMethods: options.mergeMethods ?? ["MERGE", "SQUASH", "REBASE"],
       autoMergeAllowed: options.autoMergeAllowed ?? true,
+      labels: new Map(DEFAULT_LABELS.map(({ name: label, ...rest }) => [label, rest])),
+      milestones: [
+        { number: 1, title: "Next release", dueOn: this.iso(this.now() + 14 * 86_400_000) },
+        { number: 2, title: "Backlog", dueOn: null },
+      ],
     };
     this.repos.set(fullName, repo);
     return repo;
@@ -592,6 +621,8 @@ export class FakeWorld {
       files: [],
       mergeable: input.mergeable ?? "mergeable",
       labels: input.labels ?? [],
+      assignees: [],
+      milestone: null,
       checks: new Map(),
       reviews: [],
       threads: [],
@@ -606,6 +637,10 @@ export class FakeWorld {
     };
     this.prs.set(pr.id, pr);
     this.byNumber.set(`${repo.fullName}#${number}`, pr);
+    for (const label of pr.labels) {
+      if (!repo.labels.has(label.name))
+        repo.labels.set(label.name, { color: label.color, description: null });
+    }
 
     const baseTree = this.tree(repo.fullName, pr.baseRefOid);
     for (const change of input.files) {
@@ -883,6 +918,118 @@ export class FakeWorld {
     pr.updatedAt = this.iso();
     pr.events.push({ kind: "event", text: "closed this", actor, at: pr.updatedAt });
     this.notify(pr, actor, this.subscribers(pr, "state_change"));
+  }
+
+  reopen(prId: string, actor: string): void {
+    const pr = this.mustPr(prId);
+    if (pr.state === "MERGED") throw graphqlError("Could not reopen a merged pull request");
+    if (pr.state === "OPEN") return;
+    pr.state = "OPEN";
+    pr.updatedAt = this.iso();
+    pr.events.push({ kind: "event", text: "reopened this", actor, at: pr.updatedAt });
+  }
+
+  setDraft(prId: string, actor: string, draft: boolean): void {
+    const pr = this.mustPr(prId);
+    if (!this.canWrite(pr.repo, actor) && pr.author !== actor)
+      throw graphqlError(`${actor} does not have permission to update this pull request`);
+    if (pr.isDraft === draft) return;
+    pr.isDraft = draft;
+    pr.updatedAt = this.iso();
+    const text = draft
+      ? "marked this pull request as draft"
+      : "marked this pull request as ready for review";
+    pr.events.push({ kind: "event", text, actor, at: pr.updatedAt });
+  }
+
+  /** Labels by name, as the REST issue endpoints take them; unknown names join the catalogue. */
+  editLabels(prId: string, actor: string, add: string[], remove: string[]): void {
+    const pr = this.mustPr(prId);
+    this.mustTriage(pr, actor);
+    for (const name of add) {
+      if (pr.labels.some((l) => l.name === name)) continue;
+      const known = pr.repo.labels.get(name) ?? { color: "ededed", description: null };
+      pr.repo.labels.set(name, known);
+      pr.labels.push({ name, color: known.color });
+      pr.events.push({ kind: "event", text: `added the ${name} label`, actor, at: this.iso() });
+    }
+    for (const name of remove) {
+      if (!pr.labels.some((l) => l.name === name))
+        throw new GitHubError("404 Label does not exist", "not-found", 404);
+      pr.labels = pr.labels.filter((l) => l.name !== name);
+      pr.events.push({ kind: "event", text: `removed the ${name} label`, actor, at: this.iso() });
+    }
+    pr.updatedAt = this.iso();
+  }
+
+  /** Like GitHub, logins that can't be assigned are skipped rather than refused. */
+  editAssignees(prId: string, actor: string, add: string[], remove: string[]): void {
+    const pr = this.mustPr(prId);
+    this.mustTriage(pr, actor);
+    const assignable = add.filter((login) => this.canWrite(pr.repo, login));
+    const at = this.iso();
+    for (const login of remove.filter((a) => pr.assignees.includes(a))) {
+      const text = login === actor ? "removed their assignment" : `unassigned ${login}`;
+      pr.events.push({ kind: "event", text, actor, at });
+    }
+    for (const login of assignable.filter((a) => !pr.assignees.includes(a))) {
+      const text = login === actor ? "self-assigned this" : `assigned ${login}`;
+      pr.events.push({ kind: "event", text, actor, at });
+    }
+    pr.assignees = [...pr.assignees.filter((a) => !remove.includes(a)), ...assignable]
+      .filter((login, i, all) => all.indexOf(login) === i)
+      .slice(0, 10);
+    pr.updatedAt = at;
+  }
+
+  removeReviewRequests(prId: string, actor: string, reviewers: string[]): void {
+    const pr = this.mustPr(prId);
+    this.mustTriage(pr, actor);
+    for (const reviewer of reviewers) {
+      if (!pr.requested.delete(reviewer)) continue;
+      const name = reviewer.split("/").at(-1) ?? reviewer;
+      pr.events.push({
+        kind: "event",
+        text: `removed the review request for ${name}`,
+        actor,
+        at: this.iso(),
+      });
+    }
+    pr.updatedAt = this.iso();
+  }
+
+  requestReviews(prId: string, actor: string, reviewers: string[]): void {
+    const pr = this.mustPr(prId);
+    this.mustTriage(pr, actor);
+    if (reviewers.includes(pr.author))
+      throw new GitHubError(
+        "422 Review cannot be requested from pull request author.",
+        "validation",
+        422,
+      );
+    for (const reviewer of reviewers) this.requestReview(prId, reviewer, actor);
+  }
+
+  setMilestone(prId: string, actor: string, milestone: number | null): void {
+    const pr = this.mustPr(prId);
+    this.mustTriage(pr, actor);
+    if (milestone !== null && !pr.repo.milestones.some((m) => m.number === milestone))
+      throw new GitHubError("422 Validation Failed", "validation", 422);
+    const title = (number: number | null) =>
+      pr.repo.milestones.find((m) => m.number === number)?.title;
+    const text =
+      milestone === null
+        ? `removed this from ${title(pr.milestone) ?? "its milestone"}`
+        : `added this to ${title(milestone)}`;
+    if (milestone !== pr.milestone) pr.events.push({ kind: "event", text, actor, at: this.iso() });
+    pr.milestone = milestone;
+    pr.updatedAt = this.iso();
+  }
+
+  private mustTriage(pr: FakePr, actor: string): void {
+    const permission = this.permission(pr.repo, actor);
+    if (permission === null || permission === "READ")
+      throw new GitHubError("403 Resource not accessible by integration", "forbidden", 403);
   }
 
   comment(prId: string, author: string, body: string): FakeComment {

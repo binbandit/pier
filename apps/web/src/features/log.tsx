@@ -34,6 +34,13 @@ const KIND: Record<LogEntry["kind"], string> = {
   merge: "Merge",
   "auto-merge": "Auto-merge",
   "update-branch": "Update branch",
+  labels: "Labels",
+  assignees: "Assignees",
+  reviewers: "Reviewers",
+  milestone: "Milestone",
+  draft: "Draft / ready",
+  close: "Close",
+  reopen: "Reopen",
 };
 
 export function Log() {

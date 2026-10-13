@@ -45,7 +45,8 @@ test("an inline draft goes out with the review", async ({ page }) => {
   await page.keyboard.press("c");
   await page.keyboard.type("Should this cursor be opaque?");
   await page.keyboard.press("Meta+Enter");
-  await expect(page.getByText("Should this cursor be opaque?")).toBeVisible();
+  // The saved draft, not the composer it was typed in (which also shows the text).
+  await expect(page.getByText("Sends with your review")).toBeVisible();
 
   await page.keyboard.press("r");
   const review = page.getByRole("region", { name: "Review" });
@@ -115,4 +116,34 @@ test("a 5,000-line PR opens and moves between files without lag", async ({ page 
   });
   // Two frames is the floor for this measurement; anything near it means the jump felt instant.
   expect(frames[18]).toBeLessThan(100);
+});
+
+test("labels, milestone and draft change from the keyboard and stick", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-cli/pull/4");
+  await expect(page.getByRole("heading", { name: "Add NEW_BILLING feature flag" })).toBeVisible();
+
+  await page.keyboard.press("s");
+  await page.keyboard.press("l");
+  await page.getByRole("textbox", { name: "Filter labels" }).fill("enhancement");
+  await expect(page.getByRole("region", { name: "Labels" }).getByRole("button")).toHaveText(
+    /enhancement/,
+  );
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+  await expect(toast(page, "Added enhancement")).toBeVisible();
+
+  await page.keyboard.press("s");
+  await page.keyboard.press("m");
+  await expect(page.getByRole("region", { name: "Milestone" })).toContainText("Next release");
+  await page.keyboard.press("Enter");
+
+  await page.keyboard.press("s");
+  await page.keyboard.press("d");
+  await expect(toast(page, "Converted to draft")).toBeVisible();
+
+  // After a reload everything comes from what GitHub says now, not from what we sent.
+  await page.reload();
+  await expect(page.getByLabel("Labels", { exact: true })).toContainText("enhancement");
+  await expect(page.getByLabel("Milestone", { exact: true })).toContainText("Next release");
+  await expect(page.getByText("Draft", { exact: true })).toBeVisible();
 });

@@ -178,17 +178,50 @@ function timelineEvent(item: TimelineNode): TimelineEntry | null {
         actor: item.actor?.login ?? null,
         at: item.createdAt,
       };
-    case "ReviewRequestedEvent": {
+    case "ReviewRequestedEvent":
+    case "ReviewRequestRemovedEvent": {
       const who = item.requestedReviewer;
       const name =
         who?.__typename === "User" ? who.login : who?.__typename === "Team" ? who.slug : "someone";
       return {
         kind: "event",
-        text: `requested review from ${name}`,
+        text:
+          item.__typename === "ReviewRequestedEvent"
+            ? `requested review from ${name}`
+            : `removed the review request for ${name}`,
         actor: item.actor?.login ?? null,
         at: item.createdAt,
       };
     }
+    case "AssignedEvent":
+    case "UnassignedEvent": {
+      const who = item.assignee && "login" in item.assignee ? item.assignee.login : "someone";
+      const self = who === item.actor?.login;
+      return {
+        kind: "event",
+        text:
+          item.__typename === "AssignedEvent"
+            ? self
+              ? "self-assigned this"
+              : `assigned ${who}`
+            : self
+              ? "removed their assignment"
+              : `unassigned ${who}`,
+        actor: item.actor?.login ?? null,
+        at: item.createdAt,
+      };
+    }
+    case "MilestonedEvent":
+    case "DemilestonedEvent":
+      return {
+        kind: "event",
+        text:
+          item.__typename === "MilestonedEvent"
+            ? `added this to ${item.milestoneTitle}`
+            : `removed this from ${item.milestoneTitle}`,
+        actor: item.actor?.login ?? null,
+        at: item.createdAt,
+      };
     case "ReadyForReviewEvent":
       return {
         kind: "event",

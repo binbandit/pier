@@ -1,4 +1,12 @@
-import type { Actor, CheckState, CheckSummary, Mergeable, ReviewDecision } from "@pier/core/wire";
+import type {
+  Actor,
+  CheckState,
+  CheckSummary,
+  Mergeable,
+  Milestone,
+  Person,
+  ReviewDecision,
+} from "@pier/core/wire";
 
 import type { HydrateQuery, SweepQuery } from "./gql/graphql";
 
@@ -50,6 +58,8 @@ export type PrDoc = {
   autoMerge: { enabledAt: string | null; method: string } | null;
   mergeQueue: { position: number; state: string } | null;
   labels: { name: string; color: string }[];
+  assignees: Person[];
+  milestone: Milestone | null;
   files: { path: string; additions: number; deletions: number; changeType: string }[];
   filesTotal: number;
   /** The most recent commits, oldest first. */
@@ -140,6 +150,14 @@ export function toPrDoc(node: HydratedNode): { doc: PrDoc; viewer: PrViewer } {
       : null,
     mergeQueue: node.mergeQueueEntry,
     labels: (node.labels?.nodes ?? []).flatMap((label) => (label ? [label] : [])),
+    assignees: (node.assignees.nodes ?? []).flatMap((user) => (user ? [user] : [])),
+    milestone: node.milestone
+      ? {
+          number: node.milestone.number,
+          title: node.milestone.title,
+          dueOn: node.milestone.dueOn ?? null,
+        }
+      : null,
     files: (node.files?.nodes ?? []).flatMap((file) => (file ? [file] : [])),
     filesTotal: node.files?.totalCount ?? 0,
     commits: (node.commits.nodes ?? []).flatMap((entry) =>

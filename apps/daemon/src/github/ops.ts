@@ -122,6 +122,17 @@ export const HydrateQuery = graphql(`
             color
           }
         }
+        assignees(first: 10) {
+          nodes {
+            login
+            avatarUrl(size: 64)
+          }
+        }
+        milestone {
+          number
+          title
+          dueOn
+        }
         files(first: 100) {
           totalCount
           nodes {
@@ -415,6 +426,11 @@ export const PrDetailQuery = graphql(`
             RENAMED_TITLE_EVENT
             REVIEW_DISMISSED_EVENT
             BASE_REF_FORCE_PUSHED_EVENT
+            ASSIGNED_EVENT
+            UNASSIGNED_EVENT
+            MILESTONED_EVENT
+            DEMILESTONED_EVENT
+            REVIEW_REQUEST_REMOVED_EVENT
           ]
         ) {
           nodes {
@@ -492,6 +508,57 @@ export const PrDetailQuery = graphql(`
               }
               label {
                 name
+              }
+            }
+            ... on AssignedEvent {
+              createdAt
+              actor {
+                login
+              }
+              assignee {
+                ... on User {
+                  login
+                }
+              }
+            }
+            ... on UnassignedEvent {
+              createdAt
+              actor {
+                login
+              }
+              assignee {
+                ... on User {
+                  login
+                }
+              }
+            }
+            ... on MilestonedEvent {
+              createdAt
+              actor {
+                login
+              }
+              milestoneTitle
+            }
+            ... on DemilestonedEvent {
+              createdAt
+              actor {
+                login
+              }
+              milestoneTitle
+            }
+            ... on ReviewRequestRemovedEvent {
+              createdAt
+              actor {
+                login
+              }
+              requestedReviewer {
+                __typename
+                ... on User {
+                  login
+                }
+                ... on Team {
+                  slug
+                }
               }
             }
             ... on RenamedTitleEvent {
@@ -702,6 +769,46 @@ export const UpdateBranchMutation = graphql(`
     updatePullRequestBranch(
       input: { pullRequestId: $prId, updateMethod: $method, expectedHeadOid: $head }
     ) {
+      pullRequest {
+        id
+      }
+    }
+  }
+`);
+
+export const ConvertToDraftMutation = graphql(`
+  mutation ConvertToDraft($prId: ID!) {
+    convertPullRequestToDraft(input: { pullRequestId: $prId }) {
+      pullRequest {
+        id
+      }
+    }
+  }
+`);
+
+export const MarkReadyMutation = graphql(`
+  mutation MarkReady($prId: ID!) {
+    markPullRequestReadyForReview(input: { pullRequestId: $prId }) {
+      pullRequest {
+        id
+      }
+    }
+  }
+`);
+
+export const ClosePrMutation = graphql(`
+  mutation ClosePr($prId: ID!) {
+    closePullRequest(input: { pullRequestId: $prId }) {
+      pullRequest {
+        id
+      }
+    }
+  }
+`);
+
+export const ReopenPrMutation = graphql(`
+  mutation ReopenPr($prId: ID!) {
+    reopenPullRequest(input: { pullRequestId: $prId }) {
       pullRequest {
         id
       }

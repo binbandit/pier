@@ -1,6 +1,7 @@
 import type { SelectedLineRange } from "@pierre/diffs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
+import { Milestone, UserRound, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Html } from "@/components/markdown";
@@ -10,13 +11,14 @@ import { plural, since } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
-import { Dot } from "@/ui/dot";
+import { Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
 import type { DiffRange, PrView, QueueItem } from "@pier/core/wire";
 
 import { ActivityRail } from "./activity";
 import { Checks } from "./checks";
 import { FileTree } from "./file-tree";
+import { type MetadataKind, MetadataPicker } from "./metadata";
 import { type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
 import { RunwayPanel } from "./runway";
@@ -26,6 +28,12 @@ import { RunwayPanel } from "./runway";
 // looked. Deciding moves you to the next PR waiting on you.
 
 const WIDE = 1600;
+
+/** What's raised from the status line; one at a time. */
+type Raised =
+  | { kind: "review"; event: ReviewEvent }
+  | { kind: "runway" }
+  | { kind: "picker"; field: MetadataKind };
 
 export function PrCanvas({ repo, number }: { repo: string; number: number }) {
   const { data: pr, isPending } = useQuery(q("pr", { repo, number }));
@@ -68,8 +76,16 @@ function Loaded({ pr }: { pr: PrView }) {
   const [range, setRange] = useState<DiffRange>(reReview ? "since-review" : "all");
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [rail, setRail] = useState(() => window.innerWidth >= WIDE);
-  const [panel, setPanel] = useState<ReviewEvent | null>(null);
-  const [runway, setRunway] = useState(false);
+  const [raised, setRaised] = useState<Raised | null>(null);
+  const lower = () => setRaised(null);
+
+  // The `s` pickers' lists, fetched once per repo per session so typing into a picker never
+  // races its list. ETags make the repeat reads free.
+  useEffect(() => {
+    for (const name of ["repoLabels", "assignable", "milestones"] as const) {
+      void client.prefetchQuery(q(name, { repo: pr.repo }));
+    }
+  }, [client, pr.repo]);
   const [current, setCurrent] = useState<string | null>(null);
   const [selection, setSelection] = useState<{ path: string; range: SelectedLineRange } | null>(
     null,
@@ -143,9 +159,46 @@ function Loaded({ pr }: { pr: PrView }) {
     });
   };
 
+  const setDraft = async (draft: boolean) => {
+    try {
+      await rpc("setDraft", { prId: pr.id, draft });
+      void client.invalidateQueries();
+      toast(
+        {
+          text: draft ? "Converted to draft" : "Marked ready for review",
+          tone: "ok",
+          undo: () => void rpc("setDraft", { prId: pr.id, draft: !draft }),
+        },
+        6_000,
+      );
+    } catch (error) {
+      toast({ text: errorText(error), tone: "bad" });
+    }
+  };
+
+  // Closing notifies everyone on the PR, so it waits five seconds for `z`; reopening goes at once.
+  const setOpen = async (open: boolean) => {
+    try {
+      const { commandIds } = await rpc("setOpen", { prId: pr.id, open });
+      void client.invalidateQueries();
+      toast(
+        open
+          ? { text: "Reopened", tone: "ok" }
+          : {
+              text: `Closing ${pr.repo.split("/")[1]}#${pr.number} in 5s`,
+              tone: "ok",
+              undo: () => void rpc("cancelCommands", { commandIds }),
+            },
+        5_000,
+      );
+    } catch (error) {
+      toast({ text: errorText(error), tone: "bad" });
+    }
+  };
+
   const quickApprove = async () => {
     if (pr.drafts.length > 0) {
-      setPanel("APPROVE");
+      setRaised({ kind: "review", event: "APPROVE" });
       return;
     }
     try {
@@ -242,7 +295,7 @@ function Loaded({ pr }: { pr: PrView }) {
       scope: "surface",
       hint: "review",
       group: "Review",
-      run: () => setPanel("COMMENT"),
+      run: () => setRaised({ kind: "review", event: "COMMENT" }),
     },
     {
       id: "pr.approve",
@@ -259,7 +312,7 @@ function Loaded({ pr }: { pr: PrView }) {
       keys: ["shift+r"],
       scope: "surface",
       group: "Review",
-      run: () => setPanel("REQUEST_CHANGES"),
+      run: () => setRaised({ kind: "review", event: "REQUEST_CHANGES" }),
     },
     {
       id: "pr.range",
@@ -303,10 +356,31 @@ function Loaded({ pr }: { pr: PrView }) {
       scope: "surface",
       hint: pr.author?.login === pr.account ? "merge" : undefined,
       group: "Merge",
-      run: () => {
-        setPanel(null);
-        setRunway(true);
-      },
+      run: () => setRaised({ kind: "runway" }),
+    },
+    ...(["labels", "assignees", "reviewers", "milestone"] as const).map((field): Command => ({
+      id: `pr.pick-${field}`,
+      title: `Edit ${field}`,
+      keys: [`s ${field === "assignees" ? "a" : field.charAt(0)}`],
+      scope: "surface",
+      group: "Edit",
+      run: () => setRaised({ kind: "picker", field }),
+    })),
+    {
+      id: "pr.draft",
+      title: pr.isDraft ? "Mark ready for review" : "Convert to draft",
+      keys: ["s d"],
+      scope: "surface",
+      group: "Edit",
+      run: () => void setDraft(!pr.isDraft),
+    },
+    {
+      id: "pr.close",
+      title: pr.state === "OPEN" ? "Close" : "Reopen",
+      keys: ["s c"],
+      scope: "surface",
+      group: "Edit",
+      run: () => void setOpen(pr.state !== "OPEN"),
     },
     {
       id: "pr.rerun",
@@ -401,17 +475,20 @@ function Loaded({ pr }: { pr: PrView }) {
         </div>
         {rail && <ActivityRail pr={pr} />}
       </div>
-      {panel && (
-        <ReviewPanel pr={pr} initial={panel} onClose={() => setPanel(null)} onSent={advance} />
+      {raised?.kind === "review" && (
+        <ReviewPanel pr={pr} initial={raised.event} onClose={lower} onSent={advance} />
       )}
-      {runway && !panel && (
-        <RunwayPanel pr={pr} onClose={() => setRunway(false)} onMerged={advance} />
+      {raised?.kind === "runway" && <RunwayPanel pr={pr} onClose={lower} onMerged={advance} />}
+      {raised?.kind === "picker" && (
+        <MetadataPicker key={raised.field} pr={pr} kind={raised.field} onClose={lower} />
       )}
     </div>
   );
 }
 
 function Header({ pr }: { pr: PrView }) {
+  const triage =
+    pr.reviewers.length + pr.assignees.length + pr.labels.length > 0 || pr.milestone !== null;
   return (
     <header>
       <p className="font-code text-meta text-faint">
@@ -419,6 +496,11 @@ function Header({ pr }: { pr: PrView }) {
       </p>
       <h1 className="mt-1 max-w-[72ch] text-title font-semibold text-strong">{pr.title}</h1>
       <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-meta text-muted">
+        {pr.isDraft && (
+          <span className="rounded-full border border-line-max px-2 leading-5 text-muted">
+            Draft
+          </span>
+        )}
         {pr.author && (
           <span className="flex items-center gap-2">
             <Avatar login={pr.author.login} url={pr.author.avatarUrl} size={16} />
@@ -432,37 +514,73 @@ function Header({ pr }: { pr: PrView }) {
           <span className="text-ok">+{pr.additions}</span>{" "}
           <span className="text-bad">−{pr.deletions}</span>
         </span>
-        {pr.reviewers.length > 0 && (
-          <span className="flex items-center gap-3">
-            {pr.reviewers.map((r) => (
-              <span
-                key={`${r.kind}:${r.login}`}
-                className="flex items-center gap-1.5"
-                title={r.state}
-              >
-                <Dot
-                  tone={
-                    r.state === "APPROVED"
-                      ? "ok"
-                      : r.state === "CHANGES_REQUESTED"
-                        ? "bad"
-                        : r.state === "requested"
-                          ? "warn"
-                          : "faint"
-                  }
-                />
-                {r.login}
-              </span>
-            ))}
-          </span>
-        )}
-        {pr.state !== "OPEN" && (
+        {pr.state !== "OPEN" ? (
           <span className="text-faint">{pr.state === "MERGED" ? "Merged" : "Closed"}</span>
+        ) : (
+          pr.pending?.kind === "close" && <span className="text-warn">Closing</span>
         )}
       </div>
+      {triage && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 text-meta text-muted">
+          {pr.reviewers.length > 0 && (
+            <span aria-label="Reviewers" className="flex items-center gap-3">
+              <Users aria-hidden size={14} className="text-off" />
+              {pr.reviewers.map((r) => (
+                <span
+                  key={`${r.kind}:${r.login}`}
+                  className="flex items-center gap-1.5"
+                  title={r.state}
+                >
+                  <Dot tone={REVIEWER_TONE[r.state] ?? "faint"} />
+                  {r.login}
+                </span>
+              ))}
+            </span>
+          )}
+          {pr.assignees.length > 0 && (
+            <span aria-label="Assignees" className="flex items-center gap-3">
+              <UserRound aria-hidden size={14} className="text-off" />
+              {pr.assignees.map((a) => (
+                <span key={a.login} className="flex items-center gap-1.5">
+                  <Avatar login={a.login} url={a.avatarUrl} size={16} />
+                  {a.login}
+                </span>
+              ))}
+            </span>
+          )}
+          {pr.labels.length > 0 && (
+            <span aria-label="Labels" className="flex flex-wrap items-center gap-1.5">
+              {pr.labels.map((label) => (
+                <span
+                  key={label.name}
+                  className="rounded-full border px-2 text-[12px] leading-5"
+                  style={{
+                    borderColor: `#${label.color}80`,
+                    color: `color-mix(in oklab, #${label.color} 55%, #e6e6e6)`,
+                  }}
+                >
+                  {label.name}
+                </span>
+              ))}
+            </span>
+          )}
+          {pr.milestone && (
+            <span aria-label="Milestone" className="flex items-center gap-2">
+              <Milestone aria-hidden size={14} className="text-off" />
+              {pr.milestone.title}
+            </span>
+          )}
+        </div>
+      )}
     </header>
   );
 }
+
+const REVIEWER_TONE: Record<string, Tone> = {
+  APPROVED: "ok",
+  CHANGES_REQUESTED: "bad",
+  requested: "warn",
+};
 
 /** One sentence on whose move it is and what you're looking at. */
 function TurnLine({

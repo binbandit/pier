@@ -49,6 +49,10 @@ export class SyncEngine {
   ) {}
 
   start(): void {
+    // Docs an older build stored in an older shape get read again, in the background.
+    for (const record of this.model.all()) {
+      if (record.stale) this.markDirty(record.doc.id, record.reader);
+    }
     for (const account of this.ports().keys()) {
       this.loop(`search:${account}`, () => this.searchAll(account), SEARCH_EVERY_MS);
       this.loop(`notify:${account}`, () => this.pollNotifications(account), 60_000);

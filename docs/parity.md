@@ -41,14 +41,14 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | CONV-SAVED-REPLIES | Saved replies | read-only `viewer.savedReplies` (needs `read:user`) | I10 | - |
 | CONV-UPLOAD | Paste or drop images and files | undocumented attachments endpoint | gap | - |
 | META-TITLE | Edit title and body | `updatePullRequest` | I6 | - |
-| META-REVIEWERS | Request / re-request / remove reviewers (users, teams, Copilot), suggested reviewers | `requestReviewsByLogin`, `suggestedReviewerActors` | I6 | - |
-| META-ASSIGNEES | Assignees | `replaceActorsForAssignable` | I6 | - |
-| META-LABELS | Labels | `addLabelsToLabelable` | I6 | - |
-| META-MILESTONE | Milestone | `updatePullRequest` | I6 | - |
+| META-REVIEWERS | Request / re-request / remove reviewers (users, teams, Copilot), suggested reviewers | REST `requested_reviewers` (users, and teams already requested); team listing, Copilot and suggestions not yet | I6 | sandbox |
+| META-ASSIGNEES | Assignees | REST issue `assignees` | I6 | sandbox |
+| META-LABELS | Labels | REST issue `labels` | I6 | sandbox |
+| META-MILESTONE | Milestone | REST issue `milestone` | I6 | sandbox |
 | META-PROJECTS | Projects (v2) fields | `addProjectV2ItemById` (needs `project` scope) | I10 | - |
 | META-LINKED | Linked issues (Development) | closing keywords / timeline | I6 | - |
-| LIFE-DRAFT | Draft ⇄ ready for review | `convertPullRequestToDraft` / `markPullRequestReadyForReview` | I6 | - |
-| LIFE-CLOSE | Close / reopen | `closePullRequest` / `reopenPullRequest` | I6 | - |
+| LIFE-DRAFT | Draft ⇄ ready for review | `convertPullRequestToDraft` / `markPullRequestReadyForReview` | I6 | sandbox |
+| LIFE-CLOSE | Close / reopen | `closePullRequest` / `reopenPullRequest` (close verified with undo in the fake; not yet closed live) | I6 | built |
 | LIFE-BASE | Change base branch | `updatePullRequest` | I6 | - |
 | LIFE-LOCK | Lock / unlock conversation | `lockLockable` | I6 | - |
 | LIFE-ARCHIVE | Archive a PR | `archivePullRequest` | I10 | - |

@@ -57,6 +57,17 @@ export function createHandlers(app: App): Handlers {
       commandIds: app.review.setAutoMerge(prId, enabled, method),
     }),
     updateBranch: ({ prId, rebase }) => ({ commandIds: app.review.updateBranch(prId, rebase) }),
+    editMetadata: ({ prId, field, add, remove }) => ({
+      commandIds: app.review.editMetadata(prId, field, add, remove),
+    }),
+    setMilestone: ({ prId, milestone }) => ({
+      commandIds: app.review.setMilestone(prId, milestone),
+    }),
+    setDraft: ({ prId, draft }) => ({ commandIds: app.review.setDraft(prId, draft) }),
+    setOpen: ({ prId, open }) => ({ commandIds: app.review.setOpen(prId, open) }),
+    repoLabels: ({ repo }) => app.review.repoLabels(repo),
+    assignable: ({ repo }) => app.review.assignable(repo),
+    milestones: ({ repo }) => app.review.milestones(repo),
     flight: () => app.views.flight(),
     log: ({ limit }) => app.outbox.log(limit ?? 100),
 

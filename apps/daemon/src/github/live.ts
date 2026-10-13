@@ -1,19 +1,31 @@
 import type { components } from "@octokit/openapi-types";
 
-import type { CheckLog, CheckRunView, DiffFile, MergeMethod } from "@pier/core/wire";
+import type {
+  CheckLog,
+  CheckRunView,
+  DiffFile,
+  Label,
+  MergeMethod,
+  Milestone,
+  Person,
+} from "@pier/core/wire";
 
-import type { GitHubTransport } from "./client";
+import type { GitHubTransport, RestResponse } from "./client";
 import { GitHubError } from "./client";
 import {
   ApproveMutation,
+  ClosePrMutation,
   CommentMutation,
+  ConvertToDraftMutation,
   CommentsByQuery,
   DisableAutoMergeMutation,
   EnableAutoMergeMutation,
   HydrateQuery,
+  MarkReadyMutation,
   MarkViewedMutation,
   MergeInfoQuery,
   PrDetailQuery,
+  ReopenPrMutation,
   ReplyMutation,
   ResolveThreadMutation,
   ReviewsByAuthorQuery,
@@ -29,6 +41,7 @@ import type {
   GitHubPort,
   MergeInfo,
   MergeResult,
+  MetadataField,
   NotificationPoll,
   NotificationThread,
   ReviewSummary,
@@ -412,6 +425,79 @@ export class LiveGitHub implements GitHubPort {
     );
   }
 
+  async editMetadata(
+    repo: string,
+    number: number,
+    field: MetadataField,
+    { add, remove }: { add: string[]; remove: string[] },
+  ): Promise<void> {
+    if (field === "labels") {
+      if (add.length > 0)
+        await this.write("POST", `/repos/${repo}/issues/${number}/labels`, { labels: add });
+      for (const name of remove) {
+        // Already gone is what we wanted.
+        await this.write(
+          "DELETE",
+          `/repos/${repo}/issues/${number}/labels/${encodeURIComponent(name)}`,
+        ).catch((error: unknown) => {
+          if (!(error instanceof GitHubError && error.kind === "not-found")) throw error;
+        });
+      }
+      return;
+    }
+    const path =
+      field === "assignees"
+        ? `/repos/${repo}/issues/${number}/assignees`
+        : `/repos/${repo}/pulls/${number}/requested_reviewers`;
+    // Teams come through as "org/slug" and are requested by slug.
+    const body = (logins: string[]) =>
+      field === "assignees"
+        ? { assignees: logins }
+        : {
+            reviewers: logins.filter((login) => !login.includes("/")),
+            team_reviewers: logins.flatMap((login) => login.split("/")[1] ?? []),
+          };
+    if (add.length > 0) await this.write("POST", path, body(add));
+    if (remove.length > 0) await this.write("DELETE", path, body(remove));
+  }
+
+  async setMilestone(repo: string, number: number, milestone: number | null): Promise<void> {
+    await this.write("PATCH", `/repos/${repo}/issues/${number}`, { milestone });
+  }
+
+  async setDraft(prId: string, draft: boolean): Promise<void> {
+    if (draft) await this.client.graphql(ConvertToDraftMutation, { prId }, "interactive");
+    else await this.client.graphql(MarkReadyMutation, { prId }, "interactive");
+  }
+
+  async setOpen(prId: string, open: boolean): Promise<void> {
+    if (open) await this.client.graphql(ReopenPrMutation, { prId }, "interactive");
+    else await this.client.graphql(ClosePrMutation, { prId }, "interactive");
+  }
+
+  async repoLabels(repo: string): Promise<Label[]> {
+    const labels = await this.paged<components["schemas"]["label"]>(`/repos/${repo}/labels`);
+    return labels.map((l) => ({
+      name: l.name,
+      color: l.color,
+      description: l.description ?? null,
+    }));
+  }
+
+  async assignable(repo: string): Promise<Person[]> {
+    const users = await this.paged<components["schemas"]["simple-user"]>(
+      `/repos/${repo}/assignees`,
+    );
+    return users.map((u) => ({ login: u.login, avatarUrl: u.avatar_url }));
+  }
+
+  async milestones(repo: string): Promise<Milestone[]> {
+    const milestones = await this.paged<components["schemas"]["milestone"]>(
+      `/repos/${repo}/milestones?state=open&sort=due_on`,
+    );
+    return milestones.map((m) => ({ number: m.number, title: m.title, dueOn: m.due_on ?? null }));
+  }
+
   async releaseDate(repo: string, tag: string): Promise<string | null> {
     try {
       const response = await this.client.rest<components["schemas"]["release"]>({
@@ -437,6 +523,35 @@ export class LiveGitHub implements GitHubPort {
   }
 
   // -------------------------------------------------------------------------
+
+  private async write(
+    method: "POST" | "PATCH" | "DELETE",
+    path: string,
+    body?: unknown,
+  ): Promise<void> {
+    await this.client.rest({
+      method,
+      path,
+      ...(body === undefined ? {} : { body }),
+      priority: "interactive",
+    });
+  }
+
+  /** Every page of a REST list (pickers want all of it), revalidated with ETags. */
+  private async paged<T>(path: string): Promise<T[]> {
+    const items: T[] = [];
+    let next: string | null = `${path}${path.includes("?") ? "&" : "?"}per_page=100`;
+    for (let page = 0; next && page < 10; page++) {
+      const response: RestResponse<T[]> = await this.client.rest<T[]>({
+        path: next,
+        cache: true,
+        priority: "interactive",
+      });
+      items.push(...response.data);
+      next = nextLink(response.headers.get("link"));
+    }
+    return items;
+  }
 
   private async searchPage(query: string, after: string | null) {
     const data = await this.client.graphql(SearchPullsQuery, { query, after });

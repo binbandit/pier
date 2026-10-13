@@ -1,4 +1,4 @@
-import type { GitHubPort, ReviewEvent } from "@/github/port";
+import type { GitHubPort, MetadataField, ReviewEvent } from "@/github/port";
 import type { PrDetail } from "@/github/pr-detail";
 import type { CommandPayload, NewCommand, Outbox } from "@/outbox/outbox";
 import type { Planner } from "@/outbox/planner";
@@ -7,7 +7,10 @@ import type {
   CheckLog,
   CheckRunView,
   DiffRange,
+  Label,
   MergeMethod,
+  Milestone,
+  Person,
   PrDiff,
   PrView,
   Runway,
@@ -18,6 +21,7 @@ import type {
 
 import type { Details } from "./details";
 import type { Drafts } from "./drafts";
+import { overlayMetadata, type RepoKnown } from "./metadata";
 import type { Model, PrRecord } from "./model";
 import { buildRunway } from "./runway";
 
@@ -28,6 +32,8 @@ import { buildRunway } from "./runway";
 const REVIEW_HOLD_MS = 5_000;
 /** Merges hold the same way: once one goes through it can only be reverted. */
 const MERGE_HOLD_MS = 5_000;
+/** Closing too: it notifies everyone on the PR. */
+const CLOSE_HOLD_MS = 5_000;
 
 export type InterdiffSource = {
   interdiff(
@@ -58,6 +64,9 @@ export type ReviewDeps = {
 };
 
 export class ReviewService {
+  /** Per repo, what its pickers last returned. */
+  private readonly known = new Map<string, RepoKnown>();
+
   constructor(private readonly deps: ReviewDeps) {
     // Once GitHub accepts something we sent, our cached threads and drafts are out of date.
     deps.outbox.onAcked((command) => {
@@ -66,6 +75,18 @@ export class ReviewService {
         deps.drafts.clear(command.prId, command.account, command.payload.draftIds);
       }
     });
+  }
+
+  private knownFor(repo: string): RepoKnown {
+    return this.known.get(repo) ?? { labels: [], people: [], milestones: [] };
+  }
+
+  /** Repo-level reads go through whichever account reads that repo's PRs. */
+  private portForRepo(repo: string): GitHubPort | undefined {
+    for (const record of this.deps.model.all()) {
+      if (record.doc.repo === repo) return this.deps.ports.get(record.reader);
+    }
+    return undefined;
   }
 
   find(repo: string, number: number): PrRecord | undefined {
@@ -94,6 +115,11 @@ export class ReviewService {
 
     const pending = this.deps.outbox.pendingFor(doc.id);
     const review = record.viewers.get(account)?.latestReview;
+    const meta = overlayMetadata(
+      doc,
+      [...this.deps.outbox.ackedSince(doc.id, record.fetchedAt), ...pending],
+      this.knownFor(doc.repo),
+    );
 
     return {
       id: doc.id,
@@ -105,7 +131,7 @@ export class ReviewService {
       bodyHTML: detail?.bodyHTML ?? null,
       author: doc.author,
       state: doc.state,
-      isDraft: doc.isDraft,
+      isDraft: meta.isDraft,
       baseRefName: doc.baseRefName,
       headRefName: doc.headRefName,
       headRefOid: doc.headRefOid,
@@ -117,13 +143,22 @@ export class ReviewService {
       checks: doc.checks,
       reviewDecision: doc.reviewDecision,
       mergeable: doc.mergeable,
-      labels: doc.labels,
+      labels: meta.labels,
+      // Someone asked again after reviewing shows as requested, not with their old verdict.
       reviewers: [
-        ...doc.reviewRequests.map((r) => ({ login: r.login, kind: r.kind, state: "requested" })),
+        ...meta.requested.map((login) => ({
+          login,
+          kind: login.includes("/") ? ("team" as const) : ("user" as const),
+          state: "requested",
+        })),
         ...doc.latestReviews.flatMap((r) =>
-          r.author ? [{ login: r.author, kind: "user" as const, state: r.state }] : [],
+          r.author && !meta.requested.includes(r.author)
+            ? [{ login: r.author, kind: "user" as const, state: r.state }]
+            : [],
         ),
       ],
+      assignees: meta.assignees,
+      milestone: meta.milestone,
       account,
       approvedByYou: review?.state === "APPROVED" && review.commitOid === doc.headRefOid,
       lastReviewedOid: detail?.viewerLatestReview?.commitOid ?? null,
@@ -311,9 +346,7 @@ export class ReviewService {
   }
 
   async checkLog(repo: string, jobId: number): Promise<CheckLog | null> {
-    const record = [...this.deps.model.all()].find((r) => r.doc.repo === repo);
-    const port = record && this.deps.ports.get(record.reader);
-    return port ? port.jobLog(repo, jobId) : null;
+    return (await this.portForRepo(repo)?.jobLog(repo, jobId)) ?? null;
   }
 
   async runway(repo: string, number: number): Promise<Runway | null> {
@@ -350,6 +383,44 @@ export class ReviewService {
 
   updateBranch(prId: string, rebase: boolean): string[] {
     return this.enqueue(this.require(prId), "update-branch", { rebase }, 0);
+  }
+
+  editMetadata(prId: string, field: MetadataField, add: string[], remove: string[]): string[] {
+    return this.enqueue(this.require(prId), field, { add, remove }, 0);
+  }
+
+  setMilestone(prId: string, milestone: number | null): string[] {
+    return this.enqueue(this.require(prId), "milestone", { milestone }, 0);
+  }
+
+  setDraft(prId: string, draft: boolean): string[] {
+    return this.enqueue(this.require(prId), "draft", { draft }, 0);
+  }
+
+  /** Closing waits out an undo window like merging; reopening goes straight away. */
+  setOpen(prId: string, open: boolean): string[] {
+    const record = this.require(prId);
+    return open
+      ? this.enqueue(record, "reopen", {}, 0)
+      : this.enqueue(record, "close", {}, CLOSE_HOLD_MS);
+  }
+
+  async repoLabels(repo: string): Promise<Label[]> {
+    const labels = (await this.portForRepo(repo)?.repoLabels(repo)) ?? [];
+    this.known.set(repo, { ...this.knownFor(repo), labels });
+    return labels;
+  }
+
+  async assignable(repo: string): Promise<Person[]> {
+    const people = (await this.portForRepo(repo)?.assignable(repo)) ?? [];
+    this.known.set(repo, { ...this.knownFor(repo), people });
+    return people;
+  }
+
+  async milestones(repo: string): Promise<Milestone[]> {
+    const milestones = (await this.portForRepo(repo)?.milestones(repo)) ?? [];
+    this.known.set(repo, { ...this.knownFor(repo), milestones });
+    return milestones;
   }
 
   /** Re-runs the failed jobs of every failing Actions run on these PRs' heads. */

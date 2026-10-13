@@ -1,4 +1,12 @@
-import type { CheckLog, CheckRunView, DiffFile, MergeMethod } from "@pier/core/wire";
+import type {
+  CheckLog,
+  CheckRunView,
+  DiffFile,
+  Label,
+  MergeMethod,
+  Milestone,
+  Person,
+} from "@pier/core/wire";
 
 import type { RateWindow } from "./client";
 import type { PrDetail } from "./pr-detail";
@@ -6,6 +14,8 @@ import type { PrDoc, PrState, PrViewer, VolatileState } from "./pr-doc";
 
 // The only way the rest of the daemon talks to GitHub, one instance per account.
 // `LiveGitHub` implements it over HTTP; the stateful fake implements it in memory for tests.
+
+export type MetadataField = "labels" | "assignees" | "reviewers";
 
 export type SearchHit = { id: string; updatedAt: string; headRefOid: string; state: PrState };
 
@@ -113,6 +123,20 @@ export interface GitHubPort {
   mergeStatus(repo: string, number: number, uuid: string): Promise<MergeResult>;
   setAutoMerge(prId: string, method: MergeMethod | null, headOid: string): Promise<void>;
   updateBranch(prId: string, rebase: boolean, headOid: string): Promise<void>;
+  /** Adds and removes by name: label names, or user logins for assignees and reviewers. */
+  editMetadata(
+    repo: string,
+    number: number,
+    field: MetadataField,
+    change: { add: string[]; remove: string[] },
+  ): Promise<void>;
+  setMilestone(repo: string, number: number, milestone: number | null): Promise<void>;
+  setDraft(prId: string, draft: boolean): Promise<void>;
+  setOpen(prId: string, open: boolean): Promise<void>;
+  repoLabels(repo: string): Promise<Label[]>;
+  /** Who can be assigned, which is also who can be asked to review. */
+  assignable(repo: string): Promise<Person[]>;
+  milestones(repo: string): Promise<Milestone[]>;
   /** When a GitHub release was published, or null if the tag has no release. */
   releaseDate(repo: string, tag: string): Promise<string | null>;
   rates(): { graphql: RateWindow | null; core: RateWindow | null };
