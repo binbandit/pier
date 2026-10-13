@@ -301,6 +301,27 @@ export const PrDetailQuery = graphql(`
         viewerCanUpdate
         locked
         activeLockReason
+        headChecks: commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun {
+                      name
+                      isRequired(pullRequestId: $id)
+                    }
+                    ... on StatusContext {
+                      context
+                      isRequired(pullRequestId: $id)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
         closingIssuesReferences(first: 10) {
           nodes {
             number

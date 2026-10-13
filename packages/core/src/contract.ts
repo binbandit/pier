@@ -1,9 +1,10 @@
 import { type } from "arktype";
 
 import type {
+  Annotation,
   AppStatus,
   CheckLog,
-  CheckRunView,
+  ChecksView,
   FlightItem,
   GroupView,
   Label,
@@ -59,7 +60,16 @@ export const inputs = {
   comment: type({ prId: "string", body: "string > 0" }),
   checks: type({ repo: "string", number: "number.integer > 0" }),
   checkLog: type({ repo: "string", jobId: "number.integer > 0" }),
-  rerunFailed: type({ prIds: "string[] > 0" }),
+  rerunFailed: type({ prIds: "string[] > 0", "debug?": "boolean" }),
+  annotations: type({ repo: "string", number: "number.integer > 0" }),
+  runAction: type({
+    prId: "string",
+    action: "'rerun-all' | 'rerun-job' | 'cancel-run' | 'approve-run' | 'approve-deployment'",
+    "runId?": "number.integer > 0",
+    "jobId?": "number.integer > 0",
+    "environmentIds?": "number.integer[]",
+    "debug?": "boolean",
+  }),
   runway: type({ repo: "string", number: "number.integer > 0" }),
   merge: type({
     prId: "string",
@@ -146,9 +156,11 @@ export type Outputs = {
   resolveThread: { commandIds: string[] };
   setViewed: { commandIds: string[] };
   comment: { commandIds: string[] };
-  checks: CheckRunView[];
+  checks: ChecksView;
   checkLog: CheckLog | null;
   rerunFailed: { commandIds: string[]; runs: number };
+  annotations: Annotation[];
+  runAction: { commandIds: string[] };
   runway: Runway | null;
   merge: { commandIds: string[] };
   setAutoMerge: { commandIds: string[] };

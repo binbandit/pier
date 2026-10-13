@@ -1,4 +1,5 @@
 import { GitHubError, type RateWindow } from "@/github/client";
+import { byStep, parseJobLog } from "@/github/job-log";
 import type {
   GitHubPort,
   MergeInfo,
@@ -14,8 +15,10 @@ import type {
 import type { PrDetail } from "@/github/pr-detail";
 import type { PrDoc, PrViewer, VolatileState } from "@/github/pr-doc";
 import type {
+  Annotation,
   CheckLog,
   CheckRunView,
+  ChecksView,
   CommentSubject,
   DiffFile,
   Label,
@@ -31,6 +34,7 @@ import type {
   Revision,
   SuggestedReviewer,
   TimelineEntry,
+  WorkflowRunView,
 } from "@pier/core/wire";
 
 import { jobLogLines } from "./samples";
@@ -284,20 +288,64 @@ export class FakeGitHub implements GitHubPort {
     });
   }
 
-  checkRuns(repo: string, oid: string): Promise<CheckRunView[]> {
-    return this.call("checkRuns", "core", () => {
+  /** Check runs as GitHub's Actions jobs, grouped into their workflow runs; no statuses or deployments. */
+  checks(repo: string, oid: string): Promise<ChecksView> {
+    return this.call("checks", "core", () => {
       if (!this.canSeeRepo(repo)) throw new GitHubError("404 Not Found", "not-found", 404);
-      return this.world.checksAt(repo, oid).map((run) => ({
+      const jobs = this.world.checksAt(repo, oid);
+      const runs = jobs.map((run): CheckRunView => ({
         id: run.id,
         name: run.name,
         state: run.state,
+        kind: "check",
         jobId: run.id,
         runId: run.runId,
         url: jobUrl(repo, run.runId, run.id),
+        summary: null,
         startedAt: run.startedAt,
         completedAt: run.completedAt,
+        // Every failed job points at the code it failed on, as linters and test reporters do.
+        annotations: run.state === "failure" ? 1 : 0,
       }));
+      const workflows = [...Map.groupBy(jobs, (job) => job.runId)].map(
+        ([runId, group]): WorkflowRunView => ({
+          id: runId,
+          name: "CI",
+          state: group.some((j) => j.state === "failure")
+            ? "failure"
+            : group.some((j) => j.state === "pending")
+              ? "pending"
+              : "success",
+          needsApproval: false,
+          waitingOn: [],
+          url: `https://github.com/${repo}/actions/runs/${runId}`,
+        }),
+      );
+      return { runs, workflows, deployments: [] };
     });
+  }
+
+  annotations(repo: string, runs: { id: number; name: string }[]): Promise<Annotation[]> {
+    return this.call("annotations", "core", () =>
+      runs.flatMap((wanted): Annotation[] => {
+        const found = this.world.checkRun(repo, (run) => run.id === wanted.id);
+        if (!found || found.run.state !== "failure") return [];
+        const file = found.pr.files.find((f) => f.additions > 0);
+        const line = file ? firstAddedLine(file.patch) : null;
+        if (!file || line === null) return [];
+        return [
+          {
+            check: wanted.name,
+            path: file.path,
+            startLine: line,
+            endLine: line,
+            level: "failure",
+            title: `${wanted.name} failed here`,
+            message: "Expected the new behaviour; got the old one.",
+          },
+        ];
+      }),
+    );
   }
 
   jobLog(repo: string, jobId: number): Promise<CheckLog | null> {
@@ -307,21 +355,52 @@ export class FakeGitHub implements GitHubPort {
         : null;
       // Logs of a job that is still running aren't served yet.
       if (!run || run.state === "pending") return null;
-      const lines = jobLogLines(run.name, run.state === "failure");
+      const { sections, truncated } = parseJobLog(
+        jobLogLines(run.name, run.state === "failure").join("\n"),
+      );
+      const steps = [
+        { name: "Set up job", state: "success" as const },
+        ...sections.map((s) => ({ name: s.title, state: run.state })),
+      ];
       return {
-        lines: lines.map((line) =>
-          line.replace("##[error]", "").replace(/^##\[(group|endgroup|warning|notice)\]/, ""),
-        ),
-        errors: lines.flatMap((line, i) => (line.includes("##[error]") ? [i] : [])),
+        steps: byStep(steps, sections),
+        truncated,
         url: jobUrl(repo, run.runId, run.id),
       };
     });
   }
 
-  rerunFailedJobs(repo: string, runId: number): Promise<void> {
+  rerunFailedJobs(repo: string, runId: number, _debug: boolean): Promise<void> {
     return this.call("rerunFailedJobs", "core", () =>
-      this.world.rerunFailedJobs(repo, runId, this.login),
+      this.world.rerun(repo, this.login, { runId, only: "failed" }),
     );
+  }
+
+  rerunRun(repo: string, runId: number, _debug: boolean): Promise<void> {
+    return this.call("rerunRun", "core", () =>
+      this.world.rerun(repo, this.login, { runId, only: "all" }),
+    );
+  }
+
+  rerunJob(repo: string, jobId: number, _debug: boolean): Promise<void> {
+    return this.call("rerunJob", "core", () => this.world.rerun(repo, this.login, { jobId }));
+  }
+
+  cancelRun(repo: string, runId: number): Promise<void> {
+    return this.call("cancelRun", "core", () => this.world.cancelRun(repo, runId, this.login));
+  }
+
+  /** The fake has no held runs, so there's never one to approve. */
+  approveRun(_repo: string, _runId: number): Promise<void> {
+    return this.call("approveRun", "core", () => {
+      throw new GitHubError("403 This run is not waiting for approval", "forbidden", 403);
+    });
+  }
+
+  approveDeployment(_repo: string, _runId: number, _environmentIds: number[]): Promise<void> {
+    return this.call("approveDeployment", "core", () => {
+      throw new GitHubError("422 No pending deployments", "validation", 422);
+    });
   }
 
   mergeInfo(prId: string): Promise<MergeInfo | null> {
@@ -849,6 +928,7 @@ export class FakeGitHub implements GitHubPort {
       reactions: reactionsOf(pr.reactions, this.login),
       canEdit: world.canEditWriting(pr, pr.author, this.login),
       linkedIssues: [],
+      requiredChecks: pr.repo.checkNames.filter((name) => name !== "e2e"),
       locked: pr.locked,
       viewerLatestReview: latest
         ? { state: latest.state, commitOid: latest.commitOid, submittedAt: latest.submittedAt }
@@ -929,4 +1009,16 @@ function reactionsOf(reactions: Map<ReactionContent, Set<string>>, viewer: strin
     const who = reactions.get(content);
     return who && who.size > 0 ? [{ content, count: who.size, mine: who.has(viewer) }] : [];
   });
+}
+
+/** The new-side line number of a patch's first added line. */
+function firstAddedLine(patch: string | null): number | null {
+  let line = 0;
+  for (const text of (patch ?? "").split("\n")) {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(text);
+    if (hunk) line = Number(hunk[1]) - 1;
+    else if (text.startsWith("+")) return line + 1;
+    else if (!text.startsWith("-")) line++;
+  }
+  return null;
 }

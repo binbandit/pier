@@ -50,14 +50,14 @@ export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export async function rerun(prIds: string[]): Promise<void> {
+export async function rerun(prIds: string[], debug = false): Promise<void> {
   try {
-    const { runs } = await rpc("rerunFailed", { prIds });
+    const { runs } = await rpc("rerunFailed", { prIds, debug });
     useUi.getState().toast({
       text:
         runs === 0
           ? "Nothing failed to re-run"
-          : `Re-running ${runs === 1 ? "1 failed run" : `${runs} failed runs`}`,
+          : `Re-running ${runs === 1 ? "1 failed run" : `${runs} failed runs`}${debug ? " with debug logging" : ""}`,
       tone: runs === 0 ? "neutral" : "ok",
     });
   } catch (error) {

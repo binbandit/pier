@@ -48,7 +48,16 @@ export function createHandlers(app: App): Handlers {
     comment: ({ prId, body }) => ({ commandIds: app.review.comment(prId, body) }),
     checks: ({ repo, number }) => app.review.checks(repo, number),
     checkLog: ({ repo, jobId }) => app.review.checkLog(repo, jobId),
-    rerunFailed: ({ prIds }) => app.review.rerunFailed(prIds),
+    rerunFailed: ({ prIds, debug }) => app.review.rerunFailed(prIds, debug ?? false),
+    annotations: ({ repo, number }) => app.review.annotations(repo, number),
+    runAction: ({ prId, action, runId, jobId, environmentIds, debug }) => ({
+      commandIds: app.review.runAction(prId, action, {
+        ...(runId !== undefined ? { runId } : {}),
+        ...(jobId !== undefined ? { jobId } : {}),
+        ...(environmentIds !== undefined ? { environmentIds } : {}),
+        ...(debug !== undefined ? { debug } : {}),
+      }),
+    }),
     runway: ({ repo, number }) => app.review.runway(repo, number),
     merge: ({ prId, method, headline, body }) => ({
       commandIds: app.review.merge(prId, method, headline, body),

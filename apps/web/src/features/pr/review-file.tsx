@@ -9,7 +9,15 @@ import { codeBetween, patchLines } from "@/diff/lines";
 import { errorText } from "@/features/actions";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
-import type { DiffFile, Draft, PendingReview, Side, Thread, ViewedState } from "@pier/core/wire";
+import type {
+  Annotation,
+  DiffFile,
+  Draft,
+  PendingReview,
+  Side,
+  Thread,
+  ViewedState,
+} from "@pier/core/wire";
 
 import { Composer } from "./composer";
 import { DraftCard, PendingCard, ThreadCard } from "./thread";
@@ -30,6 +38,7 @@ type Note =
   | { kind: "thread"; thread: Thread }
   | { kind: "draft"; draft: Draft }
   | { kind: "pending"; comment: PendingComment }
+  | { kind: "annotation"; annotation: Annotation }
   | { kind: "new"; comment: LineComment };
 
 type Props = {
@@ -40,6 +49,8 @@ type Props = {
   drafts: Draft[];
   /** Comments in a review you started on github.com, on this file. */
   pending: PendingComment[];
+  /** What CI's checks pointed at in this file. */
+  annotations: Annotation[];
   viewed: ViewedState;
   current: boolean;
   focusedThread: string | null;
@@ -57,6 +68,7 @@ export function ReviewFile(props: Props) {
     threads,
     drafts,
     pending,
+    annotations,
     viewed,
     current,
     focusedThread,
@@ -90,6 +102,7 @@ export function ReviewFile(props: Props) {
   // GitHub doesn't say which side a pending comment is on; nearly all are on the new code.
   const placedPending = pending.filter((c) => c.line !== null && visible("RIGHT", c.line));
   const otherPending = pending.filter((c) => !placedPending.includes(c));
+  const placedAnnotations = annotations.filter((a) => visible("RIGHT", a.endLine));
   const composingHere = composing?.path === file.path ? composing : null;
   // Rebuilt only when what's on the lines actually changes; a new array on every refetch makes the
   // renderer redraw (and on first mount, sometimes not draw at all).
@@ -99,6 +112,7 @@ export function ReviewFile(props: Props) {
     ),
     ...placedDrafts.map((d) => `d:${d.id}:${d.line}:${d.body.length}`),
     ...placedPending.map((c) => `p:${c.id}:${c.line}`),
+    ...placedAnnotations.map((a) => `a:${a.check}:${a.endLine}:${a.message.length}`),
     composingHere?.kind === "lines" ? `n:${composingHere.side}:${composingHere.end}` : "",
   ].join("|");
   const notes = useMemo(
@@ -107,6 +121,7 @@ export function ReviewFile(props: Props) {
         placed,
         placedDrafts,
         placedPending,
+        placedAnnotations,
         composingHere?.kind === "lines" ? composingHere : null,
       ),
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- notesKey captures every input that matters
@@ -268,6 +283,8 @@ export function ReviewFile(props: Props) {
               if (note.kind === "draft")
                 return <DraftCard prId={prId} draft={note.draft} headOid={headOid} />;
               if (note.kind === "pending") return <PendingCard comment={note.comment} />;
+              if (note.kind === "annotation")
+                return <AnnotationCard annotation={note.annotation} />;
               const source = codeBetween(
                 lines,
                 note.comment.side,
@@ -365,6 +382,7 @@ function buildNotes(
   placed: Thread[],
   drafts: LineDraft[],
   pending: PendingComment[],
+  annotations: Annotation[],
   composing: LineComment | null,
 ): DiffLineAnnotation<Note>[] {
   return [
@@ -383,6 +401,11 @@ function buildNotes(
       lineNumber: comment.line ?? 0,
       metadata: { kind: "pending" as const, comment },
     })),
+    ...annotations.map((annotation) => ({
+      side: sideOf("RIGHT"),
+      lineNumber: annotation.endLine,
+      metadata: { kind: "annotation" as const, annotation },
+    })),
     ...(composing
       ? [
           {
@@ -393,6 +416,28 @@ function buildNotes(
         ]
       : []),
   ];
+}
+
+const LEVEL_TONE: Record<Annotation["level"], string> = {
+  failure: "border-bad/50 text-bad",
+  warning: "border-warn/50 text-warn",
+  notice: "border-info/50 text-info",
+};
+
+/** What a check said about this line, the way GitHub shows annotations in the diff. */
+function AnnotationCard({ annotation }: { annotation: Annotation }) {
+  return (
+    <div
+      className={clsx(
+        "my-1 max-w-[820px] rounded-sm border-l-2 bg-canvas px-3 py-1.5 font-ui text-meta",
+        LEVEL_TONE[annotation.level],
+      )}
+    >
+      <span className="font-medium">{annotation.check}</span>
+      {annotation.title && <span className="text-muted">: {annotation.title}</span>}
+      <p className="mt-0.5 whitespace-pre-wrap text-fg">{annotation.message}</p>
+    </div>
+  );
 }
 
 function sideOf(side: Side): "additions" | "deletions" {

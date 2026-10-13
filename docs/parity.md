@@ -95,13 +95,13 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | ID | GitHub behaviour | API | Milestone | Status |
 |---|---|---|---|---|
 | CHECKS-ROLLUP | Overall state and each check | `statusCheckRollup` | M1a | sandbox |
-| CHECKS-REQUIRED | Which checks are required | `isRequired` | I2 | - |
-| CHECKS-LOGS | Step logs, failing step first | Actions jobs logs | I2 | - |
-| CHECKS-ANNOTATIONS | Annotations inline in the diff | check run annotations | I2 | - |
-| CHECKS-RERUN | Re-run failed / all / one job, with debug logging | Actions re-run APIs | I2 | - |
-| CHECKS-CANCEL | Cancel a run | Actions cancel | I2 | - |
-| CHECKS-FORK-APPROVE | Approve workflows from first-time contributors | Actions approve | I2 | - |
-| DEPLOY-ENV | Deployments and environment approvals | deployments API | I2 | - |
+| CHECKS-REQUIRED | Which checks are required | `isRequired` on the head's contexts (the sandbox's private repos can't have required checks, so shown in fake mode only) | I2 | built |
+| CHECKS-LOGS | Step logs, failing step first (plus commit statuses from non-Actions CI) | jobs API steps + job log split by `##[group]`, colours stripped | I2 | sandbox |
+| CHECKS-ANNOTATIONS | Annotations inline in the diff | check-run annotations: on their line in the diff, or under the check when the file isn't in the PR | I2 | sandbox |
+| CHECKS-RERUN | Re-run failed / all / one job, with debug logging | Actions re-run APIs | I2 | sandbox |
+| CHECKS-CANCEL | Cancel a run | Actions cancel | I2 | sandbox |
+| CHECKS-FORK-APPROVE | Approve workflows from first-time contributors | `POST /actions/runs/:id/approve` (needs a fork contributor on a public repo to test live) | I2 | built |
+| DEPLOY-ENV | Deployments and environment approvals | deployments + statuses (sandbox); environment approvals via `pending_deployments` (need environment reviewers, not on the free plan) | I2 | built |
 
 ## E. Merging
 

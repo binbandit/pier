@@ -5,10 +5,10 @@ import { clsx } from "clsx";
 import { CircleDot, Lock, Milestone, UserRound, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { errorText, markDone, openOnGitHub, rerun } from "@/features/actions";
+import { errorText, markDone, openOnGitHub } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
 import { plural, since } from "@/lib/format";
-import { q, rpc } from "@/lib/rpc";
+import { q, qLive, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
@@ -116,6 +116,11 @@ function Loaded({ pr }: { pr: PrView }) {
   const threadsByPath = Map.groupBy(pr.threads, (t) => t.path);
   const draftsByPath = Map.groupBy(pr.drafts, (d) => d.path);
   const pendingByPath = Map.groupBy(pr.pendingReview?.comments ?? [], (c) => c.path);
+  // What CI pointed at in the code, asked again whenever the head or its checks move.
+  const { data: annotations = [] } = useQuery(
+    qLive("annotations", { repo: pr.repo, number: pr.number }, pr.headRefOid, pr.checks.state),
+  );
+  const annotationsByPath = Map.groupBy(annotations, (a) => a.path);
   const threadCounts = new Map([...threadsByPath].map(([path, list]) => [path, list.length]));
   const openThreads = pr.threads.filter((t) => !t.resolved);
   const currentIndex = Math.max(
@@ -401,14 +406,6 @@ function Loaded({ pr }: { pr: PrView }) {
       run: () => void setOpen(pr.state !== "OPEN"),
     },
     {
-      id: "pr.rerun",
-      title: "Re-run failed checks",
-      keys: ["f r"],
-      scope: "surface",
-      group: "Checks",
-      run: () => void rerun([pr.id]),
-    },
-    {
       id: "pr.github",
       title: "Open on github.com",
       keys: ["shift+o"],
@@ -491,6 +488,7 @@ function Loaded({ pr }: { pr: PrView }) {
                     threads={threadsByPath.get(file.path) ?? []}
                     drafts={draftsByPath.get(file.path) ?? []}
                     pending={pendingByPath.get(file.path) ?? []}
+                    annotations={annotationsByPath.get(file.path) ?? []}
                     viewed={pr.viewed[file.path] ?? "unviewed"}
                     current={file.path === ordered[currentIndex]?.path && current !== null}
                     focusedThread={focusedThread}

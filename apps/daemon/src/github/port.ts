@@ -1,6 +1,7 @@
 import type {
+  Annotation,
   CheckLog,
-  CheckRunView,
+  ChecksView,
   CommentSubject,
   DiffFile,
   Label,
@@ -125,11 +126,20 @@ export interface GitHubPort {
   setViewed(prId: string, path: string, viewed: boolean): Promise<void>;
   /** Recent conversation and thread comments, for checking whether an interrupted post landed. */
   recentComments(prId: string): Promise<{ id: string; body: string; author: string | null }[]>;
-  /** Check runs on a commit, with their Actions job and run ids where they have them. */
-  checkRuns(repo: string, oid: string): Promise<CheckRunView[]>;
-  /** The tail of an Actions job's log. */
+  /** Everything CI reports on a commit: check runs, commit statuses, workflow runs, deployments. */
+  checks(repo: string, oid: string): Promise<ChecksView>;
+  /** What these check runs left on the code. */
+  annotations(repo: string, runs: { id: number; name: string }[]): Promise<Annotation[]>;
+  /** An Actions job's steps and log. */
   jobLog(repo: string, jobId: number): Promise<CheckLog | null>;
-  rerunFailedJobs(repo: string, runId: number): Promise<void>;
+  rerunFailedJobs(repo: string, runId: number, debug: boolean): Promise<void>;
+  rerunRun(repo: string, runId: number, debug: boolean): Promise<void>;
+  rerunJob(repo: string, jobId: number, debug: boolean): Promise<void>;
+  cancelRun(repo: string, runId: number): Promise<void>;
+  /** Lets a workflow run from a first-time or fork contributor go ahead. */
+  approveRun(repo: string, runId: number): Promise<void>;
+  /** Approves a run's deployment to these environments. */
+  approveDeployment(repo: string, runId: number, environmentIds: number[]): Promise<void>;
   mergeInfo(prId: string): Promise<MergeInfo | null>;
   /** Merges through the async merge API (the only one that handles stacks and queues). */
   merge(

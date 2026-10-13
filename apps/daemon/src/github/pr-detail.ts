@@ -24,6 +24,8 @@ export type PrDetail = {
   canEdit: boolean;
   locked: string | null;
   linkedIssues: LinkedIssue[];
+  /** Names of the head's checks that must pass to merge. */
+  requiredChecks: string[];
   viewerLatestReview: {
     state: string;
     commitOid: string | null;
@@ -194,6 +196,12 @@ export function toPrDetail(node: Node): PrDetail {
     bodyHTML: node.bodyHTML,
     reactions: reactions(node.reactionGroups),
     canEdit: node.viewerCanUpdate,
+    requiredChecks: (
+      node.headChecks.nodes?.[0]?.commit.statusCheckRollup?.contexts.nodes ?? []
+    ).flatMap((ctx) => {
+      if (!ctx || !("isRequired" in ctx) || !ctx.isRequired) return [];
+      return [ctx.__typename === "CheckRun" ? ctx.name : ctx.context];
+    }),
     linkedIssues: (node.closingIssuesReferences?.nodes ?? []).flatMap((issue) =>
       issue
         ? [

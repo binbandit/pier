@@ -785,18 +785,33 @@ export class FakeWorld {
     return null;
   }
 
-  /** "Re-run failed jobs": the run's failures go pending, then finish as `rerunOutcome` says. */
-  rerunFailedJobs(repo: string, runId: number, by: string): void {
-    const found = this.checkRun(repo, (run) => run.runId === runId);
+  /**
+   * Re-runs a workflow run's failed jobs, all its jobs, or one job: each goes pending as a new
+   * attempt, then finishes as `rerunOutcome` says.
+   */
+  rerun(
+    repo: string,
+    by: string,
+    target: { runId: number; only: "failed" | "all" } | { jobId: number },
+  ): void {
+    const found = this.checkRun(repo, (run) =>
+      "jobId" in target ? run.id === target.jobId : run.runId === target.runId,
+    );
     if (!found || this.permission(found.pr.repo, by) === null)
       throw new GitHubError("404 Not Found", "not-found", 404);
     if (!this.canWrite(found.pr.repo, by))
       throw new GitHubError("403 Must have admin rights to Repository.", "forbidden", 403);
-    const failed = found.runs.filter((run) => run.runId === runId && run.state === "failure");
-    if (failed.length === 0)
+    const jobs =
+      "jobId" in target
+        ? [found.run]
+        : found.runs.filter(
+            (run) =>
+              run.runId === target.runId && (target.only === "all" || run.state === "failure"),
+          );
+    if (jobs.length === 0 || jobs.some((job) => job.state === "pending"))
       throw new GitHubError("403 This workflow run cannot be retried", "forbidden", 403);
-    this.reruns.push({ repo, runId, by, at: this.iso() });
-    for (const run of failed) {
+    this.reruns.push({ repo, runId: found.run.runId, by, at: this.iso() });
+    for (const run of jobs) {
       // A re-run is a new attempt: new jobs, same workflow run.
       run.id = this.nextJobId++;
       run.state = "pending";
@@ -804,9 +819,24 @@ export class FakeWorld {
       run.completedAt = null;
     }
     this.schedule(this.options.ciDurationMs, () => {
-      for (const run of failed)
+      for (const run of jobs)
         if (run.state === "pending") this.finish(run, this.options.rerunOutcome);
     });
+  }
+
+  rerunFailedJobs(repo: string, runId: number, by: string): void {
+    this.rerun(repo, by, { runId, only: "failed" });
+  }
+
+  /** Cancelling stops the run's unfinished jobs, which then report as failed. */
+  cancelRun(repo: string, runId: number, by: string): void {
+    const found = this.checkRun(repo, (run) => run.runId === runId);
+    if (!found || !this.canWrite(found.pr.repo, by))
+      throw new GitHubError("404 Not Found", "not-found", 404);
+    const running = found.runs.filter((run) => run.runId === runId && run.state === "pending");
+    if (running.length === 0)
+      throw new GitHubError("409 Cannot cancel a workflow run that is completed.", "conflict", 409);
+    for (const run of running) this.finish(run, "failure");
   }
 
   merge(prId: string, actor: string): void {

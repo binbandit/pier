@@ -127,7 +127,12 @@ export type CommandKind =
   | "minimize"
   | "edit-pr"
   | "dismiss-review"
-  | "lock";
+  | "lock"
+  | "rerun-all"
+  | "rerun-job"
+  | "cancel-run"
+  | "approve-run"
+  | "approve-deployment";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -469,6 +474,8 @@ export type PrView = {
   milestone: Milestone | null;
   /** Issues this PR closes when it merges. */
   linkedIssues: LinkedIssue[];
+  /** Names of checks branch rules require to pass before merging. */
+  requiredChecks: string[];
   account: string;
   approvedByYou: boolean;
   /** The commit your last review was against, if you've reviewed before. */
@@ -523,19 +530,76 @@ export type CheckRunView = {
   id: number;
   name: string;
   state: CheckRun["state"];
+  /** A check run (Actions or an app) or a commit status (most external CI). */
+  kind: "check" | "status";
   /** The Actions job behind this check, when it is one (for logs and re-runs). */
   jobId: number | null;
   runId: number | null;
   url: string;
+  /** A commit status's one-line description, or a check run's title. */
+  summary: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  /** Annotations the check left on the code. */
+  annotations: number;
 };
 
-export type CheckLog = {
-  /** The last lines of the job's log, timestamps stripped. */
+/** An Actions workflow run on the head, for what's done to a run as a whole. */
+export type WorkflowRunView = {
+  id: number;
+  name: string;
+  state: CheckRun["state"];
+  /** Held until someone with write access approves it (a first-time or fork contributor). */
+  needsApproval: boolean;
+  /** Environments it's waiting on a reviewer for, and whether you can approve them. */
+  waitingOn: { id: number; name: string; canApprove: boolean }[];
+  url: string;
+};
+
+export type DeploymentView = {
+  id: number;
+  environment: string;
+  state: string;
+  url: string | null;
+  at: string;
+};
+
+/** Everything CI says about the head: checks, statuses, runs and deployments. */
+export type ChecksView = {
+  runs: CheckRunView[];
+  workflows: WorkflowRunView[];
+  deployments: DeploymentView[];
+};
+
+export type Annotation = {
+  check: string;
+  path: string;
+  startLine: number;
+  endLine: number;
+  level: "notice" | "warning" | "failure";
+  title: string | null;
+  message: string;
+};
+
+/** One step of a job, with the parts of the log it wrote (an action's own groups nest here). */
+export type StepLog = {
+  name: string;
+  state: CheckRun["state"];
+  sections: LogSection[];
+};
+
+/** A slice of a job's log under one `##[group]` heading (a step, or part of one). */
+export type LogSection = {
+  title: string;
   lines: string[];
   /** Indexes into `lines` that GitHub marked as errors. */
   errors: number[];
+};
+
+export type CheckLog = {
+  steps: StepLog[];
+  /** The log was longer than pier keeps; the earliest lines were left out. */
+  truncated: boolean;
   url: string;
 };
 

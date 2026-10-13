@@ -36,8 +36,13 @@ export type CommandPayload = {
   path?: string;
   /** The bumps an approval decided on, so a waiting one can check a rebase didn't change them. */
   bumpKeys?: string[];
-  /** The Actions run to re-run the failed jobs of. */
+  /** The Actions run (or job) to re-run, cancel or approve. */
   runId?: number;
+  jobId?: number;
+  /** Environments whose deployment is being approved. */
+  environmentIds?: number[];
+  /** Re-run with debug logging on. */
+  debug?: boolean;
   method?: MergeMethod;
   /** Merge commit title; `body` is its message. */
   headline?: string;
@@ -605,7 +610,20 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
     case "notification-done":
       return port.markNotificationDone(payload.threadId ?? "");
     case "rerun-failed":
-      return port.rerunFailedJobs(command.repo, payload.runId ?? 0);
+      return port.rerunFailedJobs(command.repo, payload.runId ?? 0, payload.debug ?? false);
+    case "rerun-all":
+      return port.rerunRun(command.repo, payload.runId ?? 0, payload.debug ?? false);
+    case "rerun-job":
+      return port.rerunJob(command.repo, payload.jobId ?? 0, payload.debug ?? false);
+    case "cancel-run":
+      // A run that finished before the cancel arrived has nothing left to stop.
+      return port.cancelRun(command.repo, payload.runId ?? 0).catch((error: unknown) => {
+        if (!(error instanceof GitHubError && error.kind === "conflict")) throw error;
+      });
+    case "approve-run":
+      return port.approveRun(command.repo, payload.runId ?? 0);
+    case "approve-deployment":
+      return port.approveDeployment(command.repo, payload.runId ?? 0, payload.environmentIds ?? []);
     case "merge":
       return mergeAndWait(port, command);
     case "auto-merge":

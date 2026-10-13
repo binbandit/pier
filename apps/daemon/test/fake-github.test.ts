@@ -359,23 +359,25 @@ describe("checks", () => {
     const repo = pr.repo.fullName;
     const head = world.head(pr);
 
-    const failing = (await you.checkRuns(repo, head)).find((run) => run.state === "failure");
+    const failing = (await you.checks(repo, head)).runs.find((run) => run.state === "failure");
     expect(failing?.jobId).toBeNumber();
     expect(failing?.runId).toBeNumber();
 
     const log = await you.jobLog(repo, failing?.jobId ?? 0);
-    expect(log?.errors).toHaveLength(1);
-    expect(log?.lines[log.errors[0] ?? -1]).toContain("Process completed with exit code");
-    expect(log?.lines.some((l) => l.includes("##["))).toBe(false);
+    const sections = log?.steps.flatMap((step) => step.sections) ?? [];
+    const failed = sections.find((section) => section.errors.length > 0);
+    expect(failed?.errors).toHaveLength(1);
+    expect(failed?.lines[failed.errors[0] ?? -1]).toContain("Process completed with exit code");
+    expect(sections.flatMap((s) => s.lines).some((l) => l.includes("##["))).toBe(false);
     expect(await you.jobLog(repo, 1)).toBeNull();
 
-    await you.rerunFailedJobs(repo, failing?.runId ?? 0);
+    await you.rerunFailedJobs(repo, failing?.runId ?? 0, false);
     expect(world.reruns).toEqual([
       { repo, runId: failing?.runId ?? 0, by: "binbandit", at: world.iso() },
     ]);
     expect((await you.hydrate([pr.id]))[0]?.doc.checks.state).toBe("pending");
     world.advance(world.options.ciDurationMs);
-    expect((await you.checkRuns(repo, head)).map((run) => run.state)).toEqual([
+    expect((await you.checks(repo, head)).runs.map((run) => run.state)).toEqual([
       "success",
       "success",
       "success",

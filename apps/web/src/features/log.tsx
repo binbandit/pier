@@ -48,6 +48,11 @@ const KIND: Record<LogEntry["kind"], string> = {
   "edit-pr": "Edit PR",
   "dismiss-review": "Dismiss review",
   lock: "Lock",
+  "rerun-all": "Re-run all jobs",
+  "rerun-job": "Re-run job",
+  "cancel-run": "Cancel run",
+  "approve-run": "Approve workflow",
+  "approve-deployment": "Approve deployment",
 };
 
 export function Log() {

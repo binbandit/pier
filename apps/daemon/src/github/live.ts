@@ -1,8 +1,10 @@
 import type { components } from "@octokit/openapi-types";
 
 import type {
+  Annotation,
   CheckLog,
   CheckRunView,
+  ChecksView,
   CommentSubject,
   DiffFile,
   Label,
@@ -12,12 +14,15 @@ import type {
   MinimizeReason,
   Person,
   ReactionContent,
+  DeploymentView,
   Revision,
   SuggestedReviewer,
+  WorkflowRunView,
 } from "@pier/core/wire";
 
 import type { GitHubTransport, RestResponse } from "./client";
 import { GitHubError } from "./client";
+import { byStep, parseJobLog } from "./job-log";
 import {
   AddReactionMutation,
   AddReviewThreadMutation,
@@ -82,7 +87,6 @@ type RestFile = components["schemas"]["diff-entry"];
 
 const SEARCH_CAP = 1000;
 /** Lines of a failing job's log worth showing; the cause is almost always near the end. */
-const LOG_TAIL = 150;
 const HYDRATE_BATCH = 25;
 // 100 per query is allowed, but mergeability is computed on read and big batches hit GitHub's
 // 10-second limit (502). 50 keeps each sweep well under it for the same point cost.
@@ -361,54 +365,185 @@ export class LiveGitHub implements GitHubPort {
     );
   }
 
-  async checkRuns(repo: string, oid: string): Promise<CheckRunView[]> {
-    const response = await this.client.rest<{ check_runs: components["schemas"]["check-run"][] }>({
-      path: `/repos/${repo}/commits/${oid}/check-runs?per_page=100&filter=latest`,
-      cache: true,
-      priority: "interactive",
-    });
-    return response.data.check_runs.map((run) => {
-      // Actions checks link to their job: /owner/repo/actions/runs/<run>/job/<job>.
-      const ids = /\/actions\/runs\/(\d+)\/job\/(\d+)/.exec(run.details_url ?? run.html_url ?? "");
-      return {
-        id: Number(run.id),
-        name: run.name,
-        state: checkRunState(run.status, run.conclusion),
-        jobId: ids?.[2] ? Number(ids[2]) : null,
-        runId: ids?.[1] ? Number(ids[1]) : null,
-        url: run.html_url ?? run.details_url ?? "",
-        startedAt: run.started_at ?? null,
-        completedAt: run.completed_at ?? null,
-      };
-    });
+  async checks(repo: string, oid: string): Promise<ChecksView> {
+    type Run = components["schemas"]["check-run"];
+    type Workflow = components["schemas"]["workflow-run"];
+    const get = <T>(path: string) =>
+      this.client.rest<T>({ path, cache: true, priority: "interactive" }).then((r) => r.data);
+    const [checkRuns, status, workflows, deployments] = await Promise.all([
+      get<{ check_runs: Run[] }>(
+        `/repos/${repo}/commits/${oid}/check-runs?per_page=100&filter=latest`,
+      ),
+      get<components["schemas"]["combined-commit-status"]>(`/repos/${repo}/commits/${oid}/status`),
+      get<{ workflow_runs: Workflow[] }>(`/repos/${repo}/actions/runs?head_sha=${oid}&per_page=50`),
+      get<components["schemas"]["deployment"][]>(
+        `/repos/${repo}/deployments?sha=${oid}&per_page=10`,
+      ),
+    ]);
+
+    const runs: CheckRunView[] = [
+      ...checkRuns.check_runs.map((run): CheckRunView => {
+        // Actions checks link to their job: /owner/repo/actions/runs/<run>/job/<job>.
+        const ids = /\/actions\/runs\/(\d+)\/job\/(\d+)/.exec(
+          run.details_url ?? run.html_url ?? "",
+        );
+        return {
+          id: Number(run.id),
+          name: run.name,
+          state: checkRunState(run.status, run.conclusion),
+          kind: "check",
+          jobId: ids?.[2] ? Number(ids[2]) : null,
+          runId: ids?.[1] ? Number(ids[1]) : null,
+          url: run.html_url ?? run.details_url ?? "",
+          summary: run.output.title ?? null,
+          startedAt: run.started_at ?? null,
+          completedAt: run.completed_at ?? null,
+          annotations: run.output.annotations_count,
+        };
+      }),
+      ...status.statuses.map((s): CheckRunView => ({
+        id: s.id,
+        name: s.context,
+        state: s.state === "success" ? "success" : s.state === "pending" ? "pending" : "failure",
+        kind: "status",
+        jobId: null,
+        runId: null,
+        url: s.target_url ?? "",
+        summary: s.description ?? null,
+        startedAt: s.created_at,
+        completedAt: s.state === "pending" ? null : s.updated_at,
+        annotations: 0,
+      })),
+    ];
+
+    const views = await Promise.all(
+      workflows.workflow_runs.map(async (run): Promise<WorkflowRunView> => {
+        // A run waiting on an environment's reviewers says which, and whether you're one.
+        const waiting =
+          run.status === "waiting"
+            ? await get<components["schemas"]["pending-deployment"][]>(
+                `/repos/${repo}/actions/runs/${run.id}/pending_deployments`,
+              )
+            : [];
+        return {
+          id: Number(run.id),
+          name: run.name ?? run.display_title,
+          state: checkRunState(run.status ?? "queued", run.conclusion),
+          needsApproval: run.status === "action_required" || run.conclusion === "action_required",
+          waitingOn: waiting.flatMap((p) =>
+            p.environment.id && p.environment.name
+              ? [
+                  {
+                    id: Number(p.environment.id),
+                    name: p.environment.name,
+                    canApprove: p.current_user_can_approve,
+                  },
+                ]
+              : [],
+          ),
+          url: run.html_url,
+        };
+      }),
+    );
+
+    const deploymentViews = await Promise.all(
+      deployments.slice(0, 5).map(async (d): Promise<DeploymentView> => {
+        const [latest] = await get<components["schemas"]["deployment-status"][]>(
+          `/repos/${repo}/deployments/${d.id}/statuses?per_page=1`,
+        );
+        return {
+          id: Number(d.id),
+          environment: d.environment,
+          state: latest?.state ?? "pending",
+          url: latest?.environment_url || null,
+          at: latest?.created_at ?? d.created_at,
+        };
+      }),
+    );
+    return { runs, workflows: views, deployments: deploymentViews };
+  }
+
+  async annotations(repo: string, runs: { id: number; name: string }[]): Promise<Annotation[]> {
+    const lists = await Promise.all(
+      runs.map(async (run) => {
+        const items = await this.paged<components["schemas"]["check-annotation"]>(
+          `/repos/${repo}/check-runs/${run.id}/annotations`,
+        );
+        return items.map((a): Annotation => ({
+          check: run.name,
+          path: a.path,
+          startLine: a.start_line,
+          endLine: a.end_line,
+          level:
+            a.annotation_level === "failure" || a.annotation_level === "warning"
+              ? a.annotation_level
+              : "notice",
+          title: a.title ?? null,
+          message: a.message ?? "",
+        }));
+      }),
+    );
+    return lists.flat();
   }
 
   async jobLog(repo: string, jobId: number): Promise<CheckLog | null> {
-    // GitHub answers with a redirect to a short-lived storage URL, which must be fetched without
-    // our token (it would be sent to a third-party host otherwise).
-    const target = await this.client.location(`/repos/${repo}/actions/jobs/${jobId}/logs`);
+    const [job, target] = await Promise.all([
+      this.client
+        .rest<components["schemas"]["job"]>({
+          path: `/repos/${repo}/actions/jobs/${jobId}`,
+          priority: "interactive",
+        })
+        .then((r) => r.data),
+      // GitHub answers with a redirect to a short-lived storage URL, which must be fetched
+      // without our token (it would be sent to a third-party host otherwise).
+      this.client.location(`/repos/${repo}/actions/jobs/${jobId}/logs`),
+    ]);
     if (!target) return null;
-    const response = await fetch(target, { signal: AbortSignal.timeout(20_000) });
+    const response = await fetch(target, { signal: AbortSignal.timeout(30_000) });
     if (!response.ok) return null;
-    const all = (await response.text())
-      .split("\n")
-      .map((line) => line.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z ?/, ""));
-    const lines = all.slice(-LOG_TAIL);
-    const errors = lines.flatMap((line, i) => (line.includes("##[error]") ? [i] : []));
+    const { sections, truncated } = parseJobLog(await response.text());
+    const steps = (job.steps ?? []).map((step) => ({
+      name: step.name,
+      state: checkRunState(step.status, step.conclusion),
+    }));
     return {
-      lines: lines.map((line) =>
-        line.replace("##[error]", "").replace(/^##\[(group|endgroup|warning|notice)\]/, ""),
-      ),
-      errors,
-      url: `https://github.com/${repo}/actions/runs/${jobId}`,
+      steps: byStep(steps, sections),
+      truncated,
+      url: job.html_url ?? `https://github.com/${repo}/actions/runs/${job.run_id}`,
     };
   }
 
-  async rerunFailedJobs(repo: string, runId: number): Promise<void> {
-    await this.client.rest({
-      method: "POST",
-      path: `/repos/${repo}/actions/runs/${runId}/rerun-failed-jobs`,
-      priority: "interactive",
+  async rerunFailedJobs(repo: string, runId: number, debug: boolean): Promise<void> {
+    await this.write("POST", `/repos/${repo}/actions/runs/${runId}/rerun-failed-jobs`, {
+      enable_debug_logging: debug,
+    });
+  }
+
+  async rerunRun(repo: string, runId: number, debug: boolean): Promise<void> {
+    await this.write("POST", `/repos/${repo}/actions/runs/${runId}/rerun`, {
+      enable_debug_logging: debug,
+    });
+  }
+
+  async rerunJob(repo: string, jobId: number, debug: boolean): Promise<void> {
+    await this.write("POST", `/repos/${repo}/actions/jobs/${jobId}/rerun`, {
+      enable_debug_logging: debug,
+    });
+  }
+
+  async cancelRun(repo: string, runId: number): Promise<void> {
+    await this.write("POST", `/repos/${repo}/actions/runs/${runId}/cancel`);
+  }
+
+  async approveRun(repo: string, runId: number): Promise<void> {
+    await this.write("POST", `/repos/${repo}/actions/runs/${runId}/approve`);
+  }
+
+  async approveDeployment(repo: string, runId: number, environmentIds: number[]): Promise<void> {
+    await this.write("POST", `/repos/${repo}/actions/runs/${runId}/pending_deployments`, {
+      environment_ids: environmentIds,
+      state: "approved",
+      comment: "Approved from pier",
     });
   }
 

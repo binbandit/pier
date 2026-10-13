@@ -195,3 +195,23 @@ test("a comment on a whole file goes out with the review", async ({ page }) => {
     page.getByRole("listitem").filter({ hasText: "sandbox-api#5" }).first(),
   ).toContainText("Sent", { timeout: 15_000 });
 });
+
+test("a failing check shows its failing step, what it pointed at, and re-runs", async ({
+  page,
+}) => {
+  await page.goto("/WastedHippie/sandbox-web/pull/8");
+  const checks = page.locator("section").filter({ has: page.getByText("Checks", { exact: true }) });
+  await expect(checks.getByText("required").first()).toBeVisible();
+  // The failing job's log opens at the step that failed.
+  await expect(checks.getByRole("button", { name: /Run npm test/ })).toContainText("1 error");
+  await expect(checks.getByText("Process completed with exit code 1.")).toBeVisible();
+  // What it pointed at sits on the line, in the diff.
+  await expect(page.getByText("test failed here")).toBeVisible();
+
+  await checks.getByRole("button", { name: "Re-run test" }).click({ force: true });
+  await expect(toast(page, "Re-running test")).toBeVisible();
+  await page.goto("/log");
+  await expect(page.getByRole("listitem").filter({ hasText: "Re-run job" })).toContainText("Sent", {
+    timeout: 15_000,
+  });
+});

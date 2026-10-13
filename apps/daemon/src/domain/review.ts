@@ -4,8 +4,9 @@ import type { CommandPayload, NewCommand, Outbox } from "@/outbox/outbox";
 import type { Planner } from "@/outbox/planner";
 import type { SyncEngine } from "@/sync/engine";
 import type {
+  Annotation,
   CheckLog,
-  CheckRunView,
+  ChecksView,
   CommentSubject,
   DiffRange,
   Label,
@@ -185,6 +186,7 @@ export class ReviewService {
       assignees: meta.assignees,
       milestone: meta.milestone,
       linkedIssues: detail?.linkedIssues ?? [],
+      requiredChecks: detail?.requiredChecks ?? [],
       account,
       approvedByYou: review?.state === "APPROVED" && review.commitOid === doc.headRefOid,
       lastReviewedOid: detail?.viewerLatestReview?.commitOid ?? null,
@@ -377,11 +379,32 @@ export class ReviewService {
     return this.enqueue(this.require(prId), "comment", { body }, 0);
   }
 
-  async checks(repo: string, number: number): Promise<CheckRunView[]> {
+  async checks(repo: string, number: number): Promise<ChecksView> {
+    const record = this.find(repo, number);
+    const port = record && this.deps.ports.get(record.reader);
+    if (!record || !port) return { runs: [], workflows: [], deployments: [] };
+    return port.checks(repo, record.doc.headRefOid);
+  }
+
+  /** What the head's checks left on the code, for showing on the lines they point at. */
+  async annotations(repo: string, number: number): Promise<Annotation[]> {
     const record = this.find(repo, number);
     const port = record && this.deps.ports.get(record.reader);
     if (!record || !port) return [];
-    return port.checkRuns(repo, record.doc.headRefOid);
+    const { runs } = await port.checks(repo, record.doc.headRefOid);
+    const annotated = runs.filter((run) => run.kind === "check" && run.annotations > 0);
+    return annotated.length > 0 ? port.annotations(repo, annotated.slice(0, 20)) : [];
+  }
+
+  /** Re-runs, cancels and approvals on a PR's workflow runs. */
+  runAction(
+    prId: string,
+    action: "rerun-all" | "rerun-job" | "cancel-run" | "approve-run" | "approve-deployment",
+    target: { runId?: number; jobId?: number; environmentIds?: number[]; debug?: boolean },
+  ): string[] {
+    const record = this.require(prId);
+    this.deps.sync.nudge([prId]);
+    return this.enqueue(record, action, target, 0);
   }
 
   async checkLog(repo: string, jobId: number): Promise<CheckLog | null> {
@@ -519,18 +542,20 @@ export class ReviewService {
   }
 
   /** Re-runs the failed jobs of every failing Actions run on these PRs' heads. */
-  async rerunFailed(prIds: string[]): Promise<{ commandIds: string[]; runs: number }> {
+  async rerunFailed(
+    prIds: string[],
+    debug = false,
+  ): Promise<{ commandIds: string[]; runs: number }> {
     const commandIds: string[] = [];
     let runs = 0;
     for (const prId of prIds) {
       const record = this.deps.model.get(prId);
       const port = record && this.deps.ports.get(record.reader);
       if (!record || !port) continue;
-      const failing = (await port.checkRuns(record.doc.repo, record.doc.headRefOid)).filter(
-        (run) => run.state === "failure" && run.runId !== null,
-      );
+      const { runs: checks } = await port.checks(record.doc.repo, record.doc.headRefOid);
+      const failing = checks.filter((run) => run.state === "failure" && run.runId !== null);
       for (const runId of new Set(failing.map((run) => run.runId ?? 0))) {
-        commandIds.push(...this.enqueue(record, "rerun-failed", { runId }, 0));
+        commandIds.push(...this.enqueue(record, "rerun-failed", { runId, debug }, 0));
         runs++;
       }
       this.deps.sync.nudge([prId]);
