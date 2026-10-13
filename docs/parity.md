@@ -17,8 +17,8 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | FIND-SEARCH | Search with every qualifier (`is:`, `review:`, `label:`, `status:`, `sort:` ...), plus pier's (`turn:`, `checks:`, `size:`, `acct:`, `bot:`, `semver:`, `cohort:`); instant over the replica, ⌘⏎ asks GitHub for the rest | replica; search API | I8 | sandbox |
 | FIND-VIEWS | Saved views / custom inbox sections (⌘S on a search; in the sidebar with counts) | local | I8 | sandbox |
 | FIND-REPO-LIST | Per-repo PR list with filters, at github.com's `/:owner/:repo/pulls` | replica `repo:` | I8 | sandbox |
-| NOTIF-FEED | Notifications as a change feed (304s free) | REST `/notifications` | M1a | built |
-| NOTIF-DONE | Mark done also clears the GitHub notification | `DELETE /notifications/threads/:id` | M1b | built |
+| NOTIF-FEED | Notifications as a change feed (304s free) | REST `/notifications` | M1a | sandbox |
+| NOTIF-DONE | Mark done also clears the GitHub notification (GitHub answers 204; its `all=true` listing keeps showing done threads, for pier's calls and gh's alike) | `DELETE /notifications/threads/:id` | M1b | sandbox |
 | NOTIF-SUBSCRIBE | Watch / stop watching a PR (`!`, `s n`) | REST thread subscription (`repo` scope); `updateSubscription` without a thread (needs `notifications`) | I8 | sandbox |
 | NOTIF-READ | Opening a PR marks its notifications read, as github.com does (no unread API) | `PATCH` thread | I8 | sandbox |
 | NOTIF-SAVED | "Saved" notifications | none | gap | - |
