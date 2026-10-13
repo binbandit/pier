@@ -42,6 +42,7 @@ import { NotificationsPicker, useSubscription } from "./notifications";
 import { RevertPanel } from "./revert";
 import { type Anchors, type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
+import { richKindOf } from "./rich";
 import { RunwayPanel } from "./runway";
 import { SuggestionsPanel, applicableSuggestions } from "./suggestions";
 import { TitlePanel } from "./title";
@@ -127,6 +128,12 @@ function Loaded({ pr }: { pr: PrView }) {
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [filter, setFilter] = useState<FileFilter>(NO_FILTER);
   const split = usePrefs((s) => s.split);
+  // Files you've switched between code and rendered; a changed image starts rendered.
+  const [renderedPaths, setRenderedPaths] = useState<Record<string, boolean>>({});
+  const isRendered = (file: { path: string; patch: string | null }) =>
+    renderedPaths[file.path] ?? (richKindOf(file.path) === "image" && file.patch === null);
+  const toggleRendered = (file: { path: string; patch: string | null }) =>
+    setRenderedPaths((now) => ({ ...now, [file.path]: !isRendered(file) }));
   const toggleSplit = usePrefs((s) => s.toggleSplit);
   const [rail, setRail] = useState(() => window.innerWidth >= WIDE);
   const [raised, setRaised] = useState<Raised | null>(null);
@@ -146,11 +153,13 @@ function Loaded({ pr }: { pr: PrView }) {
   const [composing, setComposing] = useState<NewComment | null>(null);
   const [focusedThread, setFocusedThread] = useState<string | null>(null);
 
+  // Past 3,000 files GitHub's list stops short, and the git store has the whole diff.
+  const truncated = pr.files !== null && pr.files.length < pr.changedFiles;
+  const fromGitHub = view.range === "all" && !ignoreWhitespace && !truncated;
   const { data: diff } = useQuery({
     ...q("prDiff", { repo: pr.repo, number: pr.number, ...view, ignoreWhitespace }),
-    enabled: view.range !== "all" || ignoreWhitespace,
+    enabled: !fromGitHub,
   });
-  const fromGitHub = view.range === "all" && !ignoreWhitespace;
   const files = fromGitHub ? (pr.files ?? []) : (diff?.files ?? []);
   // GitHub's own patches run from where the PR branched to its head.
   const range = fromGitHub
@@ -164,6 +173,7 @@ function Loaded({ pr }: { pr: PrView }) {
   const listed = reviewOrder(files);
   const ordered = filterFiles(listed, filter, pr.viewed, ownership);
   const filtered = ordered.length !== listed.length;
+  const viewedCount = listed.filter((f) => pr.viewed[f.path] === "viewed").length;
   const { data: queue = [] } = useQuery(q("inbox", { split: "review" }));
 
   // Comments belong to the latest code, so an earlier commit's diff shows none of them.
@@ -224,13 +234,16 @@ function Loaded({ pr }: { pr: PrView }) {
         if (!lines) return;
         const side = lines.side === "LEFT" ? ("deletions" as const) : ("additions" as const);
         setSelection({ path: file.path, range: { start: lines.start, end: lines.end, side } });
-        // The diff draws its lines a moment after the jump.
-        setTimeout(() => {
-          section
+        // The diff is drawn once it's in reach, a moment after the jump; look until it is.
+        const started = Date.now();
+        const reveal = () => {
+          const line = section
             ?.querySelector("diffs-container")
-            ?.shadowRoot?.querySelector(`[data-column-number="${lines.start}"]`)
-            ?.scrollIntoView({ block: "center" });
-        }, 150);
+            ?.shadowRoot?.querySelector(`[data-column-number="${lines.start}"]`);
+          if (line) line.scrollIntoView({ block: "center" });
+          else if (Date.now() - started < 2000) setTimeout(reveal, 100);
+        };
+        reveal();
         return;
       }
     })();
@@ -522,6 +535,17 @@ function Loaded({ pr }: { pr: PrView }) {
       run: () => window.open(`/${pr.repo}/pull/${pr.number}.patch`, "_blank", "noopener"),
     },
     {
+      id: "pr.rendered",
+      title: "Show the current file rendered, or as code",
+      keys: ["d r"],
+      scope: "surface",
+      group: "Display",
+      run: () => {
+        const file = ordered[currentIndex];
+        if (file && richKindOf(file.path)) toggleRendered(file);
+      },
+    },
+    {
       id: "pr.split",
       title: split ? "Show changes in one column" : "Show changes side by side",
       keys: ["d s"],
@@ -709,6 +733,7 @@ function Loaded({ pr }: { pr: PrView }) {
                   {filtered
                     ? `${ordered.length} of ${plural(listed.length, "file")}`
                     : plural(listed.length, "file")}
+                  {viewedCount > 0 && `, ${viewedCount} viewed`}
                 </span>
                 {filtered && (
                   <button
@@ -755,6 +780,9 @@ function Loaded({ pr }: { pr: PrView }) {
                     applicable={applicable}
                     split={split}
                     range={range}
+                    rendered={isRendered(file)}
+                    scrollRoot={streamRef}
+                    onToggleRendered={() => toggleRendered(file)}
                     onApply={applySuggestion}
                     onCompose={compose}
                   />

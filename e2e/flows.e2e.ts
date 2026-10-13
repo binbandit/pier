@@ -332,3 +332,21 @@ test("a github.com link to lines opens the PR with them selected", async ({ page
     page.getByRole("heading", { level: 2 }).filter({ hasText: /^Changes/ }),
   ).toBeVisible();
 });
+
+test("a 400-file PR lists every file but draws only the diffs within reach", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-api/pull/8");
+  await expect(
+    page.getByRole("heading", { name: "Rename the logger across services" }),
+  ).toBeVisible();
+  const tree = page.getByRole("navigation", { name: "Files" });
+  await expect(tree).toContainText("0 of 400 viewed");
+  await expect(page.locator("diffs-container").first()).toBeAttached();
+  expect(await page.locator("diffs-container").count()).toBeLessThan(60);
+
+  // The last file is drawn once you get there, and the tree keeps it in sight.
+  await tree.getByRole("button", { name: "services/svc-399/start.ts" }).click();
+  await expect(
+    page.locator('[data-file="services/svc-399/start.ts"] diffs-container'),
+  ).toBeAttached();
+  await expect(tree.locator('[data-path="services/svc-399/start.ts"]')).toBeInViewport();
+});

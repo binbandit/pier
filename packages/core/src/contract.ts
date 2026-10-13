@@ -4,6 +4,7 @@ import type {
   Annotation,
   AppStatus,
   CheckLog,
+  DiffFile,
   ChecksView,
   FlightItem,
   GroupView,
@@ -153,6 +154,22 @@ export const inputs = {
     from: "string | null",
     to: "string | null",
   }),
+  /** One file's diff read from the git store, for files GitHub sent no patch for. */
+  fileDiff: type({
+    prId: "string",
+    path: "string",
+    previousPath: "string | null",
+    from: "string | null",
+    to: "string | null",
+  }),
+  /** A file's bytes before and after (base64), for showing images. */
+  fileBytes: type({
+    prId: "string",
+    path: "string",
+    previousPath: "string | null",
+    from: "string | null",
+    to: "string | null",
+  }),
   search: type({ q: "string", "limit?": "0 <= number.integer <= 1000" }),
   /** The same search, asked of GitHub (for PRs pier doesn't track). */
   searchGitHub: type({ q: "string > 0" }),
@@ -238,6 +255,8 @@ export type Outputs = {
   applySuggestions: { commandIds: string[] };
   search: SearchResult;
   fileContents: { before: string | null; after: string | null };
+  fileBytes: { before: string | null; after: string | null };
+  fileDiff: DiffFile | null;
   views: SavedView[];
   searchGitHub: RemoteSearch;
   saveView: { id: string };

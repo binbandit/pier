@@ -111,6 +111,8 @@ export function createHandlers(app: App): Handlers {
     log: ({ limit }) => app.outbox.log(limit ?? 100),
     search: ({ q, limit }) => app.views.search(q, limit),
     fileContents: (input) => app.review.fileContents(input),
+    fileBytes: (input) => app.review.fileBytes(input),
+    fileDiff: (input) => app.review.fileDiff(input),
     views: () => app.views.savedViews(),
     setSubscription({ prId, subscription }) {
       const commandIds = app.review.setSubscription(prId, subscription);

@@ -389,6 +389,22 @@ export class LiveGitHub implements GitHubPort {
     return teams.map((t) => `${t.organization.login}/${t.slug}`);
   }
 
+  async fileBytes(repo: string, oid: string, path: string): Promise<Uint8Array | null> {
+    try {
+      const response = await this.client.rest<components["schemas"]["content-file"]>({
+        path: `/repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${oid}`,
+        cache: true,
+        priority: "interactive",
+      });
+      if (Array.isArray(response.data) || response.data.type !== "file") return null;
+      if (response.data.encoding !== "base64") return null;
+      return Buffer.from(response.data.content, "base64");
+    } catch (error) {
+      if (error instanceof GitHubError && error.kind === "not-found") return null;
+      throw error;
+    }
+  }
+
   async fileText(repo: string, oid: string, path: string): Promise<string | null> {
     try {
       const response = await this.client.rest<components["schemas"]["content-file"]>({

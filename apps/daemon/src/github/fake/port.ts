@@ -299,6 +299,13 @@ export class FakeGitHub implements GitHubPort {
     );
   }
 
+  fileBytes(repo: string, oid: string, path: string): Promise<Uint8Array | null> {
+    return this.call("fileBytes", "core", () => {
+      const text = this.canSeeRepo(repo) ? this.world.fileText(repo, oid, path) : null;
+      return text === null ? null : new TextEncoder().encode(text);
+    });
+  }
+
   fileText(repo: string, oid: string, path: string): Promise<string | null> {
     return this.call("fileText", "core", () =>
       this.canSeeRepo(repo) ? this.world.fileText(repo, oid, path) : null,

@@ -8,7 +8,7 @@ import { PatchDiff } from "@pierre/diffs/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
 import { DIFF_OPTIONS, LOCKFILE, toPatch } from "@/diff/adapter";
 import { codeBetween, patchLines } from "@/diff/lines";
@@ -26,6 +26,7 @@ import type {
 } from "@pier/core/wire";
 
 import { Composer } from "./composer";
+import { RichView, richKindOf } from "./rich";
 import { DraftCard, PendingCard, ThreadCard } from "./thread";
 
 // One file in the review stream: our own header (path, stats, viewed), then the diff with every
@@ -71,6 +72,11 @@ type Props = {
   /** The commits this diff runs between (`from` null: where the PR branched), and its layout. */
   range: { from: string | null; to: string | null };
   split: boolean;
+  /** Drawn as it would appear (an image, rendered Markdown) rather than as a diff. */
+  rendered: boolean;
+  onToggleRendered: () => void;
+  /** The scrolling stream; diffs are drawn as they come within reach of it. */
+  scrollRoot: RefObject<HTMLElement | null>;
   /** Comments whose suggestion can be committed, and how to start committing one. */
   applicable: ReadonlySet<string>;
   onApply: (commentId: string) => void;
@@ -100,14 +106,39 @@ export function ReviewFile(props: Props) {
     onCompose,
     range,
     split,
+    rendered,
+    onToggleRendered,
+    scrollRoot,
   } = props;
+  // A patch GitHub didn't send (the file's diff is too long), read from the git store instead.
+  const [fromGit, setFromGit] = useState<DiffFile | null>(null);
+  const shown = fromGit ?? file;
+  // Big PRs have thousands of files; each diff is drawn only once it's within reach.
+  const sectionRef = useRef<HTMLElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (near) return undefined;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        setNear(true);
+        observer.disconnect();
+      },
+      { root: scrollRoot.current, rootMargin: "2000px 0px" },
+    );
+    if (sectionRef.current) observer.observe(sectionRef.current);
+    return () => observer.disconnect();
+  }, [near, scrollRoot]);
+  const rich = richKindOf(file.path);
+  // A PNG has nothing to show as code; an SVG (text) does.
+  const switchable = rich !== null && !(rich === "image" && file.patch === null);
   const client = useQueryClient();
   const toast = useUi((s) => s.toast);
   const isLockfile = LOCKFILE.test(file.path);
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const open = expanded ?? (viewed !== "viewed" && !isLockfile);
 
-  const lines = patchLines(file);
+  const lines = patchLines(shown);
   // The renderer can only place a note on a line this diff shows. Threads on unchanged lines, or
   // outside a narrower "since your review" diff, are listed under the file instead. So are ones on
   // the base's side when this diff's old side isn't the base.
@@ -202,10 +233,26 @@ export function ReviewFile(props: Props) {
     }),
     [path, anchors, split, prId, range.from, range.to],
   );
-  const patch = useMemo(() => toPatch(file), [file]);
+  const patch = useMemo(() => toPatch(shown), [shown]);
+
+  const loadFromGit = async () => {
+    try {
+      const diff = await rpc("fileDiff", {
+        prId,
+        path: file.path,
+        previousPath: file.previousPath,
+        from: range.from,
+        to: range.to,
+      });
+      if (diff?.patch) setFromGit(diff);
+      else toast({ text: `${file.path} is binary; there's no text diff`, tone: "neutral" });
+    } catch (error) {
+      toast({ text: errorText(error), tone: "bad" });
+    }
+  };
 
   return (
-    <section data-file={file.path} className="scroll-mt-4">
+    <section ref={sectionRef} data-file={file.path} className="scroll-mt-4">
       <header
         className={clsx(
           "sticky top-0 z-10 flex h-11 items-center gap-3 border-b bg-canvas px-1",
@@ -228,10 +275,14 @@ export function ReviewFile(props: Props) {
             file.path
           )}
         </button>
-        <span className="shrink-0 font-code text-meta">
-          <span className="text-ok">+{file.additions}</span>{" "}
-          <span className="text-bad">−{file.deletions}</span>
-        </span>
+        {file.patch === null && file.additions + file.deletions === 0 ? (
+          <span className="shrink-0 text-meta text-faint">binary</span>
+        ) : (
+          <span className="shrink-0 font-code text-meta">
+            <span className="text-ok">+{file.additions}</span>{" "}
+            <span className="text-bad">−{file.deletions}</span>
+          </span>
+        )}
         {ownership?.yours && (
           <span
             title={`Owned by ${ownership.owners.join(", ")}, including you`}
@@ -249,7 +300,22 @@ export function ReviewFile(props: Props) {
         {viewed === "changed" && (
           <span className="shrink-0 text-meta text-warn">Changed since you viewed it</span>
         )}
-        <label className="ml-auto flex shrink-0 cursor-pointer items-center gap-2 text-meta text-muted hover:text-fg">
+        {switchable && (
+          <button
+            type="button"
+            onClick={onToggleRendered}
+            title="d r"
+            className="ml-auto shrink-0 text-meta text-faint hover:text-fg"
+          >
+            {rendered ? "Show the code" : rich === "image" ? "Show the image" : "Show it rendered"}
+          </button>
+        )}
+        <label
+          className={clsx(
+            "flex shrink-0 cursor-pointer items-center gap-2 text-meta text-muted hover:text-fg",
+            !switchable && "ml-auto",
+          )}
+        >
           <input
             type="checkbox"
             checked={viewed === "viewed"}
@@ -314,10 +380,24 @@ export function ReviewFile(props: Props) {
           </div>
         )}
 
+      {open && !near && !(rendered && rich) && (
+        // Roughly the diff's height, so jumping and scrolling land where they will once drawn.
+        <div style={{ height: Math.min(file.additions + file.deletions + 8, 4000) * 22 }} />
+      )}
       {open &&
-        (file.patch === null ? (
-          <p className="px-1 py-3 text-meta text-faint">
-            GitHub didn't send a diff for this file (binary or too large).
+        (near || (rendered && rich)) &&
+        (rendered && rich ? (
+          <RichView prId={prId} file={file} range={range} kind={rich} />
+        ) : shown.patch === null ? (
+          <p className="flex items-center gap-4 px-1 py-3 text-meta text-faint">
+            GitHub didn't send a diff for this file (it's binary, or too long).
+            <button
+              type="button"
+              onClick={() => void loadFromGit()}
+              className="text-muted hover:text-fg"
+            >
+              Load it from git
+            </button>
           </p>
         ) : (
           <PatchDiff

@@ -11,6 +11,7 @@ import type {
   CheckLog,
   ChecksView,
   CommentSubject,
+  DiffFile,
   DiffView,
   Label,
   LockReason,
@@ -43,6 +44,8 @@ import { SuggestionError, applySplices, hunkLines } from "./suggestions";
 // Everything the PR canvas reads and writes: the view of one PR (doc + detail + your drafts +
 // writes still in flight), its diff, and the review actions. Writes all go through the outbox.
 
+/** The largest image pier shows inline; bigger ones open on GitHub. */
+const IMAGE_LIMIT = 5 * 1024 * 1024;
 /** A submitted review waits this long before sending, so `z` can still take it back. */
 const REVIEW_HOLD_MS = 5_000;
 /** Merges hold the same way: once one goes through it can only be reverted. */
@@ -62,7 +65,7 @@ export type InterdiffSource = {
     account: string,
     from: string,
     to: string,
-    options?: { ignoreWhitespace?: boolean },
+    options?: { ignoreWhitespace?: boolean; paths?: string[] },
   ): Promise<PrDiff["files"]>;
   conflicts(
     repo: string,
@@ -71,6 +74,8 @@ export type InterdiffSource = {
   ): Promise<string[]>;
   /** A file's text at a commit; null when it isn't there or isn't text. */
   show(repo: string, account: string, oid: string, path: string): Promise<string | null>;
+  /** A file's bytes at a commit; null when it isn't there. */
+  blob(repo: string, account: string, oid: string, path: string): Promise<Uint8Array | null>;
 };
 
 export type ReviewDeps = {
@@ -156,7 +161,8 @@ export class ReviewService {
     const [detail, codeOwners] = await Promise.all([
       this.detail(record),
       this.deps.codeOwners.forPr(doc.repo, doc.baseRefName, account),
-      record.files === null && doc.filesTotal <= 3000 && port
+      // GitHub lists up to 3,000; past that the git store fills in the rest (see diff()).
+      record.files === null && port
         ? port
             .files(doc.repo, doc.number)
             .then((files) => this.deps.model.setFiles(doc.id, doc.headRefOid, files))
@@ -339,7 +345,16 @@ export class ReviewService {
         toOid: view.to,
       };
     }
-    if (range === "all" && !ignoreWhitespace) return all(null);
+    // GitHub lists at most 3,000 files; past that, the whole diff comes from the git store.
+    const listed = this.deps.model.get(doc.id)?.files;
+    const complete = listed !== null && listed !== undefined && listed.length >= doc.changedFiles;
+    if (range === "all" && !ignoreWhitespace && (complete || !git)) {
+      return all(
+        complete
+          ? null
+          : "GitHub lists only the first 3,000 files; the rest need the local git store",
+      );
+    }
     if (!git)
       return all(
         range === "since-review"
@@ -421,6 +436,58 @@ export class ReviewService {
       if (error instanceof GitHubError && error.kind === "not-found") return null;
       throw error;
     });
+  }
+
+  /** One file's diff from the git store, for files GitHub sent no patch for (too long). */
+  async fileDiff(input: {
+    prId: string;
+    path: string;
+    previousPath: string | null;
+    from: string | null;
+    to: string | null;
+  }): Promise<DiffFile | null> {
+    const record = this.require(input.prId);
+    const { doc } = record;
+    const git = this.deps.git();
+    const port = this.deps.ports.get(record.reader);
+    if (!git || !port) return null;
+    const to = input.to ?? doc.headRefOid;
+    const from = input.from ?? (await port.mergeBase(doc.repo, doc.baseRefName, to));
+    if (!from) return null;
+    const paths = input.previousPath ? [input.previousPath, input.path] : [input.path];
+    const [file] = await git.diff(doc.repo, record.reader, from, to, { paths });
+    return file ?? null;
+  }
+
+  /**
+   * A file's bytes on both sides of a diff (base64), for showing images; sides over 5 MB come
+   * back as null, like a side that isn't there.
+   */
+  async fileBytes(input: {
+    prId: string;
+    path: string;
+    previousPath: string | null;
+    from: string | null;
+    to: string | null;
+  }): Promise<{ before: string | null; after: string | null }> {
+    const record = this.require(input.prId);
+    const { doc } = record;
+    const port = this.deps.ports.get(record.reader);
+    if (!port) return { before: null, after: null };
+    const to = input.to ?? doc.headRefOid;
+    const from = input.from ?? (await port.mergeBase(doc.repo, doc.baseRefName, to));
+    const git = this.deps.git();
+    const read = async (oid: string, path: string) => {
+      const bytes = git
+        ? await git.blob(doc.repo, record.reader, oid, path)
+        : await port.fileBytes(doc.repo, oid, path);
+      return bytes && bytes.length <= IMAGE_LIMIT ? Buffer.from(bytes).toString("base64") : null;
+    };
+    const [before, after] = await Promise.all([
+      from ? read(from, input.previousPath ?? input.path) : Promise.resolve(null),
+      read(to, input.path),
+    ]);
+    return { before, after };
   }
 
   saveDraft(input: {

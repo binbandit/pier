@@ -154,6 +154,8 @@ export interface GitHubPort {
   teams(): Promise<string[]>;
   /** The whole PR as one diff, or as patches per commit, the way github.com's .diff/.patch are. */
   rawDiff(repo: string, number: number, format: "diff" | "patch"): Promise<string>;
+  /** A file's bytes at a commit (up to GitHub's 1 MB contents limit), or null. */
+  fileBytes(repo: string, oid: string, path: string): Promise<Uint8Array | null>;
   /** A file's contents at a commit, or null if it doesn't exist there (or is binary). */
   fileText(repo: string, oid: string, path: string): Promise<string | null>;
   submitReview(input: SubmitReviewInput): Promise<ReviewSummary>;

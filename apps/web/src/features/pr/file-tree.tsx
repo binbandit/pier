@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { useEffect, useRef } from "react";
 
 import type { DiffFile, ViewedState } from "@pier/core/wire";
 
@@ -18,12 +19,20 @@ export function FileTree({
   onJump: (path: string) => void;
 }) {
   const done = files.filter((f) => viewed[f.path] === "viewed").length;
+  // The file you're on stays in sight as the stream moves past hundreds of others.
+  const list = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (!current) return;
+    list.current
+      ?.querySelector(`[data-path="${CSS.escape(current)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [current]);
   return (
     <nav aria-label="Files" className="flex w-[260px] shrink-0 flex-col border-r border-line">
       <p className="flex h-11 shrink-0 items-center border-b border-line px-4 text-meta text-faint">
         {done} of {files.length} viewed
       </p>
-      <ul className="min-h-0 flex-1 overflow-y-auto py-2">
+      <ul ref={list} className="min-h-0 flex-1 overflow-y-auto py-2">
         {files.map((file) => {
           const slash = file.path.lastIndexOf("/");
           const dir = slash === -1 ? "" : file.path.slice(0, slash + 1);
@@ -36,6 +45,7 @@ export function FileTree({
                 type="button"
                 onClick={() => onJump(file.path)}
                 title={file.path}
+                data-path={file.path}
                 className={clsx(
                   "relative flex h-7 w-full items-center gap-2 px-4 text-left text-meta",
                   file.path === current ? "bg-cursor" : "hover:bg-hover",

@@ -16,7 +16,11 @@ export type { TokenSource };
 // Every fetched commit gets a ref, so it outlives a force-push that removes it from GitHub.
 
 export type GitStoreOptions = { gitBinary?: string; remoteBase?: string; spawn?: Spawn };
-export type DiffOptions = { ignoreWhitespace?: boolean };
+export type DiffOptions = {
+  ignoreWhitespace?: boolean;
+  /** Only these files (both names of a rename). */
+  paths?: string[];
+};
 export type Versions = { oldBase: string; oldHead: string; newBase: string; newHead: string };
 export type Interdiff = { files: DiffFile[]; fallback: string | null };
 
@@ -141,7 +145,15 @@ export class GitStore {
   }
 
   /** File text at a commit, or null if missing/binary. */
-  show(repo: string, account: string, oid: string, path: string): Promise<string | null> {
+  async show(repo: string, account: string, oid: string, path: string): Promise<string | null> {
+    const content = await this.blob(repo, account, oid, path);
+    // Git's own binary test: a NUL byte in the first 8000 bytes.
+    if (!content || content.subarray(0, 8000).includes(0)) return null;
+    return decoder.decode(content);
+  }
+
+  /** A file's bytes at a commit, or null if it isn't a file there. */
+  blob(repo: string, account: string, oid: string, path: string): Promise<Uint8Array | null> {
     return this.exclusive(repo, async (dir) => {
       await this.fetchMissing(dir, account, [oid]);
       // Trees are local, so ls-tree finds the blob without touching the network; asking for
@@ -153,10 +165,7 @@ export class GitStore {
         .map((entry) => /^\d+ (\w+) (\w+)\t(.*)$/s.exec(entry))
         .find((match) => match?.[3] === path);
       if (blob?.[1] !== "blob" || blob[2] === undefined) return null;
-      const content = (await this.online(dir, account, ["cat-file", "blob", blob[2]])).stdout;
-      // Git's own binary test: a NUL byte in the first 8000 bytes.
-      if (content.subarray(0, 8000).includes(0)) return null;
-      return decoder.decode(content);
+      return (await this.online(dir, account, ["cat-file", "blob", blob[2]])).stdout;
     });
   }
 
@@ -249,7 +258,8 @@ export class GitStore {
   ): Promise<DiffFile[]> {
     const args = ["diff", "--no-color", "--no-ext-diff", "--find-renames", "-U3"];
     if (options.ignoreWhitespace) args.push("--ignore-all-space");
-    const output = await this.online(dir, account, [...args, from, to]);
+    const only = options.paths ? ["--", ...options.paths] : [];
+    const output = await this.online(dir, account, [...args, from, to, ...only]);
     return parseDiff(decoder.decode(output.stdout));
   }
 

@@ -404,6 +404,24 @@ class Builder {
     this.humanPr(api.repo, owner, bigChange(), now - 26 * HOUR, [you], "success");
     this.authored(web.repo, other, "changes-requested", now - 30 * HOUR);
 
+    // A sweeping rename: hundreds of small changes, the shape that strains a review screen.
+    world.openPr({
+      repo: api.repo.fullName,
+      author: owner,
+      title: "Rename the logger across services",
+      body: "Every service now logs through `logger.info` instead of the bare `log`.",
+      headRefName: "rename-logger",
+      files: Array.from({ length: 400 }, (_, i) => ({
+        path: `services/svc-${String(i).padStart(3, "0")}/start.ts`,
+        before: 'import { log } from "../logger";\n\nexport const start = () => log("start");\n',
+        after:
+          'import { logger } from "../logger";\n\nexport const start = () => logger.info("start");\n',
+      })),
+      reviewers: [you],
+      checks: "success",
+      createdAt: now - 3 * HOUR,
+    });
+
     // The owner suggests changes on your PR, to apply one at a time or together.
     const yours = [...world.prs.values()].find(
       (pr) => pr.author === you && pr.state === "OPEN" && pr.repo === web.repo,
