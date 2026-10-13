@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import { ago, shortRepo } from "@/lib/format";
-import { q } from "@/lib/rpc";
+import { q, rpc } from "@/lib/rpc";
 import { Dot, type Tone } from "@/ui/dot";
 import type { LogEntry, OutboxState } from "@pier/core/wire";
 
 // Every write pier has made or is about to make, newest first. When something fails, this is
-// where it says what GitHub answered.
+// where it says what GitHub answered; once it's been seen here, the status line stops counting it.
 
 const STATE: Record<OutboxState, { text: string; tone: Tone }> = {
   waiting: { text: "Waiting its turn", tone: "auto" },
@@ -62,6 +63,11 @@ const KIND: Record<LogEntry["kind"], string> = {
 
 export function Log() {
   const { data: entries = [] } = useQuery(q("log", { limit: 300 }));
+  // Any entry changing (a failure arriving while you're here) counts as seen too.
+  const latest = entries.reduce((max, e) => (e.updatedAt > max ? e.updatedAt : max), "");
+  useEffect(() => {
+    if (latest) void rpc("seenLog", {});
+  }, [latest]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-16 shrink-0 items-end gap-3 px-8 pb-3">

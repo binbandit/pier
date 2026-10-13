@@ -1517,6 +1517,34 @@ export class FakeWorld {
 
   // -------------------------------------------------------------------------
 
+  /** Per-file diffs between two commits' trees, for commit-range views. */
+  compare(repo: string, base: string, head: string): DiffFile[] {
+    const before = this.trees.get(`${repo}@${base}`) ?? new Map<string, string>();
+    const after = this.trees.get(`${repo}@${head}`) ?? new Map<string, string>();
+    const paths = [...new Set([...before.keys(), ...after.keys()])].toSorted();
+    return paths.flatMap((path): DiffFile[] => {
+      const old = before.get(path);
+      const now = after.get(path);
+      if (old === now) return [];
+      const { patch, additions, deletions } = unifiedDiff(old ?? "", now ?? "");
+      const status = old === undefined ? "added" : now === undefined ? "removed" : "modified";
+      return [{ path, previousPath: null, status, additions, deletions, patch }];
+    });
+  }
+
+  /** The commit before this one in its PR, or the PR's base for the first. */
+  parentOf(repo: string, oid: string): string | null {
+    for (const pr of this.prs.values()) {
+      if (pr.repo.fullName !== repo) continue;
+      const index = pr.commits.findIndex((c) => c.oid === oid);
+      if (index === -1) continue;
+      return index === 0
+        ? (pr.bases.get(oid) ?? pr.baseRefOid)
+        : (pr.commits[index - 1]?.oid ?? null);
+    }
+    return null;
+  }
+
   private mustPr(id: string): FakePr {
     const pr = this.prs.get(id);
     if (!pr) throw graphqlError(`Could not resolve to a node with the global id of '${id}'`);

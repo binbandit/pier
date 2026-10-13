@@ -1,5 +1,6 @@
 import type {
   Actor,
+  CommitView,
   LinkedIssue,
   LockReason,
   PendingReview,
@@ -11,6 +12,7 @@ import type {
 } from "@pier/core/wire";
 
 import type { PrDetailQuery } from "./gql/graphql";
+import { rollupState } from "./pr-doc";
 
 // The full-tier picture of one PR, read when its canvas opens: threads, reviews, conversation and
 // history. Viewer-specific (your viewed files, your pending review), so stored per account.
@@ -26,6 +28,7 @@ export type PrDetail = {
   linkedIssues: LinkedIssue[];
   /** Names of the head's checks that must pass to merge. */
   requiredChecks: string[];
+  commits: CommitView[];
   headBranch: { exists: boolean; canDelete: boolean; crossRepo: boolean };
   viewerLatestReview: {
     state: string;
@@ -171,9 +174,18 @@ export function toPrDetail(node: Node): PrDetail {
       unsent: false,
     });
   }
+  const commits: CommitView[] = [];
   for (const entry of node.allCommits.nodes ?? []) {
     if (!entry) continue;
     const c = entry.commit;
+    commits.push({
+      oid: c.oid,
+      headline: c.messageHeadline,
+      author: c.author?.user?.login ?? c.author?.name ?? null,
+      at: c.committedDate,
+      checks: rollupState(c.statusCheckRollup?.state ?? null),
+      verified: c.signature ? c.signature.isValid : null,
+    });
     timeline.push({
       kind: "commit",
       oid: c.oid,
@@ -261,6 +273,7 @@ export function toPrDetail(node: Node): PrDetail {
         }
       : null,
     threads,
+    commits,
     timeline: shown,
     viewed,
   };

@@ -1,0 +1,13 @@
+diff --git a/dist/managers/InteractionManager.js b/dist/managers/InteractionManager.js
+index 20fe22dfeec141a172a9be6763c4d9cf3c808ea5..228e45480228db3d78a750240d691756cb91f8d7 100644
+--- a/dist/managers/InteractionManager.js
++++ b/dist/managers/InteractionManager.js
+@@ -328,7 +328,7 @@ var InteractionManager = class {
+ 			this.attachDocumentPointerListeners();
+ 			return;
+ 		}
+-		if (this.selectedRange?.start === lineNumber && this.selectedRange?.end === lineNumber) {
++		if (this.selectedRange?.start === lineNumber && this.selectedRange?.end === lineNumber && (this.selectedRange.endSide ?? this.selectedRange.side) === eventSide) {
+ 			const point = {
+ 				lineNumber,
+ 				side: eventSide

@@ -345,12 +345,13 @@ export class Outbox {
       }));
   }
 
-  counts() {
+  /** How many writes are in each state; failures only count once they're newer than `seenAt`. */
+  counts(seenAt: string) {
     const rows = this.db
-      .query<{ state: OutboxState; n: number }, []>(
-        "SELECT state, count(*) AS n FROM outbox GROUP BY state",
+      .query<{ state: OutboxState; n: number }, [string]>(
+        "SELECT state, count(*) AS n FROM outbox WHERE state != 'failed' OR updated_at > ? GROUP BY state",
       )
-      .all();
+      .all(seenAt);
     const by = Object.fromEntries(rows.map((r) => [r.state, r.n]));
     return {
       queued: (by.queued ?? 0) + (by.claimed ?? 0),

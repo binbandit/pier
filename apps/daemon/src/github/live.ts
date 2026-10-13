@@ -90,7 +90,6 @@ type RestThread = components["schemas"]["thread"];
 type RestFile = components["schemas"]["diff-entry"];
 
 const SEARCH_CAP = 1000;
-/** Lines of a failing job's log worth showing; the cause is almost always near the end. */
 const HYDRATE_BATCH = 25;
 // 100 per query is allowed, but mergeability is computed on read and big batches hit GitHub's
 // 10-second limit (502). 50 keeps each sweep well under it for the same point cost.
@@ -157,6 +156,24 @@ export class LiveGitHub implements GitHubPort {
     return out;
   }
 
+  async commitParent(repo: string, oid: string): Promise<string | null> {
+    const response = await this.client.rest<components["schemas"]["commit"]>({
+      path: `/repos/${repo}/commits/${oid}`,
+      cache: true,
+      priority: "interactive",
+    });
+    return response.data.parents[0]?.sha ?? null;
+  }
+
+  async compareFiles(repo: string, base: string, head: string): Promise<DiffFile[]> {
+    const response = await this.client.rest<components["schemas"]["commit-comparison"]>({
+      path: `/repos/${repo}/compare/${base}...${head}`,
+      cache: true,
+      priority: "interactive",
+    });
+    return (response.data.files ?? []).map(toDiffFile);
+  }
+
   async files(repo: string, number: number): Promise<DiffFile[]> {
     const files: DiffFile[] = [];
     // GitHub caps this listing at 3,000 files; anything beyond is reached through the git store.
@@ -165,16 +182,7 @@ export class LiveGitHub implements GitHubPort {
         path: `/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`,
         cache: true,
       });
-      files.push(
-        ...response.data.map((file) => ({
-          path: file.filename,
-          previousPath: file.previous_filename ?? null,
-          status: file.status,
-          additions: file.additions,
-          deletions: file.deletions,
-          patch: file.patch ?? null,
-        })),
-      );
+      files.push(...response.data.map(toDiffFile));
       if (response.data.length < 100) break;
     }
     return files;
@@ -1039,5 +1047,16 @@ function toSummary(
     state: review.state,
     commitOid: review.commit?.oid ?? null,
     submittedAt: review.submittedAt ?? null,
+  };
+}
+
+function toDiffFile(file: RestFile): DiffFile {
+  return {
+    path: file.filename,
+    previousPath: file.previous_filename ?? null,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    patch: file.patch ?? null,
   };
 }

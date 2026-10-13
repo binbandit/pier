@@ -279,7 +279,7 @@ function summarize(state: CheckState, contexts: CheckContext[]): CheckSummary {
   };
 }
 
-function rollupState(state: string | null): CheckState {
+export function rollupState(state: string | null): CheckState {
   switch (state) {
     case "SUCCESS":
       return "success";

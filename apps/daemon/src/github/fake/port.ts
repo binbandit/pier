@@ -133,6 +133,14 @@ export class FakeGitHub implements GitHubPort {
     );
   }
 
+  commitParent(repo: string, oid: string): Promise<string | null> {
+    return this.call("commitParent", "core", () => this.world.parentOf(repo, oid));
+  }
+
+  compareFiles(repo: string, base: string, head: string): Promise<DiffFile[]> {
+    return this.call("compareFiles", "core", () => this.world.compare(repo, base, head));
+  }
+
   files(repo: string, number: number): Promise<DiffFile[]> {
     return this.call(
       "files",
@@ -978,6 +986,14 @@ export class FakeGitHub implements GitHubPort {
       },
       linkedIssues: [],
       requiredChecks: pr.repo.checkNames.filter((name) => name !== "e2e"),
+      commits: pr.commits.slice(-100).map((c) => ({
+        oid: c.oid,
+        headline: c.message.split("\n")[0] ?? "",
+        author: c.authorLogin ?? c.authorName,
+        at: c.committedDate,
+        checks: world.rollup(pr, c.oid),
+        verified: c.signatureValid,
+      })),
       locked: pr.locked,
       viewerLatestReview: latest
         ? { state: latest.state, commitOid: latest.commitOid, submittedAt: latest.submittedAt }

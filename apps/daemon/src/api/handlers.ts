@@ -15,8 +15,8 @@ export function createHandlers(app: App): Handlers {
     counts: () => app.views.counts(),
     group: ({ key }) => app.views.group(key),
     pr: ({ repo, number }) => app.review.view(repo, number),
-    prDiff: ({ repo, number, range, ignoreWhitespace }) =>
-      app.review.diff(repo, number, range, ignoreWhitespace ?? false),
+    prDiff: ({ repo, number, ignoreWhitespace, ...view }) =>
+      app.review.diff(repo, number, view, ignoreWhitespace ?? false),
     saveDraft(input) {
       const id = app.review.saveDraft({
         id: input.id,
@@ -108,6 +108,11 @@ export function createHandlers(app: App): Handlers {
     milestones: ({ repo }) => app.review.milestones(repo),
     flight: () => app.views.flight(),
     log: ({ limit }) => app.outbox.log(limit ?? 100),
+    seenLog() {
+      app.settings.set("logSeenAt", new Date().toISOString());
+      app.events.emit(["status"]);
+      return { ok: true as const };
+    },
 
     planAction: ({ action, prIds, groupKey }) => app.planner.plan(action, prIds, groupKey ?? null),
 

@@ -30,6 +30,9 @@ export type NewComment =
   | { kind: "lines"; path: string; side: Side; start: number; end: number }
   | { kind: "file"; path: string };
 
+/** Which sides of this diff a comment can go on: both, only the new code, or neither. */
+export type Anchors = "both" | "right" | "none";
+
 type LineComment = Extract<NewComment, { kind: "lines" }>;
 type LineDraft = Draft & { line: number };
 type PendingComment = PendingReview["comments"][number];
@@ -56,6 +59,7 @@ type Props = {
   focusedThread: string | null;
   composing: NewComment | null;
   selection: SelectedLineRange | null;
+  anchors: Anchors;
   onSelect: (path: string, range: SelectedLineRange | null) => void;
   onCompose: (comment: NewComment | null) => void;
 };
@@ -74,6 +78,7 @@ export function ReviewFile(props: Props) {
     focusedThread,
     composing,
     selection,
+    anchors,
     onSelect,
     onCompose,
   } = props;
@@ -85,9 +90,10 @@ export function ReviewFile(props: Props) {
 
   const lines = patchLines(file);
   // The renderer can only place a note on a line this diff shows. Threads on unchanged lines, or
-  // outside a narrower "since your review" diff, are listed under the file instead.
+  // outside a narrower "since your review" diff, are listed under the file instead. So are ones on
+  // the base's side when this diff's old side isn't the base.
   const visible = (side: Side, line: number) =>
-    (side === "RIGHT" ? lines.right : lines.left).has(line);
+    side === "RIGHT" ? lines.right.has(line) : anchors === "both" && lines.left.has(line);
   const onLines = threads.filter((t) => t.subject === "line");
   const onFile = threads.filter((t) => t.subject === "file");
   const placed = onLines.filter((t) => t.line !== null && !t.outdated && visible(t.side, t.line));
@@ -151,13 +157,13 @@ export function ReviewFile(props: Props) {
       // pier draws its own header (with Viewed). `disableFileHeader: true` stops @pierre/diffs 1.5.2
       // from rendering any lines at all, so its header is hidden with CSS instead.
       unsafeCSS: `${DIFF_OPTIONS.unsafeCSS}\n[data-diffs-header] { display: none; }`,
-      enableLineSelection: true,
-      enableGutterUtility: true,
+      enableLineSelection: anchors !== "none",
+      enableGutterUtility: anchors !== "none",
       onLineSelected: (range: SelectedLineRange | null) => callbacks.current.onSelect(path, range),
       onGutterUtilityClick: (range: SelectedLineRange) =>
         callbacks.current.onCompose(fromRange(path, range)),
     }),
-    [path],
+    [path, anchors],
   );
   const patch = useMemo(() => toPatch(file), [file]);
 

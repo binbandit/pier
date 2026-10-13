@@ -479,6 +479,9 @@ export const PrDetailQuery = graphql(`
               oid
               messageHeadline
               committedDate
+              signature {
+                isValid
+              }
               author {
                 name
                 user {

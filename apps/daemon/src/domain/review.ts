@@ -8,7 +8,7 @@ import type {
   CheckLog,
   ChecksView,
   CommentSubject,
-  DiffRange,
+  DiffView,
   Label,
   LockReason,
   MergeMethod,
@@ -214,6 +214,7 @@ export class ReviewService {
       milestone: meta.milestone,
       linkedIssues: detail?.linkedIssues ?? [],
       requiredChecks: detail?.requiredChecks ?? [],
+      commits: detail?.commits ?? [],
       // A deleted branch can come back once the PR is closed or merged, from its last head.
       headBranch: {
         exists: detail?.headBranch.exists ?? true,
@@ -268,12 +269,13 @@ export class ReviewService {
   async diff(
     repo: string,
     number: number,
-    range: DiffRange,
+    view: DiffView,
     ignoreWhitespace: boolean,
   ): Promise<PrDiff | null> {
     const record = this.find(repo, number);
     if (!record) return null;
     const { doc } = record;
+    const { range } = view;
     const all = (fallback: string | null): PrDiff => ({
       range: "all",
       files: this.deps.model.get(doc.id)?.files ?? [],
@@ -283,6 +285,21 @@ export class ReviewService {
     });
 
     const git = this.deps.git();
+    if (view.range === "commits") {
+      const port = this.deps.ports.get(record.reader);
+      // A run of commits did what lies between the first one's parent and the last one.
+      const parent = await port?.commitParent(doc.repo, view.from);
+      if (!port || !parent) return all("GitHub couldn't find the commit before these ones");
+      return {
+        range,
+        files: git
+          ? await git.diff(doc.repo, record.reader, parent, view.to, { ignoreWhitespace })
+          : await port.compareFiles(doc.repo, parent, view.to),
+        fallback: null,
+        fromOid: parent,
+        toOid: view.to,
+      };
+    }
     if (range === "all" && !ignoreWhitespace) return all(null);
     if (!git)
       return all(

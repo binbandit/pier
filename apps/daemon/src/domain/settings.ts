@@ -42,7 +42,14 @@ const sandbox = type({
   writeOwners: "string[] | null",
 });
 
-export const settingSchemas = { scopes: scope.array(), policy, identity, sandbox } as const;
+export const settingSchemas = {
+  scopes: scope.array(),
+  policy,
+  identity,
+  sandbox,
+  /** When the Log was last looked at; failed writes after it are the ones still to see. */
+  logSeenAt: type("string"),
+} as const;
 
 export type Scope = typeof scope.infer;
 export type DepsPolicy = typeof policy.infer;

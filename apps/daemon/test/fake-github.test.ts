@@ -320,6 +320,27 @@ describe("writes", () => {
   });
 });
 
+describe("commits", () => {
+  test("a commit's view holds only what it changed; a run of them adds up", async () => {
+    const { world, you } = setup("sandbox");
+    const pr = [...world.prs.values()].find((p) => p.title === "Paginate events with cursors")!;
+    const repo = pr.repo.fullName;
+    const [first, second] = (await you.detail(pr.id))!.commits;
+    expect(second?.headline).toBe("Address review feedback");
+
+    const parent = await you.commitParent(repo, second!.oid);
+    expect(parent).toBe(first!.oid);
+    const own = await you.compareFiles(repo, parent!, second!.oid);
+    expect(own.map((f) => [f.path, f.additions, f.deletions])).toEqual([
+      ["src/routes/events.ts", 1, 1],
+    ]);
+
+    const before = await you.commitParent(repo, first!.oid);
+    const both = await you.compareFiles(repo, before!, second!.oid);
+    expect(both.map((f) => f.path)).toEqual(["src/routes/events.ts", "test/events.test.ts"]);
+  });
+});
+
 describe("notifications", () => {
   test("changed once, then 304 until something happens", async () => {
     const { world, you } = setup("sandbox");

@@ -13,14 +13,15 @@ import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
-import type { DiffRange, PrView, QueueItem } from "@pier/core/wire";
+import type { DiffView, PrView, QueueItem } from "@pier/core/wire";
 
 import { ActivityRail } from "./activity";
 import { Checks } from "./checks";
+import { CommitPicker, describeView } from "./commits";
 import { FileTree } from "./file-tree";
 import { type MetadataKind, MetadataPicker } from "./metadata";
 import { RevertPanel } from "./revert";
-import { type NewComment, ReviewFile, fromRange } from "./review-file";
+import { type Anchors, type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
 import { RunwayPanel } from "./runway";
 import { TitlePanel } from "./title";
@@ -38,7 +39,8 @@ type Raised =
   | { kind: "runway" }
   | { kind: "picker"; field: MetadataKind }
   | { kind: "title" }
-  | { kind: "revert" };
+  | { kind: "revert" }
+  | { kind: "commits" };
 
 const PICKERS: { field: MetadataKind; key: string; title: string }[] = [
   { field: "labels", key: "l", title: "Edit labels" },
@@ -88,7 +90,13 @@ function Loaded({ pr }: { pr: PrView }) {
   const streamRef = useRef<HTMLDivElement>(null);
 
   const reReview = pr.lastReviewedOid !== null && pr.lastReviewedOid !== pr.headRefOid;
-  const [range, setRange] = useState<DiffRange>(reReview ? "since-review" : "all");
+  const [picked, setPicked] = useState<DiffView>({ range: reReview ? "since-review" : "all" });
+  // Commits a force-push took away can't be shown any more; everything can.
+  const view: DiffView =
+    picked.range === "commits" && !pr.commits.some((c) => c.oid === picked.from)
+      ? { range: "all" }
+      : picked;
+  const anchors = anchorsOf(view, pr.headRefOid);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [rail, setRail] = useState(() => window.innerWidth >= WIDE);
   const [raised, setRaised] = useState<Raised | null>(null);
@@ -109,21 +117,26 @@ function Loaded({ pr }: { pr: PrView }) {
   const [focusedThread, setFocusedThread] = useState<string | null>(null);
 
   const { data: diff } = useQuery({
-    ...q("prDiff", { repo: pr.repo, number: pr.number, range, ignoreWhitespace }),
-    enabled: range !== "all" || ignoreWhitespace,
+    ...q("prDiff", { repo: pr.repo, number: pr.number, ...view, ignoreWhitespace }),
+    enabled: view.range !== "all" || ignoreWhitespace,
   });
-  const files = range === "all" && !ignoreWhitespace ? (pr.files ?? []) : (diff?.files ?? []);
+  const files = view.range === "all" && !ignoreWhitespace ? (pr.files ?? []) : (diff?.files ?? []);
   const ordered = reviewOrder(files);
   const { data: queue = [] } = useQuery(q("inbox", { split: "review" }));
 
-  const threadsByPath = Map.groupBy(pr.threads, (t) => t.path);
-  const draftsByPath = Map.groupBy(pr.drafts, (d) => d.path);
-  const pendingByPath = Map.groupBy(pr.pendingReview?.comments ?? [], (c) => c.path);
+  // Comments belong to the latest code, so an earlier commit's diff shows none of them.
+  const latest = anchors !== "none";
+  const threadsByPath = Map.groupBy(latest ? pr.threads : [], (t) => t.path);
+  const draftsByPath = Map.groupBy(latest ? pr.drafts : [], (d) => d.path);
+  const pendingByPath = Map.groupBy(
+    latest ? (pr.pendingReview?.comments ?? []) : [],
+    (c) => c.path,
+  );
   // What CI pointed at in the code, asked again whenever the head or its checks move.
   const { data: annotations = [] } = useQuery(
     qLive("annotations", { repo: pr.repo, number: pr.number }, pr.headRefOid, pr.checks.state),
   );
-  const annotationsByPath = Map.groupBy(annotations, (a) => a.path);
+  const annotationsByPath = Map.groupBy(latest ? annotations : [], (a) => a.path);
   const threadCounts = new Map([...threadsByPath].map(([path, list]) => [path, list.length]));
   const openThreads = pr.threads.filter((t) => !t.resolved);
   const currentIndex = Math.max(
@@ -162,6 +175,19 @@ function Loaded({ pr }: { pr: PrView }) {
     streamRef.current
       ?.querySelector(`[data-thread="${CSS.escape(next.id)}"]`)
       ?.scrollIntoView({ block: "center" });
+  };
+
+  /** Opens a new comment, where this view's lines are ones a comment can go on. */
+  const compose = (comment: NewComment | null) => {
+    if (comment && anchors === "none") {
+      toast({ text: "Comments go on the latest code; p shows it", tone: "neutral" });
+      return;
+    }
+    if (comment?.kind === "lines" && comment.side === "LEFT" && anchors === "right") {
+      toast({ text: "Comments here can only go on the new code", tone: "neutral" });
+      return;
+    }
+    setComposing(comment);
   };
 
   /** After a decision, the next PR waiting on you (or back to the inbox when there isn't one). */
@@ -312,8 +338,8 @@ function Loaded({ pr }: { pr: PrView }) {
       group: "Review",
       run: () => {
         const file = ordered[currentIndex];
-        if (selection) setComposing(fromRange(selection.path, selection.range));
-        else if (file) setComposing({ kind: "file", path: file.path });
+        if (selection) compose(fromRange(selection.path, selection.range));
+        else if (file) compose({ kind: "file", path: file.path });
       },
     },
     {
@@ -353,11 +379,12 @@ function Loaded({ pr }: { pr: PrView }) {
     },
     {
       id: "pr.range",
-      title: range === "all" ? "Show changes since your review" : "Show all changes",
+      title: "Choose which changes to show",
       keys: ["p"],
       scope: "surface",
+      hint: "commits",
       group: "Display",
-      run: () => setRange(range === "all" ? "since-review" : "all"),
+      run: () => setRaised({ kind: "commits" }),
     },
     {
       id: "pr.whitespace",
@@ -486,7 +513,7 @@ function Loaded({ pr }: { pr: PrView }) {
           <div className="px-8 pt-8 pb-24">
             <Header pr={pr} />
             <Checks pr={pr} />
-            <TurnLine pr={pr} range={range} fallback={diff?.fallback ?? null} />
+            <TurnLine pr={pr} view={view} fallback={diff?.fallback ?? null} />
             <section className="mt-6 border-t border-line pt-6">
               <Writing
                 prId={pr.id}
@@ -512,14 +539,21 @@ function Loaded({ pr }: { pr: PrView }) {
             <section className="mt-10">
               <h2 className="mb-3 flex items-baseline gap-3">
                 <span className="text-section font-semibold text-strong">
-                  {range === "since-review" ? "Since your review" : "Changes"}
+                  {describeView(view, pr.commits)}
                 </span>
-                <span className="text-ui text-faint">{plural(ordered.length, "file")}</span>
+                {view.range === "commits" && view.from === view.to && (
+                  <span className="min-w-0 truncate text-ui text-muted">
+                    {pr.commits.find((c) => c.oid === view.to)?.headline}
+                  </span>
+                )}
+                <span className="shrink-0 text-ui text-faint">
+                  {plural(ordered.length, "file")}
+                </span>
                 {ignoreWhitespace && (
                   <span className="text-meta text-faint">whitespace hidden</span>
                 )}
               </h2>
-              {range === "since-review" && diff && ordered.length === 0 && (
+              {view.range === "since-review" && diff && ordered.length === 0 && (
                 <p className="text-ui text-muted">
                   Nothing has changed since you reviewed {pr.lastReviewedOid?.slice(0, 7)}.
                 </p>
@@ -527,7 +561,7 @@ function Loaded({ pr }: { pr: PrView }) {
               <div className="space-y-8">
                 {ordered.map((file) => (
                   <ReviewFile
-                    key={`${range}:${ignoreWhitespace}:${file.path}`}
+                    key={`${viewKey(view)}:${ignoreWhitespace}:${file.path}`}
                     prId={pr.id}
                     headOid={pr.headRefOid}
                     file={file}
@@ -541,7 +575,8 @@ function Loaded({ pr }: { pr: PrView }) {
                     composing={composing}
                     selection={selection?.path === file.path ? selection.range : null}
                     onSelect={(path, r) => setSelection(r ? { path, range: r } : null)}
-                    onCompose={setComposing}
+                    anchors={anchors}
+                    onCompose={compose}
                   />
                 ))}
               </div>
@@ -559,6 +594,19 @@ function Loaded({ pr }: { pr: PrView }) {
       )}
       {raised?.kind === "title" && <TitlePanel pr={pr} onClose={lower} />}
       {raised?.kind === "revert" && <RevertPanel pr={pr} onClose={lower} />}
+      {raised?.kind === "commits" && (
+        <CommitPicker
+          pr={pr}
+          view={view}
+          onPick={(next) => {
+            setPicked(next);
+            setComposing(null);
+            setSelection(null);
+            lower();
+          }}
+          onClose={lower}
+        />
+      )}
     </div>
   );
 }
@@ -703,15 +751,7 @@ const REVIEWER_TONE: Record<string, Tone> = {
 };
 
 /** One sentence on whose move it is and what you're looking at. */
-function TurnLine({
-  pr,
-  range,
-  fallback,
-}: {
-  pr: PrView;
-  range: DiffRange;
-  fallback: string | null;
-}) {
+function TurnLine({ pr, view, fallback }: { pr: PrView; view: DiffView; fallback: string | null }) {
   const lastReview = pr.timeline
     .toReversed()
     .find((e) => e.kind === "review" && e.author?.login === pr.account);
@@ -726,14 +766,19 @@ function TurnLine({
     text = "Your turn: your review was requested.";
   else text = "";
   const drafts = pr.drafts.length;
-  if (!text && drafts === 0 && !fallback) return null;
+  const showing =
+    view.range === "commits"
+      ? `Showing ${view.from === view.to ? `commit ${view.to.slice(0, 7)}` : `${view.from.slice(0, 7)} to ${view.to.slice(0, 7)}`}${view.to === pr.headRefOid ? "" : ", earlier code, so comments are off"}.`
+      : view.range === "since-review" && pushedSince
+        ? `Showing ${pr.lastReviewedOid?.slice(0, 7)} to ${pr.headRefOid.slice(0, 7)}.`
+        : null;
+  if (!text && drafts === 0 && !fallback && !showing) return null;
   return (
     <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-1 text-ui">
       {text && <span className="text-fg">{text}</span>}
-      {range === "since-review" && pushedSince && (
+      {showing && (
         <span className="text-meta text-faint">
-          Showing {pr.lastReviewedOid?.slice(0, 7)} to {pr.headRefOid.slice(0, 7)}.{" "}
-          <Keys sequence="p" /> for everything
+          {showing} <Keys sequence="p" /> to choose other changes
         </span>
       )}
       {fallback && <span className="text-meta text-warn">{fallback}</span>}
@@ -764,4 +809,18 @@ function reviewRank(path: string): number {
   if (/(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[a-z]+$/.test(path)) return 1;
   if (/\.(md|mdx|txt|ya?ml|json|toml)$|^\.github\//.test(path)) return 2;
   return 0;
+}
+
+/**
+ * Which lines a comment can go on. GitHub anchors comments to the latest code against the base:
+ * the full diff takes both sides, a diff that ends at the latest commit only its new side, and
+ * an earlier commit's none.
+ */
+function anchorsOf(view: DiffView, head: string): Anchors {
+  if (view.range === "all") return "both";
+  return view.range === "commits" && view.to !== head ? "none" : "right";
+}
+
+function viewKey(view: DiffView): string {
+  return view.range === "commits" ? `${view.from}..${view.to}` : view.range;
 }

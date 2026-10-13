@@ -65,7 +65,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | FILES-FILTER | Filter by extension, owned by you, viewed, deleted | CODEOWNERS parse | I5 | - |
 | FILES-VIEWED | Viewed checkbox, synced to GitHub, resets when the file changes | `markFileAsViewed`, `viewerViewedState` | M1b | built |
 | FILES-SINCE-REVIEW | Only what changed since your last review, without rebase noise | git store merge-tree | M1b | sandbox |
-| FILES-COMMITS | Commit list, single commit, any range | git store / `commits` | I4 | - |
+| FILES-COMMITS | Commit list, single commit, any range | git store / `commits` | I4 | sandbox |
 | FILES-RICH | Rich diffs: images, markdown prose, notebooks, CSV, SVG | client | I9 | - |
 | FILES-LARGE | Very large PRs (over 300 / 3,000 files, truncated patches) | git store | I9 | - |
 | FILES-LOCKFILE | Lockfiles collapsed, dependency summary | dependency review API | M1a | built |

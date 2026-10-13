@@ -6,19 +6,13 @@ import { ago, shortRepo } from "@/lib/format";
 import { q } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
 import { AccountAvatar } from "@/ui/avatar";
-import { Dot, type Tone } from "@/ui/dot";
+import { CHECK_TONE, Dot } from "@/ui/dot";
 import type { FlightItem } from "@pier/core/wire";
 
 // Everything that isn't your turn: approvals waiting on automation, your PRs waiting on others.
 // Nothing here needs you; it's where you look to see that things are moving.
 
 const ROW = 40;
-const TONE: Record<FlightItem["checks"]["state"], Tone> = {
-  success: "ok",
-  failure: "bad",
-  pending: "warn",
-  none: "faint",
-};
 
 export function Flight() {
   const { data: items = [], isPending } = useQuery(q("flight", {}));
@@ -52,7 +46,7 @@ export function Flight() {
           onOpen={(item) => openOnGitHub(item.url)}
           render={(item) => (
             <div className="grid w-full max-w-[1320px] grid-cols-[16px_minmax(0,2fr)_minmax(120px,0.8fr)_minmax(0,1.4fr)_48px_20px] items-center gap-x-4">
-              <Dot tone={TONE[item.checks.state]} />
+              <Dot tone={CHECK_TONE[item.checks.state]} />
               <span className="truncate text-fg">{item.title}</span>
               <span className="truncate font-code text-meta text-faint">
                 {shortRepo(item.repo)}#{item.number}

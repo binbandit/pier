@@ -215,3 +215,35 @@ test("a failing check shows its failing step, what it pointed at, and re-runs", 
     timeout: 15_000,
   });
 });
+
+test("one commit, or a run of them, can be looked at on its own", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-web/pull/7");
+  await expect(page.getByRole("heading", { name: "Paginate events with cursors" })).toBeVisible();
+  const changes = page
+    .getByRole("heading", { level: 2 })
+    .filter({ hasText: /^Commit|^Changes|^Since/ });
+
+  await page.keyboard.press("p");
+  const picker = page.getByRole("region", { name: "Choose changes" });
+  await picker.getByRole("button", { name: /Address review feedback/ }).click();
+  await expect(changes).toContainText("Commit 2 of 2");
+  await expect(changes).toContainText("1 file");
+
+  // Stretch back over the first commit too.
+  await page.keyboard.press("p");
+  await expect(picker).toBeVisible();
+  await page.keyboard.press("Shift+ArrowUp");
+  await page.keyboard.press("Enter");
+  await expect(changes).toContainText("Commits 1 to 2 of 2");
+  await expect(changes).toContainText("2 files");
+
+  // An earlier commit is old code, so comments wait for the latest.
+  await page.keyboard.press("p");
+  await expect(picker).toBeVisible();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Enter");
+  await expect(changes).toContainText("Commit 1 of 2");
+  await expect(page.getByText(/earlier code, so comments are off/)).toBeVisible();
+  await page.keyboard.press("c");
+  await expect(toast(page, "Comments go on the latest code; p shows it")).toBeVisible();
+});

@@ -122,6 +122,10 @@ export interface GitHubPort {
   detail(prId: string): Promise<PrDetail | null>;
   /** The merge base of `head` with `base` (a branch or commit), via the compare API. */
   mergeBase(repo: string, base: string, head: string): Promise<string | null>;
+  /** A commit's first parent. */
+  commitParent(repo: string, oid: string): Promise<string | null>;
+  /** Per-file diffs between two commits, for commit-range views without the git store. */
+  compareFiles(repo: string, base: string, head: string): Promise<DiffFile[]>;
   /** A file's contents at a commit, or null if it doesn't exist there (or is binary). */
   fileText(repo: string, oid: string, path: string): Promise<string | null>;
   submitReview(input: SubmitReviewInput): Promise<ReviewSummary>;

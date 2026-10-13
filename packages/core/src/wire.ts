@@ -481,6 +481,8 @@ export type PrView = {
   linkedIssues: LinkedIssue[];
   /** Names of checks branch rules require to pass before merging. */
   requiredChecks: string[];
+  /** The PR's commits, oldest first (the last 100). */
+  commits: CommitView[];
   /** The head branch: whether it's still there, and what you can do about it. */
   headBranch: { exists: boolean; canDelete: boolean; canRestore: boolean };
   account: string;
@@ -500,8 +502,28 @@ export type PrView = {
   detailLoaded: boolean;
 };
 
-/** "All changes", or only what changed since you last reviewed. */
-export type DiffRange = "all" | "since-review";
+/**
+ * Which changes to show: all of them, only what changed since you last reviewed, or what a run of
+ * commits did (`from` and `to` are the same commit for a single one).
+ */
+export type DiffView =
+  | { range: "all" }
+  | { range: "since-review" }
+  | { range: "commits"; from: string; to: string };
+
+export type DiffRange = DiffView["range"];
+
+/** One commit on the PR, for picking which ones to look at. */
+export type CommitView = {
+  oid: string;
+  headline: string;
+  author: string | null;
+  at: string;
+  /** Its checks' overall state. */
+  checks: CheckState;
+  /** A verified signature (true), a bad one (false), or none (null). */
+  verified: boolean | null;
+};
 
 export type PrDiff = {
   range: DiffRange;

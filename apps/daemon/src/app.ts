@@ -57,6 +57,7 @@ export function createApp(options: AppOptions) {
     policy: defaultPolicy,
     identity: { linked: true },
     sandbox: { writeOwners: null },
+    logSeenAt: new Date(0).toISOString(),
     ...options.defaults,
   });
   const model = new Model(stores.cache, (login) => {
@@ -311,7 +312,7 @@ export function createApp(options: AppOptions) {
           trackedPrs: s.trackedPrs,
           message: s.message ?? (s.pending > 0 ? `Reading ${s.pending} PRs` : null),
         },
-        outbox: outbox.counts(),
+        outbox: outbox.counts(settings.get("logSeenAt")),
         counts: views.counts(),
       };
     },

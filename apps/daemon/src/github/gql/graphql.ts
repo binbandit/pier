@@ -410,7 +410,12 @@ export type PrDetailQuery = { node:
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
-           | null } | null> | null }, allCommits: { totalCount: number, nodes: Array<{ commit: { oid: string, messageHeadline: string, committedDate: string, author: { name: string | null, user: { login: string } | null } | null, statusCheckRollup: { state: StatusState } | null } } | null> | null }, timelineItems: { nodes: Array<
+           | null } | null> | null }, allCommits: { totalCount: number, nodes: Array<{ commit: { oid: string, messageHeadline: string, committedDate: string, signature:
+              | { isValid: boolean }
+              | { isValid: boolean }
+              | { isValid: boolean }
+              | { isValid: boolean }
+             | null, author: { name: string | null, user: { login: string } | null } | null, statusCheckRollup: { state: StatusState } | null } } | null> | null }, timelineItems: { nodes: Array<
           | { __typename: 'AddedToMergeQueueEvent', createdAt: string, actor:
               | { login: string }
               | { login: string }
@@ -1614,6 +1619,9 @@ export const PrDetailDocument = new TypedDocumentString(`
             oid
             messageHeadline
             committedDate
+            signature {
+              isValid
+            }
             author {
               name
               user {

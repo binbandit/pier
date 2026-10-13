@@ -10,7 +10,7 @@ import { ago, plural, shortRepo } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
 import { AccountAvatar, Avatar } from "@/ui/avatar";
-import { Dot, type Tone } from "@/ui/dot";
+import { CHECK_TONE, Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
 import type { GroupItem, PrItem, QueueItem, Split } from "@pier/core/wire";
 
@@ -192,17 +192,10 @@ function GroupLine({ item }: { item: GroupItem }) {
   );
 }
 
-const CHECK_TONES: Record<PrItem["checks"]["state"], Tone> = {
-  success: "ok",
-  failure: "bad",
-  pending: "warn",
-  none: "faint",
-};
-
 function PrLine({ item }: { item: PrItem }) {
   return (
     <div className="grid w-full max-w-[1320px] grid-cols-[16px_minmax(0,2fr)_minmax(120px,0.8fr)_minmax(0,1.2fr)_88px_48px_20px] items-center gap-x-4">
-      <Dot tone={CHECK_TONES[item.checks.state]} label={`checks ${item.checks.state}`} />
+      <Dot tone={CHECK_TONE[item.checks.state]} label={`checks ${item.checks.state}`} />
       <span className={clsx("truncate", item.isDraft ? "text-muted" : "text-strong")}>
         {item.isDraft && <span className="mr-2 text-faint">Draft</span>}
         {item.title}

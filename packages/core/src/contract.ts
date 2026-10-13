@@ -36,9 +36,14 @@ export const inputs = {
   prDiff: type({
     repo: "string",
     number: "number.integer > 0",
-    range: "'all' | 'since-review'",
     "ignoreWhitespace?": "boolean",
-  }),
+  }).and(
+    type({ range: "'all' | 'since-review'" }).or({
+      range: "'commits'",
+      from: "string",
+      to: "string",
+    }),
+  ),
   saveDraft: type({
     "id?": "string",
     prId: "string",
@@ -137,6 +142,8 @@ export const inputs = {
   milestones: type({ repo: "string" }),
   flight: type({}),
   log: type({ "limit?": "1 <= number.integer <= 500" }),
+  /** The Log was looked at, so its failures stop showing in the status line. */
+  seenLog: type({}),
   planAction: type({
     action: "'approve' | 'rebase' | 'recreate'",
     prIds: "string[] > 0",
@@ -196,6 +203,7 @@ export type Outputs = {
   milestones: Milestone[];
   flight: FlightItem[];
   log: LogEntry[];
+  seenLog: { ok: true };
   planAction: PlanPreview;
   commitPlan: { commandIds: string[] };
   cancelCommands: { cancelled: number };

@@ -1,5 +1,7 @@
 import { clsx } from "clsx";
 
+import type { CheckState } from "@pier/core/wire";
+
 export type Tone = "ok" | "bad" | "warn" | "info" | "auto" | "faint" | "accent";
 
 const TONES: Record<Tone, string> = {
@@ -44,4 +46,12 @@ export const TEXT_TONES: Record<Tone, string> = {
   auto: "text-auto",
   faint: "text-off",
   accent: "text-accent",
+};
+
+/** How a set of checks reads at a glance; no checks at all is never green. */
+export const CHECK_TONE: Record<CheckState, Tone> = {
+  success: "ok",
+  failure: "bad",
+  pending: "warn",
+  none: "faint",
 };
