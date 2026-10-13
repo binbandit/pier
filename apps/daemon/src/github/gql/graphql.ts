@@ -131,6 +131,13 @@ export type PatchStatus =
   /** The file was renamed. Git status 'R'. */
   | 'RENAMED';
 
+/** The possible methods for updating a pull request's head branch with the base branch. */
+export type PullRequestBranchUpdateMethod =
+  /** Update branch via merge */
+  | 'MERGE'
+  /** Update branch via rebase */
+  | 'REBASE';
+
 /** Represents available types of methods to use when merging a pull request. */
 export type PullRequestMergeMethod =
   /** Add all commits from the head branch to the base branch with a merge commit. */
@@ -579,6 +586,41 @@ export type CommentsByQuery = { node:
                | null } | null> | null } } | null> | null } }
     | Record<PropertyKey, never>
    | null };
+
+export type MergeInfoQueryVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type MergeInfoQuery = { node:
+    | { id: string, isDraft: boolean, mergeable: MergeableState, mergeStateStatus: MergeStateStatus, reviewDecision: PullRequestReviewDecision | null, viewerCanUpdateBranch: boolean, viewerCanEnableAutoMerge: boolean, viewerCanMergeAsAdmin: boolean, mergeHeadline: string, mergeBody: string, squashHeadline: string, squashBody: string, autoMergeRequest: { enabledAt: string | null, mergeMethod: PullRequestMergeMethod } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, repository: { mergeCommitAllowed: boolean, squashMergeAllowed: boolean, rebaseMergeAllowed: boolean, autoMergeAllowed: boolean, viewerDefaultMergeMethod: PullRequestMergeMethod } }
+    | Record<PropertyKey, never>
+   | null };
+
+export type EnableAutoMergeMutationVariables = Exact<{
+  prId: string | number;
+  method: PullRequestMergeMethod;
+  head: string;
+}>;
+
+
+export type EnableAutoMergeMutation = { enablePullRequestAutoMerge: { pullRequest: { id: string } | null } | null };
+
+export type DisableAutoMergeMutationVariables = Exact<{
+  prId: string | number;
+}>;
+
+
+export type DisableAutoMergeMutation = { disablePullRequestAutoMerge: { pullRequest: { id: string } | null } | null };
+
+export type UpdateBranchMutationVariables = Exact<{
+  prId: string | number;
+  method: PullRequestBranchUpdateMethod;
+  head: string;
+}>;
+
+
+export type UpdateBranchMutation = { updatePullRequestBranch: { pullRequest: { id: string } | null } | null };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -1201,3 +1243,69 @@ export const CommentsByDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<CommentsByQuery, CommentsByQueryVariables>;
+export const MergeInfoDocument = new TypedDocumentString(`
+    query MergeInfo($id: ID!) {
+  node(id: $id) {
+    ... on PullRequest {
+      id
+      isDraft
+      mergeable
+      mergeStateStatus
+      reviewDecision
+      viewerCanUpdateBranch
+      viewerCanEnableAutoMerge
+      viewerCanMergeAsAdmin
+      autoMergeRequest {
+        enabledAt
+        mergeMethod
+      }
+      mergeQueueEntry {
+        position
+        state
+      }
+      mergeHeadline: viewerMergeHeadlineText(mergeType: MERGE)
+      mergeBody: viewerMergeBodyText(mergeType: MERGE)
+      squashHeadline: viewerMergeHeadlineText(mergeType: SQUASH)
+      squashBody: viewerMergeBodyText(mergeType: SQUASH)
+      repository {
+        mergeCommitAllowed
+        squashMergeAllowed
+        rebaseMergeAllowed
+        autoMergeAllowed
+        viewerDefaultMergeMethod
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<MergeInfoQuery, MergeInfoQueryVariables>;
+export const EnableAutoMergeDocument = new TypedDocumentString(`
+    mutation EnableAutoMerge($prId: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
+  enablePullRequestAutoMerge(
+    input: { pullRequestId: $prId, mergeMethod: $method, expectedHeadOid: $head }
+  ) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<EnableAutoMergeMutation, EnableAutoMergeMutationVariables>;
+export const DisableAutoMergeDocument = new TypedDocumentString(`
+    mutation DisableAutoMerge($prId: ID!) {
+  disablePullRequestAutoMerge(input: { pullRequestId: $prId }) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<DisableAutoMergeMutation, DisableAutoMergeMutationVariables>;
+export const UpdateBranchDocument = new TypedDocumentString(`
+    mutation UpdateBranch($prId: ID!, $method: PullRequestBranchUpdateMethod!, $head: GitObjectID!) {
+  updatePullRequestBranch(
+    input: { pullRequestId: $prId, updateMethod: $method, expectedHeadOid: $head }
+  ) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<UpdateBranchMutation, UpdateBranchMutationVariables>;

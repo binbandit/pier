@@ -1,4 +1,4 @@
-import type { CheckLog, CheckRunView, DiffFile } from "@pier/core/wire";
+import type { CheckLog, CheckRunView, DiffFile, MergeMethod } from "@pier/core/wire";
 
 import type { RateWindow } from "./client";
 import type { PrDetail } from "./pr-detail";
@@ -50,6 +50,28 @@ export type SubmitReviewInput = {
   threads: DraftThreadInput[];
 };
 
+/** The merge-relevant state of a PR and its repo, as the reading account sees it. */
+export type MergeInfo = {
+  isDraft: boolean;
+  mergeable: string;
+  mergeStateStatus: string;
+  reviewDecision: string | null;
+  canUpdateBranch: boolean;
+  canEnableAutoMerge: boolean;
+  autoMerge: { method: MergeMethod } | null;
+  mergeQueue: { position: number; state: string } | null;
+  messages: Partial<Record<MergeMethod, { headline: string; body: string }>>;
+  methods: MergeMethod[];
+  defaultMethod: MergeMethod;
+  autoMergeAllowed: boolean;
+};
+
+export type MergeResult = {
+  status: "merged" | "enqueued" | "pending" | "failed";
+  message: string;
+  uuid: string | null;
+};
+
 export interface GitHubPort {
   readonly login: string;
   viewer(): Promise<{ login: string; avatarUrl: string }>;
@@ -81,6 +103,16 @@ export interface GitHubPort {
   /** The tail of an Actions job's log. */
   jobLog(repo: string, jobId: number): Promise<CheckLog | null>;
   rerunFailedJobs(repo: string, runId: number): Promise<void>;
+  mergeInfo(prId: string): Promise<MergeInfo | null>;
+  /** Merges through the async merge API (the only one that handles stacks and queues). */
+  merge(
+    repo: string,
+    number: number,
+    input: { sha: string; method: MergeMethod; title?: string; message?: string },
+  ): Promise<MergeResult>;
+  mergeStatus(repo: string, number: number, uuid: string): Promise<MergeResult>;
+  setAutoMerge(prId: string, method: MergeMethod | null, headOid: string): Promise<void>;
+  updateBranch(prId: string, rebase: boolean, headOid: string): Promise<void>;
   /** When a GitHub release was published, or null if the tag has no release. */
   releaseDate(repo: string, tag: string): Promise<string | null>;
   rates(): { graphql: RateWindow | null; core: RateWindow | null };

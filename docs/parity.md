@@ -107,11 +107,11 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 
 | ID | GitHub behaviour | API | Milestone | Status |
 |---|---|---|---|---|
-| MERGE-RUNWAY | Why it can't merge yet, with one-key fixes | rules API + `mergeStateStatus` | I3 | - |
-| MERGE-METHODS | Merge / squash / rebase with the message | `merge-async` | I3 | - |
-| MERGE-AUTO | Enable / disable auto-merge | `enablePullRequestAutoMerge` | I3 | - |
+| MERGE-RUNWAY | Why it can't merge yet, with one-key fixes | `mergeStateStatus` + rollup (rules API not yet read, so a rule block is named only generically) | I3 | sandbox |
+| MERGE-METHODS | Merge / squash / rebase with the message | `merge-async` | I3 | sandbox |
+| MERGE-AUTO | Enable / disable auto-merge | `enablePullRequestAutoMerge` (private repos on a free plan can't use it, so not yet live-tested) | I3 | built |
 | MERGE-QUEUE | Add to / jump / remove from merge queue | `enqueuePullRequest` | I3 | - |
-| MERGE-UPDATE | Update branch by merge or rebase | `updatePullRequestBranch` | I3 | - |
+| MERGE-UPDATE | Update branch by merge or rebase | `updatePullRequestBranch` | I3 | sandbox |
 | MERGE-CONFLICTS | Web conflict editor | none | gap | - |
 | MERGE-BRANCH | Delete / restore head branch | refs API | I3 | - |
 | MERGE-REVERT | Revert a merged PR | `revertPullRequest` | I3 | - |

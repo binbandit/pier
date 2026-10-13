@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useCommands } from "@/keys/registry";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
+import { Dock } from "@/ui/dock";
 import { Keys } from "@/ui/kbd";
 
 // Shift+O: the escape hatch to github.com. One key says why, so missing features show up in the
@@ -53,10 +54,7 @@ export function EscapeHatch({ url }: { url: string }) {
   ]);
 
   return (
-    <section
-      aria-label="Open on GitHub"
-      className="border-t border-line-strong bg-raise px-6 py-4 motion-safe:animate-[rise_120ms_var(--ease-out)]"
-    >
+    <Dock label="Open on GitHub">
       <div className="flex items-baseline gap-6">
         <h2 className="text-ui font-medium text-strong">Open on github.com</h2>
         <span className="truncate font-code text-meta text-faint">
@@ -81,6 +79,6 @@ export function EscapeHatch({ url }: { url: string }) {
           className="h-7 min-w-[280px] flex-1 rounded-sm border border-line-strong bg-transparent px-2 text-meta text-fg outline-none placeholder:text-faint focus:border-accent"
         />
       </div>
-    </section>
+    </Dock>
   );
 }

@@ -4,7 +4,7 @@ import { useCommands } from "@/keys/registry";
 import { useUi } from "@/stores/ui";
 import { Keys } from "@/ui/kbd";
 
-/** Confirmations sit just above the status line. `z` undoes the newest one that can be undone. */
+/** Confirmations sit just above the status line, or above a raised panel. `z` undoes the newest one that can be undone. */
 export function Toasts() {
   const toasts = useUi((s) => s.toasts);
   const dismiss = useUi((s) => s.dismissToast);
@@ -31,7 +31,7 @@ export function Toasts() {
   if (toasts.length === 0) return null;
   return (
     <div
-      className="pointer-events-none fixed bottom-10 left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-2"
+      className="pointer-events-none fixed bottom-[calc(var(--dock,0px)+2.5rem)] left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-2"
       aria-live="polite"
     >
       {toasts.map((t) => (

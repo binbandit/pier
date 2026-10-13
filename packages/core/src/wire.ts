@@ -97,7 +97,10 @@ export type CommandKind =
   | "viewed"
   | "unviewed"
   | "notification-done"
-  | "rerun-failed";
+  | "rerun-failed"
+  | "merge"
+  | "auto-merge"
+  | "update-branch";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -383,6 +386,27 @@ export type PrDiff = {
   fallback: string | null;
   fromOid: string | null;
   toOid: string;
+};
+
+export type MergeMethod = "MERGE" | "SQUASH" | "REBASE";
+
+/** One reason a PR can't merge yet, and the key that fixes it when there is one. */
+export type Blocker = {
+  text: string;
+  fix: "update-branch" | "rerun" | "auto-merge" | "ready" | null;
+};
+
+export type Runway = {
+  ready: boolean;
+  blockers: Blocker[];
+  methods: MergeMethod[];
+  defaultMethod: MergeMethod;
+  /** GitHub's default commit title and body for each method (rebase has none). */
+  messages: Partial<Record<MergeMethod, { headline: string; body: string }>>;
+  canAutoMerge: boolean;
+  autoMerge: { method: MergeMethod } | null;
+  mergeQueue: { position: number; state: string } | null;
+  canUpdateBranch: boolean;
 };
 
 export type CheckRunView = {

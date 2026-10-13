@@ -19,6 +19,7 @@ import { Checks } from "./checks";
 import { FileTree } from "./file-tree";
 import { type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
+import { RunwayPanel } from "./runway";
 
 // One PR on one page. The stream reads top to bottom: what this is, whose turn it is, then the
 // files (source first) with conversation inline. Re-reviews open on what changed since you last
@@ -68,6 +69,7 @@ function Loaded({ pr }: { pr: PrView }) {
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [rail, setRail] = useState(() => window.innerWidth >= WIDE);
   const [panel, setPanel] = useState<ReviewEvent | null>(null);
+  const [runway, setRunway] = useState(false);
   const [current, setCurrent] = useState<string | null>(null);
   const [selection, setSelection] = useState<{ path: string; range: SelectedLineRange } | null>(
     null,
@@ -295,6 +297,18 @@ function Loaded({ pr }: { pr: PrView }) {
       },
     },
     {
+      id: "pr.merge",
+      title: "Merge",
+      keys: ["m"],
+      scope: "surface",
+      hint: pr.author?.login === pr.account ? "merge" : undefined,
+      group: "Merge",
+      run: () => {
+        setPanel(null);
+        setRunway(true);
+      },
+    },
+    {
       id: "pr.rerun",
       title: "Re-run failed checks",
       keys: ["f r"],
@@ -389,6 +403,9 @@ function Loaded({ pr }: { pr: PrView }) {
       </div>
       {panel && (
         <ReviewPanel pr={pr} initial={panel} onClose={() => setPanel(null)} onSent={advance} />
+      )}
+      {runway && !panel && (
+        <RunwayPanel pr={pr} onClose={() => setRunway(false)} onMerged={advance} />
       )}
     </div>
   );

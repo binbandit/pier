@@ -6,6 +6,7 @@ import { useCommands } from "@/keys/registry";
 import { duration, plural } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
+import { Dock } from "@/ui/dock";
 import { Keys } from "@/ui/kbd";
 import type { PlanPreview } from "@pier/core/wire";
 
@@ -92,10 +93,7 @@ export function PlanStrip({ preview, label }: { preview: PlanPreview; label: str
   ]);
 
   return (
-    <section
-      aria-label="Confirm writes"
-      className="border-t border-line-strong bg-raise px-6 py-4 motion-safe:animate-[rise_120ms_var(--ease-out)]"
-    >
+    <Dock label="Confirm writes">
       <div className="flex items-baseline gap-6">
         <h2 className="text-ui font-medium text-strong">
           {acting.length === 0
@@ -156,6 +154,6 @@ export function PlanStrip({ preview, label }: { preview: PlanPreview; label: str
           )}
         </div>
       )}
-    </section>
+    </Dock>
   );
 }

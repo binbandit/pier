@@ -7,8 +7,10 @@ import type {
   CheckLog,
   CheckRunView,
   DiffRange,
+  MergeMethod,
   PrDiff,
   PrView,
+  Runway,
   Side,
   Thread,
   ViewedState,
@@ -17,12 +19,15 @@ import type {
 import type { Details } from "./details";
 import type { Drafts } from "./drafts";
 import type { Model, PrRecord } from "./model";
+import { buildRunway } from "./runway";
 
 // Everything the PR canvas reads and writes: the view of one PR (doc + detail + your drafts +
 // writes still in flight), its diff, and the review actions. Writes all go through the outbox.
 
 /** A submitted review waits this long before sending, so `z` can still take it back. */
 const REVIEW_HOLD_MS = 5_000;
+/** Merges hold the same way: once one goes through it can only be reverted. */
+const MERGE_HOLD_MS = 5_000;
 
 export type InterdiffSource = {
   interdiff(
@@ -309,6 +314,42 @@ export class ReviewService {
     const record = [...this.deps.model.all()].find((r) => r.doc.repo === repo);
     const port = record && this.deps.ports.get(record.reader);
     return port ? port.jobLog(repo, jobId) : null;
+  }
+
+  async runway(repo: string, number: number): Promise<Runway | null> {
+    const record = this.find(repo, number);
+    const port = record && this.deps.ports.get(record.reader);
+    if (!record || !port) return null;
+    const info = await port.mergeInfo(record.doc.id);
+    return info ? buildRunway(record.doc, info) : null;
+  }
+
+  /** Merges after a short undo window, for the head commit on screen. */
+  merge(
+    prId: string,
+    method: MergeMethod,
+    headline: string | undefined,
+    body: string | undefined,
+  ): string[] {
+    return this.enqueue(
+      this.require(prId),
+      "merge",
+      { method, ...(headline ? { headline } : {}), ...(body !== undefined ? { body } : {}) },
+      MERGE_HOLD_MS,
+    );
+  }
+
+  setAutoMerge(prId: string, enabled: boolean, method: MergeMethod | undefined): string[] {
+    return this.enqueue(
+      this.require(prId),
+      "auto-merge",
+      { enabled, ...(method ? { method } : {}) },
+      0,
+    );
+  }
+
+  updateBranch(prId: string, rebase: boolean): string[] {
+    return this.enqueue(this.require(prId), "update-branch", { rebase }, 0);
   }
 
   /** Re-runs the failed jobs of every failing Actions run on these PRs' heads. */

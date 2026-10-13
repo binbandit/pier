@@ -7,6 +7,7 @@ import { useCommands } from "@/keys/registry";
 import { plural } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
+import { Dock } from "@/ui/dock";
 import { Keys } from "@/ui/kbd";
 import type { PrView } from "@pier/core/wire";
 
@@ -83,11 +84,8 @@ export function ReviewPanel({
   };
 
   return (
-    <section
-      aria-label="Review"
-      className="border-t border-line-strong bg-raise px-6 py-4 motion-safe:animate-[rise_120ms_var(--ease-out)]"
-    >
-      <div className="mx-auto max-w-[900px]">
+    <Dock label="Review">
+      <div className="max-w-[900px]">
         <div className="mb-3 flex items-center gap-2">
           {EVENTS.map(({ event: e, label }, i) => {
             const disabled = own && e !== "COMMENT";
@@ -140,6 +138,6 @@ export function ReviewPanel({
           </button>
         )}
       </div>
-    </section>
+    </Dock>
   );
 }

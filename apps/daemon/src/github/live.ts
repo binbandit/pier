@@ -1,6 +1,6 @@
 import type { components } from "@octokit/openapi-types";
 
-import type { CheckLog, CheckRunView, DiffFile } from "@pier/core/wire";
+import type { CheckLog, CheckRunView, DiffFile, MergeMethod } from "@pier/core/wire";
 
 import type { GitHubTransport } from "./client";
 import { GitHubError } from "./client";
@@ -8,8 +8,11 @@ import {
   ApproveMutation,
   CommentMutation,
   CommentsByQuery,
+  DisableAutoMergeMutation,
+  EnableAutoMergeMutation,
   HydrateQuery,
   MarkViewedMutation,
+  MergeInfoQuery,
   PrDetailQuery,
   ReplyMutation,
   ResolveThreadMutation,
@@ -19,10 +22,13 @@ import {
   SweepQuery,
   UnmarkViewedMutation,
   UnresolveThreadMutation,
+  UpdateBranchMutation,
   ViewerQuery,
 } from "./ops";
 import type {
   GitHubPort,
+  MergeInfo,
+  MergeResult,
   NotificationPoll,
   NotificationThread,
   ReviewSummary,
@@ -330,6 +336,82 @@ export class LiveGitHub implements GitHubPort {
     });
   }
 
+  async mergeInfo(prId: string): Promise<MergeInfo | null> {
+    const data = await this.client.graphql(MergeInfoQuery, { id: prId }, "interactive");
+    const node = data.node;
+    if (!node || !("mergeStateStatus" in node)) return null;
+    const repo = node.repository;
+    const methods: MergeMethod[] = [
+      ...(repo.squashMergeAllowed ? (["SQUASH"] as const) : []),
+      ...(repo.mergeCommitAllowed ? (["MERGE"] as const) : []),
+      ...(repo.rebaseMergeAllowed ? (["REBASE"] as const) : []),
+    ];
+    return {
+      isDraft: node.isDraft,
+      mergeable: node.mergeable,
+      mergeStateStatus: node.mergeStateStatus,
+      reviewDecision: node.reviewDecision ?? null,
+      canUpdateBranch: node.viewerCanUpdateBranch,
+      canEnableAutoMerge: node.viewerCanEnableAutoMerge,
+      autoMerge: node.autoMergeRequest ? { method: node.autoMergeRequest.mergeMethod } : null,
+      mergeQueue: node.mergeQueueEntry,
+      messages: {
+        MERGE: { headline: node.mergeHeadline, body: node.mergeBody },
+        SQUASH: { headline: node.squashHeadline, body: node.squashBody },
+      },
+      methods,
+      defaultMethod: methods.includes(repo.viewerDefaultMergeMethod)
+        ? repo.viewerDefaultMergeMethod
+        : (methods[0] ?? "MERGE"),
+      autoMergeAllowed: repo.autoMergeAllowed,
+    };
+  }
+
+  async merge(
+    repo: string,
+    number: number,
+    input: { sha: string; method: MergeMethod; title?: string; message?: string },
+  ): Promise<MergeResult> {
+    const response = await this.client.rest<AsyncMerge>({
+      method: "PUT",
+      path: `/repos/${repo}/pulls/${number}/merge-async`,
+      body: {
+        sha: input.sha,
+        merge_method: input.method.toLowerCase(),
+        ...(input.title ? { commit_title: input.title } : {}),
+        ...(input.message !== undefined ? { commit_message: input.message } : {}),
+      },
+      priority: "interactive",
+    });
+    return toMergeResult(response.data);
+  }
+
+  async mergeStatus(repo: string, number: number, uuid: string): Promise<MergeResult> {
+    const response = await this.client.rest<AsyncMerge>({
+      path: `/repos/${repo}/pulls/${number}/merge-async/${uuid}`,
+      priority: "interactive",
+    });
+    return toMergeResult(response.data);
+  }
+
+  async setAutoMerge(prId: string, method: MergeMethod | null, headOid: string): Promise<void> {
+    if (method)
+      await this.client.graphql(
+        EnableAutoMergeMutation,
+        { prId, method, head: headOid },
+        "interactive",
+      );
+    else await this.client.graphql(DisableAutoMergeMutation, { prId }, "interactive");
+  }
+
+  async updateBranch(prId: string, rebase: boolean, headOid: string): Promise<void> {
+    await this.client.graphql(
+      UpdateBranchMutation,
+      { prId, method: rebase ? "REBASE" : "MERGE", head: headOid },
+      "interactive",
+    );
+  }
+
   async releaseDate(repo: string, tag: string): Promise<string | null> {
     try {
       const response = await this.client.rest<components["schemas"]["release"]>({
@@ -436,6 +518,19 @@ async function splitOnTimeout<I, O>(items: I[], run: (part: I[]) => Promise<O[]>
       ...(await splitOnTimeout(items.slice(middle), run)),
     ];
   }
+}
+
+/** The async merge API's answer: `{ status, details: { message, uuid? } }`. */
+type AsyncMerge = { status: string; details?: { message?: string; uuid?: string } };
+
+function toMergeResult(data: AsyncMerge): MergeResult {
+  const known = ["merged", "enqueued", "pending", "failed"] as const;
+  const status = known.find((s) => s === data.status) ?? "failed";
+  return {
+    status,
+    message: data.details?.message ?? data.status,
+    uuid: data.details?.uuid ?? null,
+  };
 }
 
 function checkRunState(status: string, conclusion: string | null): CheckRunView["state"] {

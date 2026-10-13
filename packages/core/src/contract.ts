@@ -11,6 +11,7 @@ import type {
   PrDiff,
   PrView,
   QueueItem,
+  Runway,
   SplitCounts,
 } from "./wire";
 
@@ -53,6 +54,19 @@ export const inputs = {
   checks: type({ repo: "string", number: "number.integer > 0" }),
   checkLog: type({ repo: "string", jobId: "number.integer > 0" }),
   rerunFailed: type({ prIds: "string[] > 0" }),
+  runway: type({ repo: "string", number: "number.integer > 0" }),
+  merge: type({
+    prId: "string",
+    method: "'MERGE' | 'SQUASH' | 'REBASE'",
+    "headline?": "string",
+    "body?": "string",
+  }),
+  setAutoMerge: type({
+    prId: "string",
+    enabled: "boolean",
+    "method?": "'MERGE' | 'SQUASH' | 'REBASE'",
+  }),
+  updateBranch: type({ prId: "string", rebase: "boolean" }),
   flight: type({}),
   log: type({ "limit?": "1 <= number.integer <= 500" }),
   planAction: type({
@@ -84,6 +98,10 @@ export type Outputs = {
   checks: CheckRunView[];
   checkLog: CheckLog | null;
   rerunFailed: { commandIds: string[]; runs: number };
+  runway: Runway | null;
+  merge: { commandIds: string[] };
+  setAutoMerge: { commandIds: string[] };
+  updateBranch: { commandIds: string[] };
   flight: FlightItem[];
   log: LogEntry[];
   planAction: PlanPreview;

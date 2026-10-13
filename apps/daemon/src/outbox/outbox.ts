@@ -2,7 +2,13 @@ import type { Database } from "bun:sqlite";
 
 import { GitHubError } from "@/github/client";
 import type { DraftThreadInput, GitHubPort, ReviewEvent } from "@/github/port";
-import type { CommandKind, LogEntry, OutboxState, PendingWrite } from "@pier/core/wire";
+import type {
+  CommandKind,
+  LogEntry,
+  MergeMethod,
+  OutboxState,
+  PendingWrite,
+} from "@pier/core/wire";
 
 // Every write to GitHub is a persisted command. Its lifecycle:
 //
@@ -28,6 +34,13 @@ export type CommandPayload = {
   bumpKeys?: string[];
   /** The Actions run to re-run the failed jobs of. */
   runId?: number;
+  method?: MergeMethod;
+  /** Merge commit title; `body` is its message. */
+  headline?: string;
+  /** Auto-merge on (true) or off (false). */
+  enabled?: boolean;
+  /** Update the branch by rebasing instead of merging the base in. */
+  rebase?: boolean;
 };
 
 /** Kinds that create content on GitHub and so count against its 500-per-hour limit. */
@@ -452,6 +465,11 @@ export class Outbox {
   /** Decides what happened to a write whose outcome we never saw. */
   private async probe(port: GitHubPort, command: Command): Promise<void> {
     const since = Date.parse(command.claimedAt ?? command.createdAt) - 5 * 60_000;
+    // The async merge API answers "already merged" to a repeat, so sending again is safe.
+    if (command.kind === "merge") {
+      this.update(command, "queued", "Checking the merge again");
+      return;
+    }
     if (command.kind === "approve" || command.kind === "review") {
       const wanted =
         command.kind === "approve" ? "APPROVED" : REVIEW_STATES[command.payload.event ?? "COMMENT"];
@@ -543,9 +561,36 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
       return port.markNotificationDone(payload.threadId ?? "");
     case "rerun-failed":
       return port.rerunFailedJobs(command.repo, payload.runId ?? 0);
+    case "merge":
+      return mergeAndWait(port, command);
+    case "auto-merge":
+      return port.setAutoMerge(
+        command.prId,
+        payload.enabled ? (payload.method ?? "MERGE") : null,
+        command.expectedHead,
+      );
+    case "update-branch":
+      return port.updateBranch(command.prId, payload.rebase ?? false, command.expectedHead);
     default:
       return Promise.reject(new Error(`unknown command kind ${String(command.kind)}`));
   }
+}
+
+/** Merges, then waits (briefly) for GitHub to say how it went; checks run when the merge does. */
+async function mergeAndWait(port: GitHubPort, command: Command): Promise<unknown> {
+  const { payload } = command;
+  let result = await port.merge(command.repo, command.number, {
+    sha: command.expectedHead,
+    method: payload.method ?? "MERGE",
+    ...(payload.headline ? { title: payload.headline } : {}),
+    ...(payload.body !== undefined ? { message: payload.body } : {}),
+  });
+  for (let i = 0; result.status === "pending" && result.uuid && i < 30; i++) {
+    await Bun.sleep(1000);
+    result = await port.mergeStatus(command.repo, command.number, result.uuid);
+  }
+  if (result.status === "failed") throw new GitHubError(result.message, "validation", null);
+  return result;
 }
 
 const REVIEW_STATES: Record<ReviewEvent, string> = {

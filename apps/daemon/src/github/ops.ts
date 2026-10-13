@@ -637,3 +637,74 @@ export const CommentsByQuery = graphql(`
     }
   }
 `);
+
+/** What the merge runway needs: why the PR can't merge yet, and how this repo merges. */
+export const MergeInfoQuery = graphql(`
+  query MergeInfo($id: ID!) {
+    node(id: $id) {
+      ... on PullRequest {
+        id
+        isDraft
+        mergeable
+        mergeStateStatus
+        reviewDecision
+        viewerCanUpdateBranch
+        viewerCanEnableAutoMerge
+        viewerCanMergeAsAdmin
+        autoMergeRequest {
+          enabledAt
+          mergeMethod
+        }
+        mergeQueueEntry {
+          position
+          state
+        }
+        mergeHeadline: viewerMergeHeadlineText(mergeType: MERGE)
+        mergeBody: viewerMergeBodyText(mergeType: MERGE)
+        squashHeadline: viewerMergeHeadlineText(mergeType: SQUASH)
+        squashBody: viewerMergeBodyText(mergeType: SQUASH)
+        repository {
+          mergeCommitAllowed
+          squashMergeAllowed
+          rebaseMergeAllowed
+          autoMergeAllowed
+          viewerDefaultMergeMethod
+        }
+      }
+    }
+  }
+`);
+
+export const EnableAutoMergeMutation = graphql(`
+  mutation EnableAutoMerge($prId: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
+    enablePullRequestAutoMerge(
+      input: { pullRequestId: $prId, mergeMethod: $method, expectedHeadOid: $head }
+    ) {
+      pullRequest {
+        id
+      }
+    }
+  }
+`);
+
+export const DisableAutoMergeMutation = graphql(`
+  mutation DisableAutoMerge($prId: ID!) {
+    disablePullRequestAutoMerge(input: { pullRequestId: $prId }) {
+      pullRequest {
+        id
+      }
+    }
+  }
+`);
+
+export const UpdateBranchMutation = graphql(`
+  mutation UpdateBranch($prId: ID!, $method: PullRequestBranchUpdateMethod!, $head: GitObjectID!) {
+    updatePullRequestBranch(
+      input: { pullRequestId: $prId, updateMethod: $method, expectedHeadOid: $head }
+    ) {
+      pullRequest {
+        id
+      }
+    }
+  }
+`);

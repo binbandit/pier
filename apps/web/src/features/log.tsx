@@ -31,6 +31,9 @@ const KIND: Record<LogEntry["kind"], string> = {
   unviewed: "Mark unviewed",
   "notification-done": "Clear notification",
   "rerun-failed": "Re-run failed jobs",
+  merge: "Merge",
+  "auto-merge": "Auto-merge",
+  "update-branch": "Update branch",
 };
 
 export function Log() {

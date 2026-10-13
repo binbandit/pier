@@ -36,6 +36,16 @@ export type AppOptions = {
 
 export type App = ReturnType<typeof createApp>;
 
+/** Writes that decide something about the code, so they only go out for the commit you saw. */
+const HEAD_BOUND = new Set([
+  "approve",
+  "review",
+  "bot-command",
+  "merge",
+  "auto-merge",
+  "update-branch",
+]);
+
 export function createApp(options: AppOptions) {
   const { stores, accounts, ports } = options;
   const logins = () => accounts.map((a) => a.login);
@@ -74,9 +84,7 @@ export function createApp(options: AppOptions) {
       return { ok: false, state: "cancelled", detail: `Outside the sandbox (${owner})` };
     }
     // Replies, resolves and viewed marks don't depend on the head; verdicts on the code do.
-    if (command.kind !== "approve" && command.kind !== "review" && command.kind !== "bot-command") {
-      return { ok: true };
-    }
+    if (!HEAD_BOUND.has(command.kind)) return { ok: true };
     if (record.doc.state !== "OPEN") {
       return { ok: false, state: "cancelled", detail: `PR was ${record.doc.state.toLowerCase()}` };
     }

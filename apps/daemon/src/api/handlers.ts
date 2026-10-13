@@ -49,6 +49,14 @@ export function createHandlers(app: App): Handlers {
     checks: ({ repo, number }) => app.review.checks(repo, number),
     checkLog: ({ repo, jobId }) => app.review.checkLog(repo, jobId),
     rerunFailed: ({ prIds }) => app.review.rerunFailed(prIds),
+    runway: ({ repo, number }) => app.review.runway(repo, number),
+    merge: ({ prId, method, headline, body }) => ({
+      commandIds: app.review.merge(prId, method, headline, body),
+    }),
+    setAutoMerge: ({ prId, enabled, method }) => ({
+      commandIds: app.review.setAutoMerge(prId, enabled, method),
+    }),
+    updateBranch: ({ prId, rebase }) => ({ commandIds: app.review.updateBranch(prId, rebase) }),
     flight: () => app.views.flight(),
     log: ({ limit }) => app.outbox.log(limit ?? 100),
 

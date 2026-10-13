@@ -21,6 +21,7 @@ import { bumpKey, isManifestOf } from "./bumps";
 import type { DoneItems, Verdicts } from "./decisions";
 import { evaluateGates, type Placement, place, summarizeGates } from "./gates";
 import type { Model, PrRecord } from "./model";
+import { checksFailing } from "./runway";
 import type { SettingsStore } from "./settings";
 
 // Everything the web app shows is derived here from the model plus Brayden's decisions.
@@ -368,7 +369,7 @@ export class Views {
         doc.reviewDecision === "changes_requested"
           ? "Changes requested"
           : doc.checks.state === "failure"
-            ? `${doc.checks.failing || "Some"} checks failing`
+            ? checksFailing(doc.checks.failing)
             : doc.mergeable === "conflicting"
               ? "Merge conflicts"
               : doc.reviewDecision === "approved" &&
