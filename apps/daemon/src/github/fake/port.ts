@@ -15,19 +15,26 @@ import type { PrDoc, PrViewer, VolatileState } from "@/github/pr-doc";
 import type {
   CheckLog,
   CheckRunView,
+  CommentSubject,
   DiffFile,
   Label,
+  LockReason,
   Mergeable,
   MergeMethod,
   Milestone,
+  MinimizeReason,
   Person,
+  Reaction,
+  ReactionContent,
   ReviewDecision,
+  Revision,
   TimelineEntry,
 } from "@pier/core/wire";
 
 import { jobLogLines } from "./samples";
 import { compileQuery } from "./search";
 import {
+  type FakeComment,
   type FakePr,
   type FakeReview,
   type FakeWorld,
@@ -211,10 +218,35 @@ export class FakeGitHub implements GitHubPort {
     );
   }
 
+  /** Like the live client: a pending review (say, from github.com) is continued, not doubled. */
   submitReview(input: SubmitReviewInput): Promise<ReviewSummary> {
-    return this.call("submitReview", "graphql", () =>
-      this.submit(input.prId, input.commitOid, input.event, input.body, input.threads),
-    );
+    return this.call("submitReview", "graphql", () => {
+      const pr = this.visiblePr(input.prId);
+      const pending = pr.reviews.find((r) => r.author === this.login && r.state === "PENDING");
+      const onFiles = input.threads.filter((t) => t.subject === "file");
+      if (!pending && onFiles.length === 0)
+        return this.submit(input.prId, input.commitOid, input.event, input.body, input.threads);
+      const review =
+        pending ??
+        this.world.review(pr.id, this.login, {
+          event: "PENDING",
+          commitOid: input.commitOid,
+          threads: input.threads.filter((t) => t.subject === "line"),
+        });
+      const already = (path: string, body: string) =>
+        pr.threads.some(
+          (t) =>
+            t.path === path &&
+            t.comments.some((c) => c.reviewId === review.id && c.body.trim() === body.trim()),
+        );
+      for (const thread of pending ? input.threads : onFiles) {
+        if (!already(thread.path, thread.body))
+          this.world.addReviewThread(review.id, this.login, thread);
+      }
+      return summary(
+        this.world.submitPendingReview(review.id, this.login, input.event, input.body),
+      );
+    });
   }
 
   reply(threadId: string, body: string): Promise<{ id: string }> {
@@ -385,6 +417,67 @@ export class FakeGitHub implements GitHubPort {
 
   milestones(repo: string): Promise<Milestone[]> {
     return this.call("milestones", "core", () => [...this.restRepo(repo).milestones]);
+  }
+
+  react(subjectId: string, content: ReactionContent, on: boolean): Promise<void> {
+    return this.call("react", "graphql", () =>
+      this.world.react(subjectId, this.login, content, on),
+    );
+  }
+
+  editWriting(subject: CommentSubject, id: string, body: string): Promise<void> {
+    return this.call("editWriting", "graphql", () => {
+      if (subject === "pull-request") this.world.editPr(id, this.login, { body });
+      else this.world.editWriting(id, this.login, body);
+    });
+  }
+
+  deleteComment(_subject: "issue-comment" | "review-comment", id: string): Promise<void> {
+    return this.call("deleteComment", "graphql", () => this.world.deleteComment(id, this.login));
+  }
+
+  minimize(id: string, reason: MinimizeReason | null): Promise<void> {
+    return this.call("minimize", "graphql", () => this.world.minimize(id, this.login, reason));
+  }
+
+  editPr(prId: string, change: { title?: string; body?: string; base?: string }): Promise<void> {
+    return this.call("editPr", "graphql", () =>
+      this.world.editPr(this.visiblePr(prId).id, this.login, change),
+    );
+  }
+
+  dismissReview(reviewId: string, message: string): Promise<void> {
+    return this.call("dismissReview", "graphql", () =>
+      this.world.dismissReview(reviewId, this.login, message),
+    );
+  }
+
+  setLocked(repo: string, number: number, reason: LockReason | null): Promise<void> {
+    return this.call("setLocked", "core", () =>
+      this.world.setLocked(this.restPr(repo, number).id, this.login, reason),
+    );
+  }
+
+  branches(repo: string): Promise<string[]> {
+    return this.call("branches", "core", () => {
+      const found = this.restRepo(repo);
+      const heads = [...this.world.prs.values()]
+        .filter((pr) => pr.repo === found && pr.state === "OPEN")
+        .map((pr) => pr.headRefName);
+      return [...new Set([found.defaultBranch, "release", ...heads])];
+    });
+  }
+
+  history(subjectId: string): Promise<Revision[]> {
+    return this.call("history", "graphql", () => {
+      const found = this.world.writing(subjectId);
+      if (!found || found.subject === "pull-request") return [];
+      return found.target.history.map((h) => ({
+        editedAt: h.editedAt,
+        editor: h.editor,
+        body: h.body,
+      }));
+    });
   }
 
   releaseDate(repo: string, tag: string): Promise<string | null> {
@@ -639,6 +732,27 @@ export class FakeGitHub implements GitHubPort {
     };
   }
 
+  /** What GitHub says about a comment or review for the account reading it. */
+  private writingOf<S extends "issue-comment" | "review-comment" | "review">(
+    pr: FakePr,
+    subject: S,
+    target: FakeComment | FakeReview,
+  ) {
+    const canEdit = this.world.canEditWriting(pr, target.author, this.login);
+    const isComment = subject !== "review";
+    return {
+      subject,
+      body: target.body,
+      edited: target.editedAt !== null,
+      canEdit,
+      canDelete: isComment && canEdit,
+      canMinimize: isComment && this.world.canWrite(pr.repo, this.login),
+      minimized: target.minimized,
+      reactions: reactionsOf(target.reactions, this.login),
+      unsent: false,
+    };
+  }
+
   private detailOf(pr: FakePr): PrDetail {
     const { world } = this;
     const latest = this.latestReview(pr);
@@ -658,9 +772,9 @@ export class FakeGitHub implements GitHubPort {
           line: thread.line,
           startLine: thread.line === null ? null : thread.startLine,
           originalLine: thread.originalLine,
-          subject: "line" as const,
+          subject: thread.subject,
           resolved: thread.resolved,
-          outdated: thread.line === null,
+          outdated: thread.subject === "line" && thread.line === null,
           resolvedBy: thread.resolvedBy,
           canResolve: world.canResolve(pr, this.login),
           canReply: true,
@@ -668,10 +782,9 @@ export class FakeGitHub implements GitHubPort {
           comments: comments.slice(0, 50).map((c) => ({
             id: c.id,
             author: world.actor(c.author),
-            body: c.body,
             bodyHTML: html(c.body),
             createdAt: c.createdAt,
-            edited: false,
+            ...this.writingOf(pr, "review-comment", c),
           })),
         },
       ];
@@ -684,6 +797,7 @@ export class FakeGitHub implements GitHubPort {
         author: world.actor(c.author),
         bodyHTML: html(c.body),
         at: c.createdAt,
+        ...this.writingOf(pr, "issue-comment", c),
       })),
       ...pr.reviews.slice(-50).flatMap((r): TimelineEntry[] =>
         // Thread replies come wrapped in empty "commented" reviews; they show in their thread.
@@ -697,6 +811,8 @@ export class FakeGitHub implements GitHubPort {
                 bodyHTML: html(r.body),
                 at: r.submittedAt,
                 commitOid: r.commitOid,
+                canDismiss: false,
+                ...this.writingOf(pr, "review", r),
               },
             ]
           : [],
@@ -719,6 +835,9 @@ export class FakeGitHub implements GitHubPort {
       prId: pr.id,
       headRefOid: world.head(pr),
       bodyHTML: html(pr.body),
+      reactions: reactionsOf(pr.reactions, this.login),
+      canEdit: world.canEditWriting(pr, pr.author, this.login),
+      locked: pr.locked,
       viewerLatestReview: latest
         ? { state: latest.state, commitOid: latest.commitOid, submittedAt: latest.submittedAt }
         : null,
@@ -780,4 +899,22 @@ function pages(count: number, size: number): number {
 /** GitHub renders markdown server-side; Bun's renderer is close enough for a fake. */
 function html(markdown: string): string {
   return markdown ? Bun.markdown.html(markdown) : "";
+}
+
+const REACTION_ORDER: ReactionContent[] = [
+  "THUMBS_UP",
+  "THUMBS_DOWN",
+  "LAUGH",
+  "HOORAY",
+  "CONFUSED",
+  "HEART",
+  "ROCKET",
+  "EYES",
+];
+
+function reactionsOf(reactions: Map<ReactionContent, Set<string>>, viewer: string): Reaction[] {
+  return REACTION_ORDER.flatMap((content) => {
+    const who = reactions.get(content);
+    return who && who.size > 0 ? [{ content, count: who.size, mine: who.has(viewer) }] : [];
+  });
 }

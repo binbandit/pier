@@ -24,6 +24,10 @@ type UiState = {
   toasts: Toast[];
   /** Selected row ids per list, for bulk actions. */
   selection: Record<string, string[]>;
+  /** Text quoted into a composer (by its id) that the composer hasn't picked up yet. */
+  quote: { into: string; text: string } | null;
+  quoteInto: (into: string, text: string) => void;
+  takeQuote: () => void;
   openPanel: (panel: Panel) => void;
   closePanel: () => void;
   toast: (toast: Omit<Toast, "id">, ttlMs?: number) => void;
@@ -35,6 +39,9 @@ export const useUi = create<UiState>((set, get) => ({
   panel: null,
   toasts: [],
   selection: {},
+  quote: null,
+  quoteInto: (into, text) => set({ quote: { into, text } }),
+  takeQuote: () => set({ quote: null }),
   openPanel: (panel) => set({ panel }),
   closePanel: () => set({ panel: null }),
   toast(toast, ttlMs = 6000) {

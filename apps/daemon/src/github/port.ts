@@ -1,11 +1,16 @@
 import type {
   CheckLog,
   CheckRunView,
+  CommentSubject,
   DiffFile,
   Label,
+  LockReason,
   MergeMethod,
   Milestone,
+  MinimizeReason,
   Person,
+  ReactionContent,
+  Revision,
 } from "@pier/core/wire";
 
 import type { RateWindow } from "./client";
@@ -43,15 +48,23 @@ export type ReviewSummary = {
 
 export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
-export type DraftThreadInput = {
-  path: string;
-  line: number;
-  side: "LEFT" | "RIGHT";
-  startLine?: number;
-  startSide?: "LEFT" | "RIGHT";
-  body: string;
-};
+/** A new thread in a review: on a line (or range), or on the whole file. */
+export type DraftThreadInput =
+  | {
+      subject: "line";
+      path: string;
+      line: number;
+      side: "LEFT" | "RIGHT";
+      startLine?: number;
+      startSide?: "LEFT" | "RIGHT";
+      body: string;
+    }
+  | { subject: "file"; path: string; body: string };
 
+/**
+ * A review to submit. If you already have a pending review on the PR (say, started on
+ * github.com), the threads are added to it and it's submitted, rather than starting another.
+ */
 export type SubmitReviewInput = {
   prId: string;
   commitOid: string;
@@ -137,6 +150,19 @@ export interface GitHubPort {
   /** Who can be assigned, which is also who can be asked to review. */
   assignable(repo: string): Promise<Person[]>;
   milestones(repo: string): Promise<Milestone[]>;
+  /** Adds (on) or removes your reaction on a comment, review or PR description. */
+  react(subjectId: string, content: ReactionContent, on: boolean): Promise<void>;
+  /** Rewrites a comment, a review's summary or the PR description. */
+  editWriting(subject: CommentSubject, id: string, body: string): Promise<void>;
+  deleteComment(subject: "issue-comment" | "review-comment", id: string): Promise<void>;
+  /** Hides a comment for a reason, or shows it again (null). */
+  minimize(id: string, reason: MinimizeReason | null): Promise<void>;
+  editPr(prId: string, change: { title?: string; body?: string; base?: string }): Promise<void>;
+  dismissReview(reviewId: string, message: string): Promise<void>;
+  setLocked(repo: string, number: number, reason: LockReason | null): Promise<void>;
+  branches(repo: string): Promise<string[]>;
+  /** Every version of a comment, review or description, newest first. */
+  history(subjectId: string): Promise<Revision[]>;
   /** When a GitHub release was published, or null if the tag has no release. */
   releaseDate(repo: string, tag: string): Promise<string | null>;
   rates(): { graphql: RateWindow | null; core: RateWindow | null };

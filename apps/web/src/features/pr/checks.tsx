@@ -67,6 +67,11 @@ export function Checks({ pr }: { pr: PrView }) {
               >
                 {run.name}
               </span>
+              {(run.state === "pending" || run.state === "skipped" || run.state === "neutral") && (
+                <span className="text-faint">
+                  {run.state === "pending" ? "running" : run.state}
+                </span>
+              )}
               {run.completedAt && <span className="text-faint">{since(run.completedAt)}</span>}
               {run.state === "failure" && run.jobId !== null && (
                 <span className="text-faint">{open === run.jobId ? "Hide log" : "Log"}</span>

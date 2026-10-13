@@ -1,6 +1,7 @@
 // Dev helper: open a pier page in headless Chromium, run steps, save screenshots.
 //   bun e2e/drive.ts <path> <out-dir> [step...]
-// Steps: "key:j", "key:shift+a", "type:hello", "wait:500", "click:<css>", "shot:name", "eval:<js>"
+// Steps: "key:j", "key:shift+a", "type:hello", "wait:500", "click:<css>", "hover:<css>",
+// "shot:name", "eval:<js>"
 import { chromium } from "@playwright/test";
 
 const [path = "/", outDir = ".", ...steps] = Bun.argv.slice(2);
@@ -44,6 +45,7 @@ for (const step of steps) {
   } else if (kind === "type") await page.keyboard.type(arg);
   else if (kind === "wait") await page.waitForTimeout(Number(arg));
   else if (kind === "click") await page.click(arg);
+  else if (kind === "hover") await page.hover(arg);
   else if (kind === "shot") await page.screenshot({ path: `${outDir}/${arg}.png` });
   else if (kind === "eval") console.log(JSON.stringify(await page.evaluate(arg)));
   await page.waitForTimeout(250);

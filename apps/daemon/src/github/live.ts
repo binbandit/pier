@@ -3,41 +3,63 @@ import type { components } from "@octokit/openapi-types";
 import type {
   CheckLog,
   CheckRunView,
+  CommentSubject,
   DiffFile,
   Label,
+  LockReason,
   MergeMethod,
   Milestone,
+  MinimizeReason,
   Person,
+  ReactionContent,
+  Revision,
 } from "@pier/core/wire";
 
 import type { GitHubTransport, RestResponse } from "./client";
 import { GitHubError } from "./client";
 import {
+  AddReactionMutation,
+  AddReviewThreadMutation,
   ApproveMutation,
   ClosePrMutation,
   CommentMutation,
   ConvertToDraftMutation,
+  DeleteIssueCommentMutation,
+  DeleteReviewCommentMutation,
+  DismissReviewMutation,
   CommentsByQuery,
   DisableAutoMergeMutation,
   EnableAutoMergeMutation,
+  HistoryQuery,
   HydrateQuery,
   MarkReadyMutation,
   MarkViewedMutation,
+  MinimizeMutation,
+  PendingReviewQuery,
   MergeInfoQuery,
   PrDetailQuery,
+  RemoveReactionMutation,
   ReopenPrMutation,
   ReplyMutation,
   ResolveThreadMutation,
   ReviewsByAuthorQuery,
   SearchPullsQuery,
+  StartReviewMutation,
+  SubmitPendingReviewMutation,
   SubmitReviewMutation,
   SweepQuery,
   UnmarkViewedMutation,
+  UnminimizeMutation,
   UnresolveThreadMutation,
   UpdateBranchMutation,
+  UpdateIssueCommentMutation,
+  UpdatePrMutation,
+  UpdateReviewCommentMutation,
+  UpdateReviewMutation,
   ViewerQuery,
 } from "./ops";
 import type {
+  DraftThreadInput,
   GitHubPort,
   MergeInfo,
   MergeResult,
@@ -240,31 +262,68 @@ export class LiveGitHub implements GitHubPort {
   }
 
   async submitReview(input: SubmitReviewInput): Promise<ReviewSummary> {
+    const pending = await this.pendingReview(input.prId);
+    const onLines = input.threads.flatMap((t) => (t.subject === "line" ? [toDraftThread(t)] : []));
+    const onFiles = input.threads.filter((t) => t.subject === "file");
+
+    // The common case: one write that creates and submits the review with its threads.
+    if (!pending && onFiles.length === 0) {
+      const data = await this.client.graphql(
+        SubmitReviewMutation,
+        {
+          prId: input.prId,
+          commit: input.commitOid,
+          event: input.event,
+          body: input.body || null,
+          threads: onLines,
+        },
+        "interactive",
+      );
+      return toSummary(data.addPullRequestReview?.pullRequestReview);
+    }
+
+    // A review already in progress (say, started on github.com) is continued rather than
+    // duplicated: what isn't on it yet is added, then it's submitted. File comments only exist
+    // as threads added to a pending review, so they take this path too.
+    const reviewId =
+      pending?.id ??
+      (
+        await this.client.graphql(
+          StartReviewMutation,
+          { prId: input.prId, commit: input.commitOid, threads: onLines },
+          "interactive",
+        )
+      ).addPullRequestReview?.pullRequestReview?.id;
+    if (!reviewId) throw new GitHubError("starting the review returned nothing", "graphql", null);
+    const already = (t: DraftThreadInput) =>
+      pending?.comments.some((c) => c.path === t.path && c.body.trim() === t.body.trim()) ?? false;
+    for (const thread of pending ? input.threads : onFiles) {
+      if (already(thread)) continue;
+      await this.client.graphql(
+        AddReviewThreadMutation,
+        thread.subject === "file"
+          ? { reviewId, path: thread.path, body: thread.body, subject: "FILE" }
+          : { reviewId, subject: "LINE", ...toDraftThread(thread) },
+        "interactive",
+      );
+    }
     const data = await this.client.graphql(
-      SubmitReviewMutation,
-      {
-        prId: input.prId,
-        commit: input.commitOid,
-        event: input.event,
-        body: input.body || null,
-        threads: input.threads.map((t) => ({
-          path: t.path,
-          line: t.line,
-          side: t.side,
-          startLine: t.startLine ?? null,
-          startSide: t.startSide ?? null,
-          body: t.body,
-        })),
-      },
+      SubmitPendingReviewMutation,
+      { reviewId, event: input.event, body: input.body || null },
       "interactive",
     );
-    const review = data.addPullRequestReview?.pullRequestReview;
-    if (!review) throw new GitHubError("review returned nothing", "graphql", null);
+    return toSummary(data.submitPullRequestReview?.pullRequestReview);
+  }
+
+  /** Your unsubmitted review on the PR, with what's in it, if you have one. */
+  private async pendingReview(prId: string) {
+    const data = await this.client.graphql(PendingReviewQuery, { prId }, "interactive");
+    const review =
+      data.node && "reviews" in data.node ? (data.node.reviews?.nodes?.[0] ?? null) : null;
+    if (!review) return null;
     return {
       id: review.id,
-      state: review.state,
-      commitOid: review.commit?.oid ?? null,
-      submittedAt: review.submittedAt ?? null,
+      comments: (review.comments.nodes ?? []).flatMap((c) => (c ? [c] : [])),
     };
   }
 
@@ -498,6 +557,66 @@ export class LiveGitHub implements GitHubPort {
     return milestones.map((m) => ({ number: m.number, title: m.title, dueOn: m.due_on ?? null }));
   }
 
+  async react(subjectId: string, content: ReactionContent, on: boolean): Promise<void> {
+    if (on) await this.client.graphql(AddReactionMutation, { subjectId, content }, "interactive");
+    else await this.client.graphql(RemoveReactionMutation, { subjectId, content }, "interactive");
+  }
+
+  async editWriting(subject: CommentSubject, id: string, body: string): Promise<void> {
+    if (subject === "pull-request") await this.editPr(id, { body });
+    else if (subject === "issue-comment")
+      await this.client.graphql(UpdateIssueCommentMutation, { id, body }, "interactive");
+    else if (subject === "review-comment")
+      await this.client.graphql(UpdateReviewCommentMutation, { id, body }, "interactive");
+    else await this.client.graphql(UpdateReviewMutation, { id, body }, "interactive");
+  }
+
+  async deleteComment(subject: "issue-comment" | "review-comment", id: string): Promise<void> {
+    if (subject === "issue-comment")
+      await this.client.graphql(DeleteIssueCommentMutation, { id }, "interactive");
+    else await this.client.graphql(DeleteReviewCommentMutation, { id }, "interactive");
+  }
+
+  async minimize(id: string, reason: MinimizeReason | null): Promise<void> {
+    if (reason)
+      await this.client.graphql(MinimizeMutation, { id, classifier: reason }, "interactive");
+    else await this.client.graphql(UnminimizeMutation, { id }, "interactive");
+  }
+
+  async editPr(
+    prId: string,
+    change: { title?: string; body?: string; base?: string },
+  ): Promise<void> {
+    await this.client.graphql(UpdatePrMutation, { prId, ...change }, "interactive");
+  }
+
+  async dismissReview(reviewId: string, message: string): Promise<void> {
+    await this.client.graphql(DismissReviewMutation, { id: reviewId, message }, "interactive");
+  }
+
+  async setLocked(repo: string, number: number, reason: LockReason | null): Promise<void> {
+    const path = `/repos/${repo}/issues/${number}/lock`;
+    if (reason) await this.write("PUT", path, { lock_reason: reason });
+    else await this.write("DELETE", path);
+  }
+
+  async branches(repo: string): Promise<string[]> {
+    const branches = await this.paged<components["schemas"]["short-branch"]>(
+      `/repos/${repo}/branches`,
+    );
+    return branches.map((b) => b.name);
+  }
+
+  async history(subjectId: string): Promise<Revision[]> {
+    const data = await this.client.graphql(HistoryQuery, { id: subjectId }, "interactive");
+    const edits = data.node && "userContentEdits" in data.node ? data.node.userContentEdits : null;
+    return (edits?.nodes ?? []).flatMap((edit) =>
+      edit
+        ? [{ editedAt: edit.editedAt, editor: edit.editor?.login ?? null, body: edit.diff ?? "" }]
+        : [],
+    );
+  }
+
   async releaseDate(repo: string, tag: string): Promise<string | null> {
     try {
       const response = await this.client.rest<components["schemas"]["release"]>({
@@ -525,7 +644,7 @@ export class LiveGitHub implements GitHubPort {
   // -------------------------------------------------------------------------
 
   private async write(
-    method: "POST" | "PATCH" | "DELETE",
+    method: "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
     body?: unknown,
   ): Promise<void> {
@@ -660,4 +779,30 @@ function chunks<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+function toDraftThread(thread: Extract<DraftThreadInput, { subject: "line" }>) {
+  return {
+    path: thread.path,
+    line: thread.line,
+    side: thread.side,
+    startLine: thread.startLine ?? null,
+    startSide: thread.startSide ?? null,
+    body: thread.body,
+  };
+}
+
+function toSummary(
+  review:
+    | { id: string; state: string; submittedAt?: string | null; commit?: { oid: string } | null }
+    | null
+    | undefined,
+): ReviewSummary {
+  if (!review) throw new GitHubError("review returned nothing", "graphql", null);
+  return {
+    id: review.id,
+    state: review.state,
+    commitOid: review.commit?.oid ?? null,
+    submittedAt: review.submittedAt ?? null,
+  };
 }

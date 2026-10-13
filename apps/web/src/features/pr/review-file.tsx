@@ -9,21 +9,28 @@ import { codeBetween, patchLines } from "@/diff/lines";
 import { errorText } from "@/features/actions";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
-import type { DiffFile, Draft, Side, Thread, ViewedState } from "@pier/core/wire";
+import type { DiffFile, Draft, PendingReview, Side, Thread, ViewedState } from "@pier/core/wire";
 
 import { Composer } from "./composer";
-import { DraftCard, ThreadCard } from "./thread";
+import { DraftCard, PendingCard, ThreadCard } from "./thread";
 
 // One file in the review stream: our own header (path, stats, viewed), then the diff with every
 // thread and draft placed on the lines it's about. Selecting lines and pressing `c` (or clicking
 // the + in the gutter) opens a comment right there.
 
-export type NewComment = { path: string; side: Side; start: number; end: number };
+export type NewComment =
+  | { kind: "lines"; path: string; side: Side; start: number; end: number }
+  | { kind: "file"; path: string };
+
+type LineComment = Extract<NewComment, { kind: "lines" }>;
+type LineDraft = Draft & { line: number };
+type PendingComment = PendingReview["comments"][number];
 
 type Note =
   | { kind: "thread"; thread: Thread }
   | { kind: "draft"; draft: Draft }
-  | { kind: "new"; comment: NewComment };
+  | { kind: "pending"; comment: PendingComment }
+  | { kind: "new"; comment: LineComment };
 
 type Props = {
   prId: string;
@@ -31,6 +38,8 @@ type Props = {
   file: DiffFile;
   threads: Thread[];
   drafts: Draft[];
+  /** Comments in a review you started on github.com, on this file. */
+  pending: PendingComment[];
   viewed: ViewedState;
   current: boolean;
   focusedThread: string | null;
@@ -47,6 +56,7 @@ export function ReviewFile(props: Props) {
     file,
     threads,
     drafts,
+    pending,
     viewed,
     current,
     focusedThread,
@@ -66,13 +76,21 @@ export function ReviewFile(props: Props) {
   // outside a narrower "since your review" diff, are listed under the file instead.
   const visible = (side: Side, line: number) =>
     (side === "RIGHT" ? lines.right : lines.left).has(line);
-  const placed = threads.filter((t) => t.line !== null && !t.outdated && visible(t.side, t.line));
-  const elsewhere = threads.filter(
+  const onLines = threads.filter((t) => t.subject === "line");
+  const onFile = threads.filter((t) => t.subject === "file");
+  const placed = onLines.filter((t) => t.line !== null && !t.outdated && visible(t.side, t.line));
+  const elsewhere = onLines.filter(
     (t) => t.line !== null && !t.outdated && !visible(t.side, t.line),
   );
-  const outdated = threads.filter((t) => t.line === null || t.outdated);
-  const placedDrafts = drafts.filter((d) => visible(d.side, d.line));
-  const otherDrafts = drafts.filter((d) => !visible(d.side, d.line));
+  const outdated = onLines.filter((t) => t.line === null || t.outdated);
+  const lineDrafts = drafts.filter((d): d is LineDraft => d.line !== null);
+  const fileDrafts = drafts.filter((d) => d.line === null);
+  const placedDrafts = lineDrafts.filter((d) => visible(d.side, d.line));
+  const otherDrafts = lineDrafts.filter((d) => !visible(d.side, d.line));
+  // GitHub doesn't say which side a pending comment is on; nearly all are on the new code.
+  const placedPending = pending.filter((c) => c.line !== null && visible("RIGHT", c.line));
+  const otherPending = pending.filter((c) => !placedPending.includes(c));
+  const composingHere = composing?.path === file.path ? composing : null;
   // Rebuilt only when what's on the lines actually changes; a new array on every refetch makes the
   // renderer redraw (and on first mount, sometimes not draw at all).
   const notesKey = [
@@ -80,10 +98,20 @@ export function ReviewFile(props: Props) {
       (t) => `t:${t.id}:${t.line}:${t.resolved}:${t.comments.length}:${t.pending?.state ?? ""}`,
     ),
     ...placedDrafts.map((d) => `d:${d.id}:${d.line}:${d.body.length}`),
-    composing && composing.path === file.path ? `n:${composing.side}:${composing.end}` : "",
+    ...placedPending.map((c) => `p:${c.id}:${c.line}`),
+    composingHere?.kind === "lines" ? `n:${composingHere.side}:${composingHere.end}` : "",
   ].join("|");
-  // oxlint-disable-next-line react-hooks/exhaustive-deps -- notesKey captures every input that matters
-  const notes = useMemo(() => buildNotes(placed, placedDrafts, composing, file.path), [notesKey]);
+  const notes = useMemo(
+    () =>
+      buildNotes(
+        placed,
+        placedDrafts,
+        placedPending,
+        composingHere?.kind === "lines" ? composingHere : null,
+      ),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- notesKey captures every input that matters
+    [notesKey],
+  );
 
   const toggleViewed = async () => {
     try {
@@ -165,6 +193,58 @@ export function ReviewFile(props: Props) {
       </header>
 
       {open &&
+        (onFile.length > 0 ||
+          fileDrafts.length > 0 ||
+          composingHere?.kind === "file" ||
+          otherPending.some((c) => c.line === null)) && (
+          <div className="mt-2 mb-3 space-y-2">
+            <p className="px-1 text-meta text-faint">On the whole file</p>
+            {onFile.map((thread) => (
+              <ThreadCard
+                key={thread.id}
+                prId={prId}
+                thread={thread}
+                focused={thread.id === focusedThread}
+              />
+            ))}
+            {fileDrafts.map((draft) => (
+              <DraftCard key={draft.id} prId={prId} draft={draft} headOid={headOid} />
+            ))}
+            {otherPending
+              .filter((c) => c.line === null)
+              .map((comment) => (
+                <PendingCard key={comment.id} comment={comment} />
+              ))}
+            {composingHere?.kind === "file" && (
+              <div className="max-w-[820px] font-ui">
+                <Composer
+                  id="new-comment"
+                  placeholder={`Comment on ${file.path}`}
+                  submitLabel="Save draft"
+                  focusOnMount
+                  onCancel={() => onCompose(null)}
+                  onSubmit={async (body) => {
+                    try {
+                      await rpc("saveDraft", {
+                        prId,
+                        path: file.path,
+                        side: "RIGHT",
+                        line: null,
+                        body,
+                      });
+                      onCompose(null);
+                      void client.invalidateQueries({ queryKey: ["pr"] });
+                    } catch (error) {
+                      toast({ text: errorText(error), tone: "bad" });
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+      {open &&
         (file.patch === null ? (
           <p className="px-1 py-3 text-meta text-faint">
             GitHub didn't send a diff for this file (binary or too large).
@@ -187,6 +267,7 @@ export function ReviewFile(props: Props) {
                 );
               if (note.kind === "draft")
                 return <DraftCard prId={prId} draft={note.draft} headOid={headOid} />;
+              if (note.kind === "pending") return <PendingCard comment={note.comment} />;
               const source = codeBetween(
                 lines,
                 note.comment.side,
@@ -227,26 +308,39 @@ export function ReviewFile(props: Props) {
           />
         ))}
 
-      {open && (elsewhere.length > 0 || otherDrafts.length > 0) && (
-        <div className="mt-2 space-y-2">
-          {elsewhere.map((thread) => (
-            <div key={thread.id}>
-              <p className="mb-1 px-1 font-code text-meta text-faint">
-                Line {thread.line}, not in this diff
-              </p>
-              <ThreadCard prId={prId} thread={thread} focused={thread.id === focusedThread} />
-            </div>
-          ))}
-          {otherDrafts.map((draft) => (
-            <div key={draft.id}>
-              <p className="mb-1 px-1 font-code text-meta text-faint">
-                Line {draft.line}, not in this diff
-              </p>
-              <DraftCard prId={prId} draft={draft} headOid={headOid} />
-            </div>
-          ))}
-        </div>
-      )}
+      {open &&
+        (elsewhere.length > 0 ||
+          otherDrafts.length > 0 ||
+          otherPending.some((c) => c.line !== null)) && (
+          <div className="mt-2 space-y-2">
+            {elsewhere.map((thread) => (
+              <div key={thread.id}>
+                <p className="mb-1 px-1 font-code text-meta text-faint">
+                  Line {thread.line}, not in this diff
+                </p>
+                <ThreadCard prId={prId} thread={thread} focused={thread.id === focusedThread} />
+              </div>
+            ))}
+            {otherDrafts.map((draft) => (
+              <div key={draft.id}>
+                <p className="mb-1 px-1 font-code text-meta text-faint">
+                  Line {draft.line}, not in this diff
+                </p>
+                <DraftCard prId={prId} draft={draft} headOid={headOid} />
+              </div>
+            ))}
+            {otherPending
+              .filter((c) => c.line !== null)
+              .map((comment) => (
+                <div key={comment.id}>
+                  <p className="mb-1 px-1 font-code text-meta text-faint">
+                    Line {comment.line}, not in this diff
+                  </p>
+                  <PendingCard comment={comment} />
+                </div>
+              ))}
+          </div>
+        )}
 
       {open && outdated.length > 0 && (
         <div className="mt-2 space-y-2">
@@ -269,9 +363,9 @@ export function ReviewFile(props: Props) {
 
 function buildNotes(
   placed: Thread[],
-  drafts: Draft[],
-  composing: NewComment | null,
-  path: string,
+  drafts: LineDraft[],
+  pending: PendingComment[],
+  composing: LineComment | null,
 ): DiffLineAnnotation<Note>[] {
   return [
     ...placed.map((thread) => ({
@@ -284,7 +378,12 @@ function buildNotes(
       lineNumber: draft.line,
       metadata: { kind: "draft" as const, draft },
     })),
-    ...(composing && composing.path === path
+    ...pending.map((comment) => ({
+      side: sideOf("RIGHT"),
+      lineNumber: comment.line ?? 0,
+      metadata: { kind: "pending" as const, comment },
+    })),
+    ...(composing
       ? [
           {
             side: sideOf(composing.side),
@@ -300,9 +399,10 @@ function sideOf(side: Side): "additions" | "deletions" {
   return side === "LEFT" ? "deletions" : "additions";
 }
 
-export function fromRange(path: string, range: SelectedLineRange): NewComment {
+export function fromRange(path: string, range: SelectedLineRange): LineComment {
   const side: Side = (range.endSide ?? range.side) === "deletions" ? "LEFT" : "RIGHT";
   return {
+    kind: "lines",
     path,
     side,
     start: Math.min(range.start, range.end),
@@ -310,7 +410,7 @@ export function fromRange(path: string, range: SelectedLineRange): NewComment {
   };
 }
 
-function rangeLabel(comment: NewComment): string {
+function rangeLabel(comment: LineComment): string {
   return comment.start === comment.end
     ? `line ${comment.end}`
     : `lines ${comment.start} to ${comment.end}`;

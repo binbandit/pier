@@ -14,6 +14,7 @@ type Row = {
   side: Side;
   line: number;
   start_line: number | null;
+  subject: "line" | "file";
   body: string;
   created_at: string;
   updated_at: string;
@@ -26,7 +27,8 @@ export type DraftInput = {
   headOid: string;
   path: string;
   side: Side;
-  line: number;
+  /** Null for a comment on the whole file. */
+  line: number | null;
   startLine: number | null;
   body: string;
 };
@@ -44,7 +46,7 @@ export class Drafts {
         id: row.id,
         path: row.path,
         side: row.side,
-        line: row.line,
+        line: row.subject === "file" ? null : row.line,
         startLine: row.start_line,
         body: row.body,
         headOid: row.head_oid,
@@ -58,8 +60,8 @@ export class Drafts {
     const id = input.id ?? crypto.randomUUID();
     this.db
       .query(
-        `INSERT INTO draft (id, account, pr_id, head_oid, path, side, line, start_line, body, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO draft (id, account, pr_id, head_oid, path, side, line, start_line, subject, body, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at`,
       )
       .run(
@@ -69,8 +71,9 @@ export class Drafts {
         input.headOid,
         input.path,
         input.side,
-        input.line,
+        input.line ?? 0,
         input.startLine,
+        input.line === null ? "file" : "line",
         input.body,
         now,
         now,

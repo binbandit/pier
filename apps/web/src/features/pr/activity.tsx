@@ -1,6 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 
-import { Html } from "@/components/markdown";
+import { githubPath } from "@/components/palette";
 import { errorText } from "@/features/actions";
 import { ago, since } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
@@ -10,6 +12,7 @@ import { Dot, type Tone } from "@/ui/dot";
 import type { PrView, TimelineEntry } from "@pier/core/wire";
 
 import { Composer } from "./composer";
+import { Writing } from "./writing";
 
 // The conversation and history beside the code, newest at the bottom like a chat, with a box to
 // add to it. Inline threads live in the diff; this is everything else.
@@ -18,25 +21,40 @@ const REVIEW_STATE: Record<string, { text: string; tone: Tone }> = {
   APPROVED: { text: "approved", tone: "ok" },
   CHANGES_REQUESTED: { text: "requested changes", tone: "bad" },
   COMMENTED: { text: "reviewed", tone: "info" },
-  DISMISSED: { text: "had a review dismissed", tone: "faint" },
+  DISMISSED: { text: "review dismissed", tone: "faint" },
 };
 
 export function ActivityRail({ pr }: { pr: PrView }) {
   const client = useQueryClient();
   const toast = useUi((s) => s.toast);
+  // Like a chat: open at the newest, and follow new entries while you're reading the end.
+  const list = useRef<HTMLOListElement>(null);
+  const atEnd = useRef(true);
+  const entries = pr.timeline.length;
+  useEffect(() => {
+    const el = list.current;
+    if (el && entries > 0 && atEnd.current) el.scrollTop = el.scrollHeight;
+  }, [entries]);
 
   return (
     <aside aria-label="Activity" className="flex w-[380px] shrink-0 flex-col border-l border-line">
       <h2 className="flex h-11 shrink-0 items-center border-b border-line px-5 text-ui font-medium text-strong">
         Activity
       </h2>
-      <ol className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+      <ol
+        ref={list}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        }}
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4"
+      >
         {pr.timeline.length === 0 && (
           <li className="text-meta text-faint">{pr.detailLoaded ? "Nothing yet." : "Loading"}</li>
         )}
         {pr.timeline.map((entry) => (
           <li key={entryKey(entry)}>
-            <Entry entry={entry} />
+            <Entry prId={pr.id} entry={entry} />
           </li>
         ))}
       </ol>
@@ -60,18 +78,26 @@ export function ActivityRail({ pr }: { pr: PrView }) {
   );
 }
 
-function Entry({ entry }: { entry: TimelineEntry }) {
+function Entry({ prId, entry }: { prId: string; entry: TimelineEntry }) {
   switch (entry.kind) {
     case "comment":
       return (
-        <div>
-          <Byline
-            login={entry.author?.login ?? "ghost"}
-            avatarUrl={entry.author?.avatarUrl}
-            at={entry.at}
-          />
-          <Html html={entry.bodyHTML} className="prose-pier mt-1 text-[14px]" />
-        </div>
+        <Writing
+          prId={prId}
+          id={entry.id}
+          writing={entry}
+          html={entry.bodyHTML}
+          quoteInto="conversation"
+          header={
+            <Byline
+              login={entry.author?.login ?? "ghost"}
+              avatarUrl={entry.author?.avatarUrl}
+              at={entry.at}
+            >
+              {entry.edited && <span className="text-faint">edited</span>}
+            </Byline>
+          }
+        />
       );
     case "review": {
       const state = REVIEW_STATE[entry.state] ?? {
@@ -79,19 +105,26 @@ function Entry({ entry }: { entry: TimelineEntry }) {
         tone: "faint" as Tone,
       };
       return (
-        <div>
-          <Byline
-            login={entry.author?.login ?? "ghost"}
-            avatarUrl={entry.author?.avatarUrl}
-            at={entry.at}
-          >
-            <span className="flex items-center gap-1.5">
-              <Dot tone={state.tone} />
-              {state.text}
-            </span>
-          </Byline>
-          {entry.bodyHTML && <Html html={entry.bodyHTML} className="prose-pier mt-1 text-[14px]" />}
-        </div>
+        <Writing
+          prId={prId}
+          id={entry.id}
+          writing={entry}
+          html={entry.bodyHTML || null}
+          quoteInto="conversation"
+          canDismiss={entry.canDismiss}
+          header={
+            <Byline
+              login={entry.author?.login ?? "ghost"}
+              avatarUrl={entry.author?.avatarUrl}
+              at={entry.at}
+            >
+              <span className="flex items-center gap-1.5">
+                <Dot tone={state.tone} />
+                {state.text}
+              </span>
+            </Byline>
+          }
+        />
       );
     }
     case "commit":
@@ -111,12 +144,33 @@ function Entry({ entry }: { entry: TimelineEntry }) {
           , {since(entry.at)}
         </p>
       );
-    default:
+    default: {
+      // A referenced PR opens here in pier; an issue (or anything else) opens on GitHub.
+      const inPier = entry.url ? githubPath(entry.url) : null;
+      const text = entry.url ? (
+        inPier ? (
+          <Link to={inPier} className="hover:text-fg hover:underline">
+            {entry.text}
+          </Link>
+        ) : (
+          <a
+            href={entry.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hover:text-fg hover:underline"
+          >
+            {entry.text}
+          </a>
+        )
+      ) : (
+        entry.text
+      );
       return (
         <p className="text-meta text-faint">
-          {entry.actor ?? "Someone"} {entry.text}, {since(entry.at)}
+          {entry.actor ?? "Someone"} {text}, {since(entry.at)}
         </p>
       );
+    }
   }
 }
 

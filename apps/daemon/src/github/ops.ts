@@ -298,6 +298,16 @@ export const PrDetailQuery = graphql(`
         id
         headRefOid
         bodyHTML
+        viewerCanUpdate
+        locked
+        activeLockReason
+        reactionGroups {
+          content
+          viewerHasReacted
+          reactors {
+            totalCount
+          }
+        }
         viewerLatestReview {
           state
           submittedAt
@@ -352,6 +362,18 @@ export const PrDetailQuery = graphql(`
                 lastEditedAt
                 diffHunk
                 state
+                viewerCanUpdate
+                viewerCanDelete
+                viewerCanMinimize
+                isMinimized
+                minimizedReason
+                reactionGroups {
+                  content
+                  viewerHasReacted
+                  reactors {
+                    totalCount
+                  }
+                }
                 author {
                   login
                   avatarUrl(size: 64)
@@ -370,6 +392,15 @@ export const PrDetailQuery = graphql(`
             bodyHTML
             body
             submittedAt
+            lastEditedAt
+            viewerCanUpdate
+            reactionGroups {
+              content
+              viewerHasReacted
+              reactors {
+                totalCount
+              }
+            }
             author {
               login
               avatarUrl(size: 64)
@@ -386,6 +417,18 @@ export const PrDetailQuery = graphql(`
             bodyHTML
             createdAt
             lastEditedAt
+            viewerCanUpdate
+            viewerCanDelete
+            viewerCanMinimize
+            isMinimized
+            minimizedReason
+            reactionGroups {
+              content
+              viewerHasReacted
+              reactors {
+                totalCount
+              }
+            }
             author {
               login
               avatarUrl(size: 64)
@@ -431,6 +474,22 @@ export const PrDetailQuery = graphql(`
             MILESTONED_EVENT
             DEMILESTONED_EVENT
             REVIEW_REQUEST_REMOVED_EVENT
+            LOCKED_EVENT
+            UNLOCKED_EVENT
+            BASE_REF_CHANGED_EVENT
+            AUTOMATIC_BASE_CHANGE_SUCCEEDED_EVENT
+            CROSS_REFERENCED_EVENT
+            CONNECTED_EVENT
+            DISCONNECTED_EVENT
+            AUTO_MERGE_ENABLED_EVENT
+            AUTO_MERGE_DISABLED_EVENT
+            HEAD_REF_DELETED_EVENT
+            HEAD_REF_RESTORED_EVENT
+            ADDED_TO_MERGE_QUEUE_EVENT
+            REMOVED_FROM_MERGE_QUEUE_EVENT
+            MARKED_AS_DUPLICATE_EVENT
+            COMMENT_DELETED_EVENT
+            DEPLOYED_EVENT
           ]
         ) {
           nodes {
@@ -545,6 +604,193 @@ export const PrDetailQuery = graphql(`
                 login
               }
               milestoneTitle
+            }
+            ... on LockedEvent {
+              createdAt
+              actor {
+                login
+              }
+              lockReason
+            }
+            ... on UnlockedEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on BaseRefChangedEvent {
+              createdAt
+              actor {
+                login
+              }
+              previousRefName
+              currentRefName
+            }
+            ... on AutomaticBaseChangeSucceededEvent {
+              createdAt
+              actor {
+                login
+              }
+              oldBase
+              newBase
+            }
+            ... on CrossReferencedEvent {
+              createdAt
+              actor {
+                login
+              }
+              willCloseTarget
+              source {
+                __typename
+                ... on Issue {
+                  number
+                  title
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+                ... on PullRequest {
+                  number
+                  title
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+              }
+            }
+            ... on ConnectedEvent {
+              createdAt
+              actor {
+                login
+              }
+              subject {
+                __typename
+                ... on Issue {
+                  number
+                  title
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+                ... on PullRequest {
+                  number
+                  title
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+              }
+            }
+            ... on DisconnectedEvent {
+              createdAt
+              actor {
+                login
+              }
+              subject {
+                __typename
+                ... on Issue {
+                  number
+                  title
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+                ... on PullRequest {
+                  number
+                  title
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+              }
+            }
+            ... on AutoMergeEnabledEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on AutoMergeDisabledEvent {
+              createdAt
+              actor {
+                login
+              }
+              reason
+            }
+            ... on HeadRefDeletedEvent {
+              createdAt
+              actor {
+                login
+              }
+              headRefName
+            }
+            ... on HeadRefRestoredEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on AddedToMergeQueueEvent {
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on RemovedFromMergeQueueEvent {
+              createdAt
+              actor {
+                login
+              }
+              reason
+            }
+            ... on MarkedAsDuplicateEvent {
+              createdAt
+              actor {
+                login
+              }
+              canonical {
+                __typename
+                ... on Issue {
+                  number
+                  title
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+                ... on PullRequest {
+                  number
+                  title
+                  url
+                  repository {
+                    nameWithOwner
+                  }
+                }
+              }
+            }
+            ... on CommentDeletedEvent {
+              createdAt
+              actor {
+                login
+              }
+              deletedCommentAuthor {
+                login
+              }
+            }
+            ... on DeployedEvent {
+              createdAt
+              actor {
+                login
+              }
+              deployment {
+                environment
+              }
             }
             ... on ReviewRequestRemovedEvent {
               createdAt
@@ -811,6 +1057,211 @@ export const ReopenPrMutation = graphql(`
     reopenPullRequest(input: { pullRequestId: $prId }) {
       pullRequest {
         id
+      }
+    }
+  }
+`);
+
+export const AddReactionMutation = graphql(`
+  mutation AddReaction($subjectId: ID!, $content: ReactionContent!) {
+    addReaction(input: { subjectId: $subjectId, content: $content }) {
+      reaction {
+        content
+      }
+    }
+  }
+`);
+
+export const RemoveReactionMutation = graphql(`
+  mutation RemoveReaction($subjectId: ID!, $content: ReactionContent!) {
+    removeReaction(input: { subjectId: $subjectId, content: $content }) {
+      reaction {
+        content
+      }
+    }
+  }
+`);
+
+export const UpdateIssueCommentMutation = graphql(`
+  mutation UpdateIssueComment($id: ID!, $body: String!) {
+    updateIssueComment(input: { id: $id, body: $body }) {
+      issueComment {
+        id
+      }
+    }
+  }
+`);
+
+export const UpdateReviewCommentMutation = graphql(`
+  mutation UpdateReviewComment($id: ID!, $body: String!) {
+    updatePullRequestReviewComment(input: { pullRequestReviewCommentId: $id, body: $body }) {
+      pullRequestReviewComment {
+        id
+      }
+    }
+  }
+`);
+
+export const UpdateReviewMutation = graphql(`
+  mutation UpdateReview($id: ID!, $body: String!) {
+    updatePullRequestReview(input: { pullRequestReviewId: $id, body: $body }) {
+      pullRequestReview {
+        id
+      }
+    }
+  }
+`);
+
+export const UpdatePrMutation = graphql(`
+  mutation UpdatePr($prId: ID!, $title: String, $body: String, $base: String) {
+    updatePullRequest(
+      input: { pullRequestId: $prId, title: $title, body: $body, baseRefName: $base }
+    ) {
+      pullRequest {
+        id
+      }
+    }
+  }
+`);
+
+export const DeleteIssueCommentMutation = graphql(`
+  mutation DeleteIssueComment($id: ID!) {
+    deleteIssueComment(input: { id: $id }) {
+      clientMutationId
+    }
+  }
+`);
+
+export const DeleteReviewCommentMutation = graphql(`
+  mutation DeleteReviewComment($id: ID!) {
+    deletePullRequestReviewComment(input: { id: $id }) {
+      clientMutationId
+    }
+  }
+`);
+
+export const MinimizeMutation = graphql(`
+  mutation Minimize($id: ID!, $classifier: ReportedContentClassifiers!) {
+    minimizeComment(input: { subjectId: $id, classifier: $classifier }) {
+      minimizedComment {
+        isMinimized
+      }
+    }
+  }
+`);
+
+export const UnminimizeMutation = graphql(`
+  mutation Unminimize($id: ID!) {
+    unminimizeComment(input: { subjectId: $id }) {
+      unminimizedComment {
+        isMinimized
+      }
+    }
+  }
+`);
+
+export const DismissReviewMutation = graphql(`
+  mutation DismissReview($id: ID!, $message: String!) {
+    dismissPullRequestReview(input: { pullRequestReviewId: $id, message: $message }) {
+      pullRequestReview {
+        id
+      }
+    }
+  }
+`);
+
+export const PendingReviewQuery = graphql(`
+  query PendingReview($prId: ID!) {
+    node(id: $prId) {
+      ... on PullRequest {
+        reviews(states: PENDING, first: 1) {
+          nodes {
+            id
+            comments(first: 100) {
+              nodes {
+                path
+                body
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`);
+
+export const StartReviewMutation = graphql(`
+  mutation StartReview(
+    $prId: ID!
+    $commit: GitObjectID!
+    $threads: [DraftPullRequestReviewThread!]
+  ) {
+    addPullRequestReview(input: { pullRequestId: $prId, commitOID: $commit, threads: $threads }) {
+      pullRequestReview {
+        id
+      }
+    }
+  }
+`);
+
+export const AddReviewThreadMutation = graphql(`
+  mutation AddReviewThread(
+    $reviewId: ID!
+    $path: String!
+    $body: String!
+    $subject: PullRequestReviewThreadSubjectType!
+    $line: Int
+    $side: DiffSide
+    $startLine: Int
+    $startSide: DiffSide
+  ) {
+    addPullRequestReviewThread(
+      input: {
+        pullRequestReviewId: $reviewId
+        path: $path
+        body: $body
+        subjectType: $subject
+        line: $line
+        side: $side
+        startLine: $startLine
+        startSide: $startSide
+      }
+    ) {
+      thread {
+        id
+      }
+    }
+  }
+`);
+
+export const SubmitPendingReviewMutation = graphql(`
+  mutation SubmitPendingReview($reviewId: ID!, $event: PullRequestReviewEvent!, $body: String) {
+    submitPullRequestReview(input: { pullRequestReviewId: $reviewId, event: $event, body: $body }) {
+      pullRequestReview {
+        id
+        state
+        submittedAt
+        commit {
+          oid
+        }
+      }
+    }
+  }
+`);
+
+export const HistoryQuery = graphql(`
+  query History($id: ID!) {
+    node(id: $id) {
+      ... on Comment {
+        userContentEdits(first: 30) {
+          nodes {
+            editedAt
+            diff
+            editor {
+              login
+            }
+          }
+        }
       }
     }
   }

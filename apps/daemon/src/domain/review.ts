@@ -1,4 +1,4 @@
-import type { GitHubPort, MetadataField, ReviewEvent } from "@/github/port";
+import type { DraftThreadInput, GitHubPort, MetadataField, ReviewEvent } from "@/github/port";
 import type { PrDetail } from "@/github/pr-detail";
 import type { CommandPayload, NewCommand, Outbox } from "@/outbox/outbox";
 import type { Planner } from "@/outbox/planner";
@@ -6,19 +6,25 @@ import type { SyncEngine } from "@/sync/engine";
 import type {
   CheckLog,
   CheckRunView,
+  CommentSubject,
   DiffRange,
   Label,
+  LockReason,
   MergeMethod,
   Milestone,
+  MinimizeReason,
   Person,
   PrDiff,
   PrView,
+  ReactionContent,
+  Revision,
   Runway,
   Side,
   Thread,
   ViewedState,
 } from "@pier/core/wire";
 
+import { overlayConversation } from "./conversation";
 import type { Details } from "./details";
 import type { Drafts } from "./drafts";
 import { overlayMetadata, type RepoKnown } from "./metadata";
@@ -32,7 +38,7 @@ import { buildRunway } from "./runway";
 const REVIEW_HOLD_MS = 5_000;
 /** Merges hold the same way: once one goes through it can only be reverted. */
 const MERGE_HOLD_MS = 5_000;
-/** Closing too: it notifies everyone on the PR. */
+/** Closing too: it notifies everyone on the PR. So does deleting a comment, which can't come back. */
 const CLOSE_HOLD_MS = 5_000;
 
 export type InterdiffSource = {
@@ -121,7 +127,8 @@ export class ReviewService {
       this.knownFor(doc.repo),
     );
 
-    return {
+    const canWrite = ["ADMIN", "MAINTAIN", "WRITE"].includes(doc.viewerPermission ?? "");
+    const view: PrView = {
       id: doc.id,
       repo: doc.repo,
       number: doc.number,
@@ -129,6 +136,9 @@ export class ReviewService {
       url: doc.url,
       body: doc.body,
       bodyHTML: detail?.bodyHTML ?? null,
+      reactions: detail?.reactions ?? [],
+      canEdit: detail?.canEdit ?? false,
+      locked: detail?.locked ?? null,
       author: doc.author,
       state: doc.state,
       isDraft: meta.isDraft,
@@ -180,11 +190,23 @@ export class ReviewService {
         };
       }),
       drafts: this.deps.drafts.list(doc.id, account),
-      timeline: detail?.timeline ?? [],
+      // Someone else's approval or change request can be dismissed by anyone who can write.
+      timeline: (detail?.timeline ?? []).map((entry) =>
+        entry.kind === "review"
+          ? {
+              ...entry,
+              canDismiss:
+                canWrite &&
+                entry.author?.login !== account &&
+                (entry.state === "APPROVED" || entry.state === "CHANGES_REQUESTED"),
+            }
+          : entry,
+      ),
       viewed: viewedState(detail, pending),
-      pendingReviewId: detail?.pendingReview?.id ?? null,
+      pendingReview: detail?.pendingReview ?? null,
       detailLoaded: detail !== null,
     };
+    return overlayConversation(view, pending);
   }
 
   async diff(
@@ -256,7 +278,7 @@ export class ReviewService {
     prId: string;
     path: string;
     side: Side;
-    line: number;
+    line: number | null;
     startLine: number | null;
     body: string;
   }): string {
@@ -288,19 +310,15 @@ export class ReviewService {
     if (event === "REQUEST_CHANGES" && !body.trim() && drafts.length === 0) {
       throw new Error("Say what needs to change, in the review or as inline comments");
     }
-    const stale = drafts.filter((d) => d.headOid !== doc.headRefOid);
+    // A comment on a whole file can't land on the wrong line, so only line comments go stale.
+    const stale = drafts.filter((d) => d.line !== null && d.headOid !== doc.headRefOid);
     if (stale.length > 0) {
       throw new Error(
         `${stale.length} of your comments were written before the latest push. Check they still point at the right lines, then save them again.`,
       );
     }
-    const detail = await this.detail(record);
-    if (detail?.pendingReview) {
-      throw new Error(
-        "You have a review in progress on github.com. Finish or discard it there first (Shift+O).",
-      );
-    }
 
+    // A review you started on github.com is continued, not duplicated (see submitReview).
     return this.enqueue(
       record,
       "review",
@@ -308,15 +326,20 @@ export class ReviewService {
         event,
         body,
         draftIds: drafts.map((d) => d.id),
-        threads: drafts.map((d) => ({
-          path: d.path,
-          line: d.line,
-          side: d.side,
-          ...(d.startLine !== null && d.startLine !== d.line
-            ? { startLine: d.startLine, startSide: d.side }
-            : {}),
-          body: d.body,
-        })),
+        threads: drafts.map((d): DraftThreadInput =>
+          d.line === null
+            ? { subject: "file", path: d.path, body: d.body }
+            : {
+                subject: "line",
+                path: d.path,
+                line: d.line,
+                side: d.side,
+                ...(d.startLine !== null && d.startLine !== d.line
+                  ? { startLine: d.startLine, startSide: d.side }
+                  : {}),
+                body: d.body,
+              },
+        ),
       },
       REVIEW_HOLD_MS,
     );
@@ -403,6 +426,57 @@ export class ReviewService {
     return open
       ? this.enqueue(record, "reopen", {}, 0)
       : this.enqueue(record, "close", {}, CLOSE_HOLD_MS);
+  }
+
+  react(prId: string, subjectId: string, content: ReactionContent, on: boolean): string[] {
+    return this.enqueue(this.require(prId), "react", { subjectId, content, on }, 0);
+  }
+
+  editWriting(prId: string, subject: CommentSubject, subjectId: string, body: string): string[] {
+    return this.enqueue(this.require(prId), "edit-comment", { subject, subjectId, body }, 0);
+  }
+
+  deleteComment(
+    prId: string,
+    subject: "issue-comment" | "review-comment",
+    subjectId: string,
+  ): string[] {
+    return this.enqueue(
+      this.require(prId),
+      "delete-comment",
+      { subject, subjectId },
+      CLOSE_HOLD_MS,
+    );
+  }
+
+  minimize(prId: string, subjectId: string, reason: MinimizeReason | null): string[] {
+    return this.enqueue(this.require(prId), "minimize", { subjectId, reason }, 0);
+  }
+
+  editPr(prId: string, change: { title?: string; base?: string }): string[] {
+    return this.enqueue(this.require(prId), "edit-pr", change, 0);
+  }
+
+  dismissReview(prId: string, reviewId: string, message: string): string[] {
+    return this.enqueue(
+      this.require(prId),
+      "dismiss-review",
+      { subjectId: reviewId, body: message },
+      0,
+    );
+  }
+
+  setLocked(prId: string, reason: LockReason | null): string[] {
+    return this.enqueue(this.require(prId), "lock", { lockReason: reason }, 0);
+  }
+
+  async history(prId: string, subjectId: string): Promise<Revision[]> {
+    const port = this.deps.ports.get(this.require(prId).reader);
+    return port ? port.history(subjectId) : [];
+  }
+
+  async branches(repo: string): Promise<string[]> {
+    return (await this.portForRepo(repo)?.branches(repo)) ?? [];
   }
 
   async repoLabels(repo: string): Promise<Label[]> {

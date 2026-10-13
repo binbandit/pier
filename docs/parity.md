@@ -31,16 +31,16 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | CONV-BODY | Rendered description (mentions, refs, task lists, alerts) | `bodyHTML` | M1b | sandbox |
 | CONV-MERMAID | Mermaid, math, GeoJSON rendering | client render | I9 | - |
 | CONV-TIMELINE | Commits, reviews, comments, requests, force-pushes, labels, renames, merges | `timelineItems` | M1b | sandbox |
-| CONV-TIMELINE-ALL | Every other timeline event type (about 70) with a generic fallback | `timelineItems` | I6 | - |
+| CONV-TIMELINE-ALL | Every other timeline event type (about 70) with a generic fallback | `timelineItems` (the ~35 event types a reviewer sees; the rest are noise like subscriptions) | I6 | built |
 | CONV-COMMENT | Add a conversation comment | `addComment` | M1b | built |
-| CONV-EDIT | Edit your comment, see edit history | `updateIssueComment` / `userContentEdits` | I6 | - |
-| CONV-DELETE | Delete a comment | `deleteIssueComment` | I6 | - |
-| CONV-MINIMIZE | Hide a comment with a reason, unhide | `minimizeComment` | I6 | - |
-| CONV-REACT | Reactions | `addReaction` / `removeReaction` | I6 | - |
-| CONV-QUOTE | Quote reply | client | I6 | - |
+| CONV-EDIT | Edit your comment (edit history not shown yet) | `updateIssueComment` / `userContentEdits` | I6 | sandbox |
+| CONV-DELETE | Delete a comment | `deleteIssueComment` | I6 | sandbox |
+| CONV-MINIMIZE | Hide a comment with a reason, unhide | `minimizeComment` | I6 | sandbox |
+| CONV-REACT | Reactions | `addReaction` / `removeReaction` | I6 | sandbox |
+| CONV-QUOTE | Quote reply | client | I6 | sandbox |
 | CONV-SAVED-REPLIES | Saved replies | read-only `viewer.savedReplies` (needs `read:user`) | I10 | - |
 | CONV-UPLOAD | Paste or drop images and files | undocumented attachments endpoint | gap | - |
-| META-TITLE | Edit title and body | `updatePullRequest` | I6 | - |
+| META-TITLE | Edit title and body | `updatePullRequest` | I6 | sandbox |
 | META-REVIEWERS | Request / re-request / remove reviewers (users, teams, Copilot), suggested reviewers | REST `requested_reviewers` (users, and teams already requested); team listing, Copilot and suggestions not yet | I6 | sandbox |
 | META-ASSIGNEES | Assignees | REST issue `assignees` | I6 | sandbox |
 | META-LABELS | Labels | REST issue `labels` | I6 | sandbox |
@@ -48,9 +48,9 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | META-PROJECTS | Projects (v2) fields | `addProjectV2ItemById` (needs `project` scope) | I10 | - |
 | META-LINKED | Linked issues (Development) | closing keywords / timeline | I6 | - |
 | LIFE-DRAFT | Draft ⇄ ready for review | `convertPullRequestToDraft` / `markPullRequestReadyForReview` | I6 | sandbox |
-| LIFE-CLOSE | Close / reopen | `closePullRequest` / `reopenPullRequest` (close verified with undo in the fake; not yet closed live) | I6 | built |
-| LIFE-BASE | Change base branch | `updatePullRequest` | I6 | - |
-| LIFE-LOCK | Lock / unlock conversation | `lockLockable` | I6 | - |
+| LIFE-CLOSE | Close / reopen | `closePullRequest` / `reopenPullRequest` | I6 | sandbox |
+| LIFE-BASE | Change base branch | `updatePullRequest` | I6 | sandbox |
+| LIFE-LOCK | Lock / unlock conversation | `lockLockable` | I6 | sandbox |
 | LIFE-ARCHIVE | Archive a PR | `archivePullRequest` | I10 | - |
 
 ## C. Files and code review
@@ -73,7 +73,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | COMMENT-LINE | Comment on a line | review `threads[]` | M1b | sandbox |
 | COMMENT-RANGE | Comment on a range of lines | `startLine` | M1b | built |
 | COMMENT-DELETED-LINE | Comment on a removed line | `side: LEFT` | M1b | built |
-| COMMENT-FILE | Comment on a whole file | `subjectType: FILE` | I6 | - |
+| COMMENT-FILE | Comment on a whole file | `subjectType: FILE` | I6 | sandbox |
 | COMMENT-UNCHANGED | Comment on an unchanged line outside the hunks | undocumented in the API | gap | - |
 | COMMENT-OUTSIDE | Threads on lines outside the shown diff stay visible | derived | M1b | sandbox |
 | COMMENT-OUTDATED | Outdated threads shown with their original code | `diffHunk` | M1b | built |
@@ -82,11 +82,11 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | REVIEW-DRAFTS | Inline comments held as drafts until the review is sent | local | M1b | sandbox |
 | REVIEW-SUBMIT | Comment / approve / request changes, with a summary | `addPullRequestReview` | M1b | sandbox |
 | REVIEW-UNDO | Take a review back within 5 seconds | outbox hold | M1b | sandbox |
-| REVIEW-WEB-PENDING | Continue a review started on github.com | `submitPullRequestReview` | I6 | - |
+| REVIEW-WEB-PENDING | Continue a review started on github.com | `submitPullRequestReview` | I6 | sandbox |
 | THREAD-REPLY | Reply to a thread | `addPullRequestReviewThreadReply` | M1b | built |
 | THREAD-RESOLVE | Resolve / unresolve | `resolveReviewThread` | M1b | built |
 | THREAD-NAV | Jump between open threads | client | M1b | built |
-| REVIEW-DISMISS | Dismiss someone's review | `dismissPullRequestReview` | I6 | - |
+| REVIEW-DISMISS | Dismiss someone's review | `dismissPullRequestReview` | I6 | sandbox |
 | CODEOWNERS | Who owns what, code-owner requests | CODEOWNERS parse, `asCodeOwner` | I5 | - |
 | COPILOT-REVIEW | Request a Copilot review | `requestReviewsByLogin` (bot) | I6 | - |
 

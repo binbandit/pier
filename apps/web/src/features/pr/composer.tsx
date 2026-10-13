@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import { useEffect, useRef, useState } from "react";
 
 import { useCommands } from "@/keys/registry";
+import { useUi } from "@/stores/ui";
 import { Keys } from "@/ui/kbd";
 
 // The one text box pier writes comments in: inline drafts, thread replies, review bodies and the
@@ -33,7 +34,10 @@ export function Composer({
   suggestionSource = null,
   minRows = 3,
 }: ComposerProps) {
-  const [body, setBody] = useState(initial);
+  const [body, setBody] = useState(() => {
+    const quote = useUi.getState().quote;
+    return quote?.into === id ? withQuote(initial, quote.text) : initial;
+  });
   const [focused, setFocused] = useState(false);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -41,6 +45,25 @@ export function Composer({
   useEffect(() => {
     if (focusOnMount) ref.current?.focus();
   }, [focusOnMount]);
+
+  // Quote reply: text quoted elsewhere lands at the end of this box, ready to answer. A quote
+  // waiting when the box opened (a thread's reply box opens for it) is already in `body`.
+  useEffect(() => {
+    if (useUi.getState().quote?.into === id) useUi.getState().takeQuote();
+    return useUi.subscribe((state) => {
+      if (state.quote?.into !== id) return;
+      const { text } = state.quote;
+      state.takeQuote();
+      setBody((now) => withQuote(now, text));
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      queueMicrotask(() => {
+        el.selectionStart = el.selectionEnd = el.value.length;
+        grow(el);
+      });
+    });
+  }, [id]);
 
   const submit = async () => {
     if (busy || !body.trim()) return;
@@ -157,4 +180,9 @@ export function Composer({
 function grow(el: HTMLTextAreaElement): void {
   el.style.height = "auto";
   el.style.height = `${el.scrollHeight}px`;
+}
+
+/** Appends a quote on its own paragraph, leaving room to answer under it. */
+function withQuote(body: string, quote: string): string {
+  return `${body.trim() ? `${body.trimEnd()}\n\n` : ""}${quote}\n\n`;
 }

@@ -147,3 +147,51 @@ test("labels, milestone and draft change from the keyboard and stick", async ({ 
   await expect(page.getByLabel("Milestone", { exact: true })).toContainText("Next release");
   await expect(page.getByText("Draft", { exact: true })).toBeVisible();
 });
+
+test("a conversation comment can be reacted to, edited and deleted", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-api/pull/7");
+  const rail = page.getByRole("complementary", { name: "Activity" });
+  await rail.getByRole("textbox").fill("Is the generated client checked in on purpose?");
+  await page.keyboard.press("Meta+Enter");
+  const comment = rail.getByRole("listitem").filter({ hasText: "generated client" });
+  await expect(comment).toBeVisible({ timeout: 15_000 });
+
+  await comment.hover();
+  await comment.getByRole("button", { name: "React" }).click();
+  await comment.getByRole("button", { name: "eyes" }).click();
+  await expect(comment.getByRole("button", { pressed: true })).toContainText("1");
+
+  await comment.hover();
+  await comment.getByRole("button", { name: "Edit" }).click();
+  await page.keyboard.press("Meta+a");
+  await page.keyboard.type("Is the generated client meant to be checked in?");
+  await page.keyboard.press("Meta+Enter");
+  await expect(rail.getByText("meant to be checked in")).toBeVisible();
+
+  const edited = rail.getByRole("listitem").filter({ hasText: "meant to be checked in" });
+  await edited.hover();
+  await edited.getByRole("button", { name: "Delete" }).click();
+  await expect(toast(page, "Deleting the comment in 5s")).toBeVisible();
+  await expect(rail.getByText("meant to be checked in")).toBeHidden();
+});
+
+test("a comment on a whole file goes out with the review", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-api/pull/5");
+  await expect(page.getByRole("heading", { name: "Add AUDIT_LOG feature flag" })).toBeVisible();
+  await page.keyboard.press("c");
+  await page.keyboard.type("Please document the flag in the README too.");
+  await page.keyboard.press("Meta+Enter");
+  await expect(page.getByText("On the whole file")).toBeVisible();
+  await expect(page.getByText("Sends with your review")).toBeVisible();
+
+  await page.keyboard.press("r");
+  await expect(page.getByRole("region", { name: "Review" })).toContainText(
+    "1 inline comment goes with it",
+  );
+  await page.keyboard.press("Meta+Enter");
+  await page.getByRole("button", { name: "Send without a summary" }).click();
+  await page.goto("/log");
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "sandbox-api#5" }).first(),
+  ).toContainText("Sent", { timeout: 15_000 });
+});

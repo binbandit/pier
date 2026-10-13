@@ -278,7 +278,7 @@ describe("writes", () => {
       commitOid: world.head(pr),
       event: "REQUEST_CHANGES",
       body: "One thing before this goes in.",
-      threads: [{ path: file.path, line, side: "RIGHT", body: "Why this?" }],
+      threads: [{ subject: "line", path: file.path, line, side: "RIGHT", body: "Why this?" }],
     });
     const detail = await sage.detail(pr.id);
     const thread = detail?.threads.find((t) => t.comments[0]?.body === "Why this?");
@@ -293,7 +293,13 @@ describe("writes", () => {
     expect(after?.comments.map((c) => c.body)).toEqual(["Why this?", "Fixed it"]);
 
     // GitHub only takes comments on lines that are part of the diff.
-    const outside = { path: file.path, line: 9_999, side: "RIGHT" as const, body: "?" };
+    const outside = {
+      subject: "line" as const,
+      path: file.path,
+      line: 9_999,
+      side: "RIGHT" as const,
+      body: "?",
+    };
     expect(
       you.submitReview({
         prId: pr.id,

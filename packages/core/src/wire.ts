@@ -111,7 +111,14 @@ export type CommandKind =
   | "milestone"
   | "draft"
   | "close"
-  | "reopen";
+  | "reopen"
+  | "react"
+  | "edit-comment"
+  | "delete-comment"
+  | "minimize"
+  | "edit-pr"
+  | "dismiss-review"
+  | "lock";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -278,13 +285,57 @@ export type CheckRun = {
 
 export type Side = "LEFT" | "RIGHT";
 
-export type ThreadComment = {
+export type ReactionContent =
+  | "THUMBS_UP"
+  | "THUMBS_DOWN"
+  | "LAUGH"
+  | "HOORAY"
+  | "CONFUSED"
+  | "HEART"
+  | "ROCKET"
+  | "EYES";
+
+export type Reaction = { content: ReactionContent; count: number; mine: boolean };
+
+/** Why a comment is hidden, in GitHub's words. */
+export type MinimizeReason =
+  | "SPAM"
+  | "ABUSE"
+  | "OFF_TOPIC"
+  | "OUTDATED"
+  | "DUPLICATE"
+  | "RESOLVED"
+  | "LOW_QUALITY";
+
+/** Why a conversation is locked, as GitHub's lock endpoint takes it. */
+export type LockReason = "off-topic" | "too heated" | "resolved" | "spam";
+
+/** Which GitHub object a piece of writing is, so edits and deletes reach the right mutation. */
+export type CommentSubject = "issue-comment" | "review-comment" | "review" | "pull-request";
+
+/** A comment, review or description, with what you can do to it. */
+export type Commentable = {
+  subject: CommentSubject;
+  body: string;
+  edited: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canMinimize: boolean;
+  /** Why it was hidden, when it was. */
+  minimized: string | null;
+  reactions: Reaction[];
+  /** Your edit hasn't reached GitHub yet, so `body` is newer than `bodyHTML`. */
+  unsent: boolean;
+};
+
+/** One version of something that was edited, newest first in lists. */
+export type Revision = { editedAt: string; editor: string | null; body: string };
+
+export type ThreadComment = Commentable & {
   id: string;
   author: Actor | null;
-  body: string;
   bodyHTML: string;
   createdAt: string;
-  edited: boolean;
 };
 
 export type Thread = {
@@ -313,7 +364,8 @@ export type Draft = {
   id: string;
   path: string;
   side: Side;
-  line: number;
+  /** Null for a comment on the whole file. */
+  line: number | null;
   startLine: number | null;
   body: string;
   /** The head commit the draft was written against. */
@@ -322,8 +374,14 @@ export type Draft = {
 };
 
 export type TimelineEntry =
-  | { kind: "comment"; id: string; author: Actor | null; bodyHTML: string; at: string }
-  | {
+  | (Commentable & {
+      kind: "comment";
+      id: string;
+      author: Actor | null;
+      bodyHTML: string;
+      at: string;
+    })
+  | (Commentable & {
       kind: "review";
       id: string;
       author: Actor | null;
@@ -331,7 +389,9 @@ export type TimelineEntry =
       bodyHTML: string;
       at: string;
       commitOid: string | null;
-    }
+      /** You can dismiss it: someone else's approval or change request, and you can write. */
+      canDismiss: boolean;
+    })
   | { kind: "commit"; oid: string; headline: string; author: string | null; at: string }
   | {
       kind: "force-push";
@@ -340,9 +400,30 @@ export type TimelineEntry =
       actor: string | null;
       at: string;
     }
-  | { kind: "event"; text: string; actor: string | null; at: string };
+  | {
+      kind: "event";
+      text: string;
+      actor: string | null;
+      at: string;
+      /** Where the event points, when it's about another issue or PR. */
+      url?: string;
+    };
 
 export type ViewedState = "viewed" | "unviewed" | "changed";
+
+export type PendingReview = {
+  id: string;
+  /** The commit it was started on, which may be older than the head. */
+  commitOid: string | null;
+  /** Its comments so far; `line` is null for one on the whole file (or whose line is gone). */
+  comments: {
+    id: string;
+    path: string;
+    line: number | null;
+    startLine: number | null;
+    body: string;
+  }[];
+};
 
 export type PrView = {
   id: string;
@@ -353,6 +434,11 @@ export type PrView = {
   body: string;
   /** GitHub's rendered body (mentions and references resolved). Sanitised again on render. */
   bodyHTML: string | null;
+  /** The description's reactions, and whether you can edit the title and description. */
+  reactions: Reaction[];
+  canEdit: boolean;
+  /** The lock reason when the conversation is locked ("resolved", "too heated", …). */
+  locked: string | null;
   author: Actor | null;
   state: "OPEN" | "CLOSED" | "MERGED";
   isDraft: boolean;
@@ -383,8 +469,8 @@ export type PrView = {
   drafts: Draft[];
   timeline: TimelineEntry[];
   viewed: Record<string, ViewedState>;
-  /** A review started on github.com that hasn't been submitted; submitting here continues it. */
-  pendingReviewId: string | null;
+  /** A review you started on github.com and haven't submitted; submitting here continues it. */
+  pendingReview: PendingReview | null;
   /** Detail (threads, timeline) has loaded at least once. */
   detailLoaded: boolean;
 };

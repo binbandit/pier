@@ -14,6 +14,7 @@ import type {
   PrDiff,
   PrView,
   QueueItem,
+  Revision,
   Runway,
   SplitCounts,
 } from "./wire";
@@ -40,7 +41,8 @@ export const inputs = {
     prId: "string",
     path: "string",
     side: "'LEFT' | 'RIGHT'",
-    line: "number.integer > 0",
+    /** Null for a comment on the whole file. */
+    line: "number.integer > 0 | null",
     "startLine?": "number.integer > 0 | null",
     body: "string > 0",
   }),
@@ -79,6 +81,38 @@ export const inputs = {
   setMilestone: type({ prId: "string", milestone: "number.integer > 0 | null" }),
   setDraft: type({ prId: "string", draft: "boolean" }),
   setOpen: type({ prId: "string", open: "boolean" }),
+  react: type({
+    prId: "string",
+    subjectId: "string",
+    content:
+      "'THUMBS_UP' | 'THUMBS_DOWN' | 'LAUGH' | 'HOORAY' | 'CONFUSED' | 'HEART' | 'ROCKET' | 'EYES'",
+    on: "boolean",
+  }),
+  editWriting: type({
+    prId: "string",
+    subject: "'issue-comment' | 'review-comment' | 'review' | 'pull-request'",
+    subjectId: "string",
+    body: "string",
+  }),
+  deleteComment: type({
+    prId: "string",
+    subject: "'issue-comment' | 'review-comment'",
+    subjectId: "string",
+  }),
+  minimize: type({
+    prId: "string",
+    subjectId: "string",
+    reason:
+      "'SPAM' | 'ABUSE' | 'OFF_TOPIC' | 'OUTDATED' | 'DUPLICATE' | 'RESOLVED' | 'LOW_QUALITY' | null",
+  }),
+  editPr: type({ prId: "string", "title?": "string > 0", "base?": "string > 0" }),
+  dismissReview: type({ prId: "string", reviewId: "string", message: "string > 0" }),
+  setLocked: type({
+    prId: "string",
+    reason: "'off-topic' | 'too heated' | 'resolved' | 'spam' | null",
+  }),
+  branches: type({ repo: "string" }),
+  history: type({ prId: "string", subjectId: "string" }),
   repoLabels: type({ repo: "string" }),
   assignable: type({ repo: "string" }),
   milestones: type({ repo: "string" }),
@@ -121,6 +155,15 @@ export type Outputs = {
   setMilestone: { commandIds: string[] };
   setDraft: { commandIds: string[] };
   setOpen: { commandIds: string[] };
+  react: { commandIds: string[] };
+  editWriting: { commandIds: string[] };
+  deleteComment: { commandIds: string[] };
+  minimize: { commandIds: string[] };
+  editPr: { commandIds: string[] };
+  dismissReview: { commandIds: string[] };
+  setLocked: { commandIds: string[] };
+  branches: string[];
+  history: Revision[];
   repoLabels: Label[];
   assignable: Person[];
   milestones: Milestone[];

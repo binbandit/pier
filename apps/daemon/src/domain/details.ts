@@ -2,8 +2,11 @@ import type { Database } from "bun:sqlite";
 
 import type { PrDetail } from "@/github/pr-detail";
 
-// Full-tier detail per PR and account, refetched when the PR's activity timestamp moves or a write
-// of ours lands on it. Only PRs you actually open are ever fetched at this tier.
+// Full-tier detail per PR and account, refetched when the PR's activity timestamp moves, a write
+// of ours lands on it, or it's a couple of minutes old: some things you do on github.com (start a
+// review, mark a file viewed, react) don't move the timestamp. Only PRs you open are fetched.
+
+const MAX_AGE_MS = 2 * 60_000;
 
 type Entry = { detail: PrDetail; updatedAt: string; fetchedAt: number };
 
@@ -51,8 +54,13 @@ export class Details {
     this.dirty.add(`${prId}:${account}`);
   }
 
-  isFresh(prId: string, account: string, updatedAt: string): boolean {
+  isFresh(prId: string, account: string, updatedAt: string, now = Date.now()): boolean {
     const entry = this.get(prId, account);
-    return entry !== null && entry.updatedAt === updatedAt && !this.dirty.has(`${prId}:${account}`);
+    return (
+      entry !== null &&
+      entry.updatedAt === updatedAt &&
+      now - entry.fetchedAt < MAX_AGE_MS &&
+      !this.dirty.has(`${prId}:${account}`)
+    );
   }
 }

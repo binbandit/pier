@@ -65,6 +65,30 @@ export function createHandlers(app: App): Handlers {
     }),
     setDraft: ({ prId, draft }) => ({ commandIds: app.review.setDraft(prId, draft) }),
     setOpen: ({ prId, open }) => ({ commandIds: app.review.setOpen(prId, open) }),
+    react: ({ prId, subjectId, content, on }) => ({
+      commandIds: app.review.react(prId, subjectId, content, on),
+    }),
+    editWriting: ({ prId, subject, subjectId, body }) => ({
+      commandIds: app.review.editWriting(prId, subject, subjectId, body),
+    }),
+    deleteComment: ({ prId, subject, subjectId }) => ({
+      commandIds: app.review.deleteComment(prId, subject, subjectId),
+    }),
+    minimize: ({ prId, subjectId, reason }) => ({
+      commandIds: app.review.minimize(prId, subjectId, reason),
+    }),
+    editPr: ({ prId, title, base }) => ({
+      commandIds: app.review.editPr(prId, {
+        ...(title !== undefined ? { title } : {}),
+        ...(base !== undefined ? { base } : {}),
+      }),
+    }),
+    dismissReview: ({ prId, reviewId, message }) => ({
+      commandIds: app.review.dismissReview(prId, reviewId, message),
+    }),
+    setLocked: ({ prId, reason }) => ({ commandIds: app.review.setLocked(prId, reason) }),
+    branches: ({ repo }) => app.review.branches(repo),
+    history: ({ prId, subjectId }) => app.review.history(prId, subjectId),
     repoLabels: ({ repo }) => app.review.repoLabels(repo),
     assignable: ({ repo }) => app.review.assignable(repo),
     milestones: ({ repo }) => app.review.milestones(repo),

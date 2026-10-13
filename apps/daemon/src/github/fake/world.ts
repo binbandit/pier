@@ -9,6 +9,8 @@ import type {
   Ecosystem,
   Mergeable,
   MergeMethod,
+  MinimizeReason,
+  ReactionContent,
   ReviewDecision,
   TimelineEntry,
 } from "@pier/core/wire";
@@ -79,7 +81,17 @@ export type FakeFile = {
   revision: number;
 };
 
-export type FakeReview = {
+/** What every piece of writing carries: when it was last edited, whether it's hidden, reactions. */
+export type Writing = {
+  editedAt: string | null;
+  /** Every version once it's been edited, newest first, like GitHub's userContentEdits. */
+  history: { editedAt: string; editor: string; body: string }[];
+  minimized: string | null;
+  /** Who left each reaction. */
+  reactions: Map<ReactionContent, Set<string>>;
+};
+
+export type FakeReview = Writing & {
   id: string;
   author: string;
   state: ReviewState;
@@ -88,10 +100,18 @@ export type FakeReview = {
   submittedAt: string | null;
 };
 
-export type FakeComment = { id: string; author: string; body: string; createdAt: string };
+export type FakeComment = Writing & { id: string; author: string; body: string; createdAt: string };
+
+/** A piece of writing found by id; the subject says which kind it is. */
+export type FoundWriting =
+  | { pr: FakePr; subject: "pull-request"; target: FakePr }
+  | { pr: FakePr; subject: "issue-comment" | "review-comment"; target: FakeComment }
+  | { pr: FakePr; subject: "review"; target: FakeReview };
 
 export type FakeThread = {
   id: string;
+  /** On a line, or on the whole file (which never goes outdated). */
+  subject: "line" | "file";
   path: string;
   side: "LEFT" | "RIGHT";
   /** Null once a push changes the file and the thread is outdated. */
@@ -143,6 +163,10 @@ export type FakePr = {
   labels: { name: string; color: string }[];
   assignees: string[];
   milestone: number | null;
+  /** Reactions on the description. */
+  reactions: Map<ReactionContent, Set<string>>;
+  /** The lock reason ("resolved", "off-topic", …) while the conversation is locked. */
+  locked: string | null;
   /** Check runs per commit; a commit with no entry has reported nothing. */
   checks: Map<string, FakeCheckRun[]>;
   reviews: FakeReview[];
@@ -631,6 +655,8 @@ export class FakeWorld {
       requested: new Set(),
       viewed: new Map(),
       mentions: new Set(),
+      reactions: new Map(),
+      locked: null,
       autoMerge: null,
       bases: new Map(),
       bumps: input.bumps ?? [],
@@ -1026,6 +1052,151 @@ export class FakeWorld {
     pr.updatedAt = this.iso();
   }
 
+  // -------------------------------------------------------------------------
+  // Writing: reactions, edits, deletes, hiding, and the conversation around them
+
+  /** A comment, review or PR description by node id, with the PR it's on. */
+  writing(id: string): FoundWriting | null {
+    for (const pr of this.prs.values()) {
+      if (pr.id === id) return { pr, subject: "pull-request", target: pr };
+      const comment = pr.comments.find((c) => c.id === id);
+      if (comment) return { pr, subject: "issue-comment", target: comment };
+      const review = pr.reviews.find((r) => r.id === id);
+      if (review) return { pr, subject: "review", target: review };
+      for (const thread of pr.threads) {
+        const inThread = thread.comments.find((c) => c.id === id);
+        if (inThread) return { pr, subject: "review-comment", target: inThread };
+      }
+    }
+    return null;
+  }
+
+  /** Its author, or anyone who can write to the repo (GitHub lets maintainers edit comments). */
+  canEditWriting(pr: FakePr, author: string, login: string): boolean {
+    return author === login || this.canWrite(pr.repo, login);
+  }
+
+  react(subjectId: string, login: string, content: ReactionContent, on: boolean): void {
+    const found = this.mustWriting(subjectId, login);
+    if (found.pr.locked && !this.canWrite(found.pr.repo, login))
+      throw graphqlError("Unable to react: the conversation is locked");
+    const reactions = found.target.reactions;
+    const who = reactions.get(content) ?? new Set<string>();
+    if (on) who.add(login);
+    else who.delete(login);
+    reactions.set(content, who);
+  }
+
+  editWriting(subjectId: string, login: string, body: string): void {
+    const found = this.mustWriting(subjectId, login);
+    if (!this.canEditWriting(found.pr, found.target.author, login))
+      throw graphqlError(`${login} does not have permission to update this`);
+    if (found.subject !== "pull-request") {
+      const { target } = found;
+      // GitHub starts the history with the original once something is first edited.
+      if (target.history.length === 0)
+        target.history.push({
+          editedAt: target.editedAt ?? this.iso(),
+          editor: target.author,
+          body: target.body,
+        });
+      target.history.unshift({ editedAt: this.iso(), editor: login, body });
+      target.editedAt = this.iso();
+    }
+    found.target.body = body;
+    found.pr.updatedAt = this.iso();
+  }
+
+  deleteComment(subjectId: string, login: string): void {
+    const found = this.mustWriting(subjectId, login);
+    if (found.subject !== "issue-comment" && found.subject !== "review-comment")
+      throw graphqlError("Only comments can be deleted");
+    if (!this.canEditWriting(found.pr, found.target.author, login))
+      throw graphqlError(`${login} does not have permission to delete this comment`);
+    const { pr } = found;
+    pr.comments = pr.comments.filter((c) => c.id !== subjectId);
+    for (const thread of pr.threads)
+      thread.comments = thread.comments.filter((c) => c.id !== subjectId);
+    pr.threads = pr.threads.filter((t) => t.comments.length > 0);
+    pr.updatedAt = this.iso();
+  }
+
+  minimize(subjectId: string, login: string, reason: MinimizeReason | null): void {
+    const found = this.mustWriting(subjectId, login);
+    if (found.subject !== "issue-comment" && found.subject !== "review-comment")
+      throw graphqlError("Only comments can be hidden");
+    if (!this.canWrite(found.pr.repo, login))
+      throw graphqlError(`${login} does not have permission to minimize this comment`);
+    found.target.minimized = reason === null ? null : reason.toLowerCase().replaceAll("_", "-");
+  }
+
+  dismissReview(reviewId: string, login: string, message: string): void {
+    const found = this.mustWriting(reviewId, login);
+    if (found.subject !== "review" || !this.canWrite(found.pr.repo, login))
+      throw graphqlError(`${login} does not have permission to dismiss this review`);
+    const review = found.target;
+    if (review.state !== "APPROVED" && review.state !== "CHANGES_REQUESTED")
+      throw graphqlError("Can not dismiss a commented pull request review");
+    review.state = "DISMISSED";
+    const { pr } = found;
+    pr.updatedAt = this.iso();
+    pr.events.push({
+      kind: "event",
+      text: `dismissed ${review.author}'s review: ${message}`,
+      actor: login,
+      at: pr.updatedAt,
+    });
+  }
+
+  setLocked(prId: string, login: string, reason: string | null): void {
+    const pr = this.mustPr(prId);
+    if (!this.canWrite(pr.repo, login))
+      throw new GitHubError("403 Must have write access to lock", "forbidden", 403);
+    pr.locked = reason;
+    pr.updatedAt = this.iso();
+    pr.events.push({
+      kind: "event",
+      text: reason ? `locked this as ${reason}` : "unlocked this conversation",
+      actor: login,
+      at: pr.updatedAt,
+    });
+  }
+
+  editPr(
+    prId: string,
+    login: string,
+    change: { title?: string; body?: string; base?: string },
+  ): void {
+    const pr = this.mustPr(prId);
+    if (!this.canEditWriting(pr, pr.author, login))
+      throw graphqlError(`${login} does not have permission to update this pull request`);
+    const at = this.iso();
+    if (change.title !== undefined && change.title !== pr.title) {
+      pr.events.push({ kind: "event", text: `renamed this from "${pr.title}"`, actor: login, at });
+      pr.title = change.title;
+    }
+    if (change.body !== undefined) pr.body = change.body;
+    if (change.base !== undefined && change.base !== pr.baseRefName) {
+      if (pr.state !== "OPEN")
+        throw graphqlError("Cannot change the base of a closed pull request");
+      pr.events.push({
+        kind: "event",
+        text: `changed the base branch from ${pr.baseRefName} to ${change.base}`,
+        actor: login,
+        at,
+      });
+      pr.baseRefName = change.base;
+    }
+    pr.updatedAt = at;
+  }
+
+  private mustWriting(id: string, login: string) {
+    const found = this.writing(id);
+    if (!found || this.permission(found.pr.repo, login) === null)
+      throw graphqlError(`Could not resolve to a node with the global id of '${id}'`);
+    return found;
+  }
+
   private mustTriage(pr: FakePr, actor: string): void {
     const permission = this.permission(pr.repo, actor);
     if (permission === null || permission === "READ")
@@ -1036,7 +1207,7 @@ export class FakeWorld {
     const pr = this.mustPr(prId);
     if (this.permission(pr.repo, author) === null)
       throw graphqlError(`Could not resolve to a node with the global id of '${prId}'`);
-    const comment = { id: this.nodeId("IC"), author, body, createdAt: this.iso() };
+    const comment = { id: this.nodeId("IC"), author, body, createdAt: this.iso(), ...unwritten() };
     pr.comments.push(comment);
     this.touched(pr, author, [body]);
     this.botCommand(pr, body);
@@ -1068,15 +1239,63 @@ export class FakeWorld {
     this.validateReview(pr, author, input, commitOid);
     const review = this.addReview(pr, author, REVIEW_STATES[input.event], commitOid, input.body);
     for (const draft of input.threads ?? []) this.addThread(pr, review, draft);
-    if (review.state === "PENDING") return review;
+    if (review.state !== "PENDING") this.submitted(pr, review);
+    return review;
+  }
 
-    pr.requested.delete(author);
-    this.touched(pr, author, [review.body, ...(input.threads ?? []).map((t) => t.body)]);
+  /** Adds a thread to your pending review, as `addPullRequestReviewThread` does. */
+  addReviewThread(reviewId: string, author: string, draft: DraftThreadInput): void {
+    const found = this.writing(reviewId);
+    if (
+      found?.subject !== "review" ||
+      found.target.author !== author ||
+      found.target.state !== "PENDING"
+    )
+      throw graphqlError(`Could not resolve to a node with the global id of '${reviewId}'`);
+    this.validateThread(found.pr, draft);
+    this.addThread(found.pr, found.target, draft);
+  }
+
+  /** Submits your pending review, as `submitPullRequestReview` does. */
+  submitPendingReview(
+    reviewId: string,
+    author: string,
+    event: ReviewEvent,
+    body: string,
+  ): FakeReview {
+    const found = this.writing(reviewId);
+    if (
+      found?.subject !== "review" ||
+      found.target.author !== author ||
+      found.target.state !== "PENDING"
+    )
+      throw graphqlError(`Could not resolve to a node with the global id of '${reviewId}'`);
+    const { pr, target: review } = found;
+    if (event !== "COMMENT" && pr.author === author)
+      throw graphqlError(
+        event === "APPROVE"
+          ? "Can not approve your own pull request"
+          : "Can not request changes on your own pull request",
+      );
+    const threads = pr.threads.filter((t) => t.comments.some((c) => c.reviewId === review.id));
+    if (event === "COMMENT" && !body.trim() && threads.length === 0)
+      throw graphqlError("Review body can't be blank");
+    review.state = REVIEW_STATES[event];
+    review.body = body;
+    review.submittedAt = this.iso();
+    this.submitted(pr, review);
+    return review;
+  }
+
+  /** A review just went out: the request is answered, people hear, and armed PRs can merge. */
+  private submitted(pr: FakePr, review: FakeReview): void {
+    pr.requested.delete(review.author);
+    const threads = pr.threads.flatMap((t) => t.comments.filter((c) => c.reviewId === review.id));
+    this.touched(pr, review.author, [review.body, ...threads.map((c) => c.body)]);
     const isBotPr = this.users.get(pr.author)?.isBot ?? false;
     const armed = pr.autoMerge !== null || (isBotPr && pr.repo.automergeOnApproval);
     if (review.state === "APPROVED" && armed)
-      this.schedule(this.options.automergeDelayMs, () => this.automerge(pr, commitOid));
-    return review;
+      this.schedule(this.options.automergeDelayMs, () => this.automerge(pr, review.commitOid));
   }
 
   reply(threadId: string, author: string, body: string): FakeComment {
@@ -1093,6 +1312,7 @@ export class FakeWorld {
       createdAt: this.iso(),
       reviewId: review.id,
       commitOid: review.commitOid,
+      ...unwritten(),
     };
     thread.comments.push(comment);
     this.touched(pr, author, [body]);
@@ -1265,30 +1485,39 @@ export class FakeWorld {
       throw graphqlError(`Commit ${commitOid} is not part of this pull request`);
     if (pr.reviews.some((r) => r.author === author && r.state === "PENDING"))
       throw graphqlError("User can only have one pending review per pull request");
-    // GitHub only takes comments on lines that are part of the diff.
-    for (const draft of input.threads ?? []) {
-      const patch = pr.files.find((f) => f.path === draft.path)?.patch ?? null;
-      const end = patch && diffHunkAt(patch, draft.side, draft.line);
-      const start =
-        draft.startLine === undefined ||
-        (patch && diffHunkAt(patch, draft.startSide ?? draft.side, draft.startLine));
-      if (!end || !start)
-        throw graphqlError(`Line could not be resolved: ${draft.path}:${draft.line}`);
+    for (const draft of input.threads ?? []) this.validateThread(pr, draft);
+  }
+
+  /** GitHub only takes comments on lines that are part of the diff, or on a changed file. */
+  private validateThread(pr: FakePr, draft: DraftThreadInput): void {
+    if (draft.subject === "file") {
+      if (!pr.files.some((f) => f.path === draft.path))
+        throw graphqlError(`Path could not be resolved: ${draft.path}`);
+      return;
     }
+    const patch = pr.files.find((f) => f.path === draft.path)?.patch ?? null;
+    const end = patch && diffHunkAt(patch, draft.side, draft.line);
+    const start =
+      draft.startLine === undefined ||
+      (patch && diffHunkAt(patch, draft.startSide ?? draft.side, draft.startLine));
+    if (!end || !start)
+      throw graphqlError(`Line could not be resolved: ${draft.path}:${draft.line}`);
   }
 
   private addThread(pr: FakePr, review: FakeReview, draft: DraftThreadInput): void {
     const patch = pr.files.find((f) => f.path === draft.path)?.patch ?? "";
+    const onLine = draft.subject === "line";
     const thread: FakeThread = {
       id: this.nodeId("PRRT"),
+      subject: draft.subject,
       path: draft.path,
-      side: draft.side,
-      line: draft.line,
-      startLine: draft.startLine ?? null,
-      originalLine: draft.line,
+      side: onLine ? draft.side : "RIGHT",
+      line: onLine ? draft.line : null,
+      startLine: onLine ? (draft.startLine ?? null) : null,
+      originalLine: onLine ? draft.line : 0,
       resolved: false,
       resolvedBy: null,
-      diffHunk: diffHunkAt(patch, draft.side, draft.line) ?? "",
+      diffHunk: onLine ? (diffHunkAt(patch, draft.side, draft.line) ?? "") : "",
       comments: [
         {
           id: this.nodeId("PRRC"),
@@ -1297,6 +1526,7 @@ export class FakeWorld {
           createdAt: review.submittedAt ?? this.iso(),
           reviewId: review.id,
           commitOid: review.commitOid,
+          ...unwritten(),
         },
       ],
     };
@@ -1370,6 +1600,7 @@ export class FakeWorld {
       commitOid,
       body,
       submittedAt: state === "PENDING" ? null : this.iso(),
+      ...unwritten(),
     };
     pr.reviews.push(review);
     return review;
@@ -1514,4 +1745,8 @@ function textFile(
     deletions: diff.deletions,
     revision: 0,
   };
+}
+
+function unwritten(): Writing {
+  return { editedAt: null, history: [], minimized: null, reactions: new Map() };
 }

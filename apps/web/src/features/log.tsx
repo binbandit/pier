@@ -41,6 +41,13 @@ const KIND: Record<LogEntry["kind"], string> = {
   draft: "Draft / ready",
   close: "Close",
   reopen: "Reopen",
+  react: "Reaction",
+  "edit-comment": "Edit",
+  "delete-comment": "Delete comment",
+  minimize: "Hide comment",
+  "edit-pr": "Edit PR",
+  "dismiss-review": "Dismiss review",
+  lock: "Lock",
 };
 
 export function Log() {

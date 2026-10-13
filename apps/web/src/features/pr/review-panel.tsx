@@ -112,6 +112,13 @@ export function ReviewPanel({
             {pr.drafts.length === 0
               ? "No inline comments"
               : `${plural(pr.drafts.length, "inline comment")} ${pr.drafts.length === 1 ? "goes" : "go"} with it`}
+            {pr.pendingReview && (
+              <span className="ml-2 text-auto">
+                continues your review from github.com
+                {pr.pendingReview.comments.length > 0 &&
+                  ` (${plural(pr.pendingReview.comments.length, "comment")})`}
+              </span>
+            )}
             {stale > 0 && (
               <span className="ml-2 text-warn">{stale} written before the latest push</span>
             )}

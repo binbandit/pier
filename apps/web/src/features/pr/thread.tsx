@@ -2,15 +2,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { useState } from "react";
 
-import { Html, Markdown } from "@/components/markdown";
+import { Markdown } from "@/components/markdown";
 import { errorText } from "@/features/actions";
 import { since } from "@/lib/format";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
-import type { Draft, Thread } from "@pier/core/wire";
+import type { Draft, PendingReview, Thread } from "@pier/core/wire";
 
 import { Composer } from "./composer";
+import { Writing } from "./writing";
 
 // Conversation that sits inside the diff, on the lines it's about. Replies post straight away;
 // resolving collapses the thread to one line so the code stays readable.
@@ -74,15 +75,24 @@ export function ThreadCard({
       <ul className="divide-y divide-line">
         {thread.comments.map((comment) => (
           <li key={comment.id} className="px-4 py-3">
-            <div className="mb-1.5 flex items-center gap-2 text-meta">
-              {comment.author && (
-                <Avatar login={comment.author.login} url={comment.author.avatarUrl} size={16} />
-              )}
-              <span className="text-fg">{comment.author?.login ?? "ghost"}</span>
-              <span className="text-faint">{since(comment.createdAt)}</span>
-              {comment.edited && <span className="text-faint">edited</span>}
-            </div>
-            <Html html={comment.bodyHTML} className="prose-pier text-ui" />
+            <Writing
+              prId={prId}
+              id={comment.id}
+              writing={comment}
+              html={comment.bodyHTML}
+              quoteInto={thread.canReply ? `reply-${thread.id}` : null}
+              onQuote={() => setReplying(true)}
+              header={
+                <div className="mb-1.5 flex items-center gap-2 text-meta">
+                  {comment.author && (
+                    <Avatar login={comment.author.login} url={comment.author.avatarUrl} size={16} />
+                  )}
+                  <span className="text-fg">{comment.author?.login ?? "ghost"}</span>
+                  <span className="text-faint">{since(comment.createdAt)}</span>
+                  {comment.edited && <span className="text-faint">edited</span>}
+                </div>
+              }
+            />
           </li>
         ))}
       </ul>
@@ -207,6 +217,19 @@ export function DraftCard({
         </span>
       </div>
       <Markdown source={draft.body} className="prose-pier text-ui" />
+    </section>
+  );
+}
+
+/** A comment in the review you started on github.com: it goes out when this review does. */
+export function PendingCard({ comment }: { comment: PendingReview["comments"][number] }) {
+  return (
+    <section className="my-2 max-w-[820px] rounded-md border border-dashed border-line-max bg-canvas px-4 py-3 font-ui">
+      <div className="mb-1.5 flex items-center gap-3 text-meta">
+        <span className="text-accent">Pending</span>
+        <span className="text-faint">From your review on github.com, sends with this one</span>
+      </div>
+      <Markdown source={comment.body} className="prose-pier text-ui" />
     </section>
   );
 }

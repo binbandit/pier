@@ -23,11 +23,21 @@ type PickerProps = {
   selected: string[];
   /** One-of (a milestone) rather than several-of (labels, people). */
   single?: boolean;
+  /** For one-of pickers: whether picking the current value clears it. */
+  clearable?: boolean;
   onSave: (change: { add: string[]; remove: string[] }) => void;
   onClose: () => void;
 };
 
-export function Picker({ title, options, selected, single = false, onSave, onClose }: PickerProps) {
+export function Picker({
+  title,
+  options,
+  selected,
+  single = false,
+  clearable = true,
+  onSave,
+  onClose,
+}: PickerProps) {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const [chosen, setChosen] = useState(() => new Set(selected));
@@ -52,12 +62,9 @@ export function Picker({ title, options, selected, single = false, onSave, onClo
     if (!option) return;
     if (single) {
       const current = selected[0];
-      // Picking what's already set clears it.
-      onSave(
-        current === option.key
-          ? { add: [], remove: [current] }
-          : { add: [option.key], remove: current ? [current] : [] },
-      );
+      // Picking what's already set clears it, where clearing makes sense.
+      if (current !== option.key) onSave({ add: [option.key], remove: current ? [current] : [] });
+      else if (clearable) onSave({ add: [], remove: [current] });
       onClose();
       return;
     }
@@ -155,14 +162,16 @@ export function Picker({ title, options, selected, single = false, onSave, onClo
                     i === index ? "bg-cursor text-strong" : "text-fg",
                   )}
                 >
+                  {/* One-of pickers get a round marker, several-of a box, as forms do. */}
                   <span
                     aria-hidden
                     className={clsx(
-                      "flex size-3.5 shrink-0 items-center justify-center rounded-[3px] border text-[10px] leading-none",
+                      "flex size-3.5 shrink-0 items-center justify-center border text-[10px] leading-none",
+                      single ? "rounded-full" : "rounded-[3px]",
                       on ? "border-accent bg-accent text-canvas" : "border-line-max",
                     )}
                   >
-                    {on ? "✓" : ""}
+                    {on && !single ? "✓" : ""}
                   </span>
                   {option.lead}
                   <span className="truncate">{option.label}</span>

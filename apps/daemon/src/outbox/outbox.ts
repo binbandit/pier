@@ -4,10 +4,14 @@ import { GitHubError } from "@/github/client";
 import type { DraftThreadInput, GitHubPort, ReviewEvent } from "@/github/port";
 import type {
   CommandKind,
+  CommentSubject,
+  LockReason,
   LogEntry,
   MergeMethod,
+  MinimizeReason,
   OutboxState,
   PendingWrite,
+  ReactionContent,
 } from "@pier/core/wire";
 
 // Every write to GitHub is a persisted command. Its lifecycle:
@@ -48,6 +52,17 @@ export type CommandPayload = {
   milestone?: number | null;
   /** To draft (true) or ready for review (false). */
   draft?: boolean;
+  /** The comment, review or PR a reaction, edit, delete, hide or dismissal is about. */
+  subjectId?: string;
+  subject?: CommentSubject;
+  content?: ReactionContent;
+  /** Add the reaction (true) or take it back (false). */
+  on?: boolean;
+  /** Why to hide a comment; null shows it again. */
+  reason?: MinimizeReason | null;
+  title?: string;
+  base?: string;
+  lockReason?: LockReason | null;
 };
 
 /** Kinds that create content on GitHub and so count against its 500-per-hour limit. */
@@ -57,6 +72,7 @@ const CONTENT_KINDS = new Set<CommandKind>([
   "reply",
   "comment",
   "bot-command",
+  "react",
 ]);
 
 export type Command = {
@@ -508,6 +524,11 @@ export class Outbox {
       else this.update(command, "queued", "Not found on GitHub; sending again");
       return;
     }
+    // Reacting twice leaves one reaction, so sending again is safe.
+    if (command.kind === "react") {
+      this.update(command, "queued", "Sending again");
+      return;
+    }
     if (CONTENT_KINDS.has(command.kind)) {
       const body = (command.payload.body ?? "").trim();
       const comments = await port.recentComments(command.prId);
@@ -609,6 +630,41 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
     case "close":
     case "reopen":
       return port.setOpen(command.prId, command.kind === "reopen");
+    case "react":
+      return port.react(
+        payload.subjectId ?? "",
+        payload.content ?? "THUMBS_UP",
+        payload.on ?? true,
+      );
+    case "edit-comment":
+      return port.editWriting(
+        payload.subject ?? "issue-comment",
+        payload.subjectId ?? "",
+        payload.body ?? "",
+      );
+    case "delete-comment":
+      // A comment that's already gone is what we wanted (a resend after a lost answer).
+      return port
+        .deleteComment(
+          payload.subject === "review-comment" ? "review-comment" : "issue-comment",
+          payload.subjectId ?? "",
+        )
+        .catch((error: unknown) => {
+          if (!(error instanceof GitHubError && /could not resolve/i.test(error.message)))
+            throw error;
+        });
+    case "minimize":
+      return port.minimize(payload.subjectId ?? "", payload.reason ?? null);
+    case "edit-pr":
+      return port.editPr(command.prId, {
+        ...(payload.title !== undefined ? { title: payload.title } : {}),
+        ...(payload.body !== undefined ? { body: payload.body } : {}),
+        ...(payload.base !== undefined ? { base: payload.base } : {}),
+      });
+    case "dismiss-review":
+      return port.dismissReview(payload.subjectId ?? "", payload.body ?? "");
+    case "lock":
+      return port.setLocked(command.repo, command.number, payload.lockReason ?? null);
     default:
       return Promise.reject(new Error(`unknown command kind ${String(command.kind)}`));
   }

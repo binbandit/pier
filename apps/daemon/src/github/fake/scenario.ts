@@ -903,7 +903,13 @@ class Builder {
       h.lines.flatMap((l) => (l.kind === "+" && l.newLine !== null ? [l.newLine] : [])),
     );
     if (!file || lines.length === 0) return null;
-    return { path: file.path, line: this.rng.pick(lines), side: "RIGHT" as const, body };
+    return {
+      subject: "line" as const,
+      path: file.path,
+      line: this.rng.pick(lines),
+      side: "RIGHT" as const,
+      body,
+    };
   }
 }
 

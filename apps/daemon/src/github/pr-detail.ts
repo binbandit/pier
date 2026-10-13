@@ -1,4 +1,13 @@
-import type { Actor, Side, Thread, TimelineEntry } from "@pier/core/wire";
+import type {
+  Actor,
+  LockReason,
+  PendingReview,
+  Reaction,
+  ReactionContent,
+  Side,
+  Thread,
+  TimelineEntry,
+} from "@pier/core/wire";
 
 import type { PrDetailQuery } from "./gql/graphql";
 
@@ -9,28 +18,48 @@ export type PrDetail = {
   prId: string;
   headRefOid: string;
   bodyHTML: string;
+  /** The description's reactions, whether you can edit it, and the lock reason if locked. */
+  reactions: Reaction[];
+  canEdit: boolean;
+  locked: string | null;
   viewerLatestReview: {
     state: string;
     commitOid: string | null;
     submittedAt: string | null;
   } | null;
-  pendingReview: {
-    id: string;
-    commitOid: string | null;
-    comments: {
-      id: string;
-      body: string;
-      path: string;
-      line: number | null;
-      startLine: number | null;
-    }[];
-  } | null;
+  pendingReview: PendingReview | null;
   threads: Omit<Thread, "pending">[];
   timeline: TimelineEntry[];
   viewed: Record<string, "VIEWED" | "UNVIEWED" | "DISMISSED">;
 };
 
 type Node = Extract<NonNullable<PrDetailQuery["node"]>, { headRefOid: string }>;
+
+/** GraphQL's lock reasons, spelled the way the REST lock endpoint (and pier) takes them. */
+const LOCK_REASONS: Record<string, LockReason> = {
+  OFF_TOPIC: "off-topic",
+  TOO_HEATED: "too heated",
+  RESOLVED: "resolved",
+  SPAM: "spam",
+};
+
+/** Only reactions someone actually left; GitHub lists all eight with zero counts. */
+function reactions(
+  groups:
+    | readonly {
+        content: ReactionContent;
+        viewerHasReacted: boolean;
+        reactors: { totalCount: number };
+      }[]
+    | null
+    | undefined,
+): Reaction[] {
+  return (groups ?? []).flatMap((g) =>
+    g.reactors.totalCount > 0
+      ? [{ content: g.content, count: g.reactors.totalCount, mine: g.viewerHasReacted }]
+      : [],
+  );
+}
 
 export function isDetailNode(node: PrDetailQuery["node"]): node is Node {
   return node !== null && "headRefOid" in node;
@@ -54,10 +83,17 @@ export function toPrDetail(node: Node): PrDetail {
             {
               id: c.id,
               author: actor(c.author),
-              body: c.body,
               bodyHTML: c.bodyHTML,
               createdAt: c.createdAt,
-              edited: c.lastEditedAt !== null && c.lastEditedAt !== undefined,
+              subject: "review-comment" as const,
+              body: c.body,
+              edited: Boolean(c.lastEditedAt),
+              canEdit: c.viewerCanUpdate,
+              canDelete: c.viewerCanDelete,
+              canMinimize: c.viewerCanMinimize,
+              minimized: c.isMinimized ? (c.minimizedReason ?? "hidden") : null,
+              reactions: reactions(c.reactionGroups),
+              unsent: false,
             },
           ]
         : [],
@@ -93,6 +129,15 @@ export function toPrDetail(node: Node): PrDetail {
         author: actor(c.author),
         bodyHTML: c.bodyHTML,
         at: c.createdAt,
+        subject: "issue-comment",
+        body: c.body,
+        edited: Boolean(c.lastEditedAt),
+        canEdit: c.viewerCanUpdate,
+        canDelete: c.viewerCanDelete,
+        canMinimize: c.viewerCanMinimize,
+        minimized: c.isMinimized ? (c.minimizedReason ?? "hidden") : null,
+        reactions: reactions(c.reactionGroups),
+        unsent: false,
       });
   }
   for (const r of node.reviews?.nodes ?? []) {
@@ -108,6 +153,17 @@ export function toPrDetail(node: Node): PrDetail {
       bodyHTML: r.bodyHTML,
       at: r.submittedAt,
       commitOid: r.commit?.oid ?? null,
+      // Who may dismiss depends on the account reading, so the view fills it in.
+      canDismiss: false,
+      subject: "review",
+      body: r.body,
+      edited: Boolean(r.lastEditedAt),
+      canEdit: r.viewerCanUpdate,
+      canDelete: false,
+      canMinimize: false,
+      minimized: null,
+      reactions: reactions(r.reactionGroups),
+      unsent: false,
     });
   }
   for (const entry of node.allCommits.nodes ?? []) {
@@ -134,6 +190,9 @@ export function toPrDetail(node: Node): PrDetail {
     prId: node.id,
     headRefOid: node.headRefOid,
     bodyHTML: node.bodyHTML,
+    reactions: reactions(node.reactionGroups),
+    canEdit: node.viewerCanUpdate,
+    locked: node.locked ? (LOCK_REASONS[node.activeLockReason ?? ""] ?? "locked") : null,
     viewerLatestReview: node.viewerLatestReview
       ? {
           state: node.viewerLatestReview.state,
@@ -167,6 +226,39 @@ export function toPrDetail(node: Node): PrDetail {
 }
 
 type TimelineNode = NonNullable<NonNullable<Node["timelineItems"]["nodes"]>[number]>;
+
+function event(
+  item: { createdAt: string; actor?: { login: string } | null },
+  text: string,
+  url?: string,
+): TimelineEntry {
+  return {
+    kind: "event",
+    text,
+    actor: item.actor?.login ?? null,
+    at: item.createdAt,
+    ...(url ? { url } : {}),
+  };
+}
+
+type Referenced =
+  | {
+      __typename: "Issue" | "PullRequest";
+      number: number;
+      title: string;
+      url: string;
+      repository: { nameWithOwner: string };
+    }
+  | { __typename: string };
+
+/** "acme/api#12 Fix the thing", for an issue or PR another event points at. */
+function reference(subject: Referenced | null | undefined): { label: string; url: string } | null {
+  if (!subject || !("number" in subject)) return null;
+  return {
+    label: `${subject.repository.nameWithOwner}#${subject.number} ${subject.title}`,
+    url: subject.url,
+  };
+}
 
 function timelineEvent(item: TimelineNode): TimelineEntry | null {
   switch (item.__typename) {
@@ -285,6 +377,79 @@ function timelineEvent(item: TimelineNode): TimelineEntry | null {
         actor: item.actor?.login ?? null,
         at: item.createdAt,
       };
+    case "LockedEvent":
+      return event(
+        item,
+        item.lockReason
+          ? `locked this as ${LOCK_REASONS[item.lockReason] ?? item.lockReason.toLowerCase()}`
+          : "locked this",
+      );
+    case "UnlockedEvent":
+      return event(item, "unlocked this");
+    case "BaseRefChangedEvent":
+      return event(
+        item,
+        `changed the base branch from ${item.previousRefName} to ${item.currentRefName}`,
+      );
+    case "AutomaticBaseChangeSucceededEvent":
+      return event(
+        item,
+        `changed the base branch from ${item.oldBase} to ${item.newBase} when it merged`,
+      );
+    case "CrossReferencedEvent": {
+      const ref = reference(item.source);
+      return event(
+        item,
+        `${item.willCloseTarget ? "linked" : "mentioned"} this in ${ref?.label ?? "another thread"}`,
+        ref?.url,
+      );
+    }
+    case "ConnectedEvent":
+    case "DisconnectedEvent": {
+      const ref = reference(item.subject);
+      return event(
+        item,
+        `${item.__typename === "ConnectedEvent" ? "linked" : "unlinked"} ${ref?.label ?? "an issue"}`,
+        ref?.url,
+      );
+    }
+    case "AutoMergeEnabledEvent":
+      return event(item, "turned on auto-merge");
+    case "AutoMergeDisabledEvent":
+      return event(
+        item,
+        item.reason ? `turned off auto-merge: ${item.reason}` : "turned off auto-merge",
+      );
+    case "HeadRefDeletedEvent":
+      return event(item, `deleted the ${item.headRefName} branch`);
+    case "HeadRefRestoredEvent":
+      return event(item, "restored the head branch");
+    case "AddedToMergeQueueEvent":
+      return event(item, "added this to the merge queue");
+    case "RemovedFromMergeQueueEvent":
+      return event(
+        item,
+        item.reason
+          ? `removed this from the merge queue: ${item.reason}`
+          : "removed this from the merge queue",
+      );
+    case "MarkedAsDuplicateEvent": {
+      const ref = reference(item.canonical);
+      return event(
+        item,
+        `marked this as a duplicate of ${ref?.label ?? "another thread"}`,
+        ref?.url,
+      );
+    }
+    case "CommentDeletedEvent":
+      return event(
+        item,
+        item.deletedCommentAuthor?.login && item.deletedCommentAuthor.login !== item.actor?.login
+          ? `deleted a comment from ${item.deletedCommentAuthor.login}`
+          : "deleted a comment",
+      );
+    case "DeployedEvent":
+      return event(item, `deployed this to ${item.deployment.environment ?? "an environment"}`);
     case "BaseRefForcePushedEvent":
       return {
         kind: "event",

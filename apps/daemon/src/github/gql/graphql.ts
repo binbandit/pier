@@ -75,6 +75,17 @@ export type FileViewedState =
   /** The file has been marked as viewed. */
   | 'VIEWED';
 
+/** The possible reasons that an issue or pull request was locked. */
+export type LockReason =
+  /** The issue or pull request was locked because the conversation was off-topic. */
+  | 'OFF_TOPIC'
+  /** The issue or pull request was locked because the conversation was resolved. */
+  | 'RESOLVED'
+  /** The issue or pull request was locked because the conversation was spam. */
+  | 'SPAM'
+  /** The issue or pull request was locked because the conversation was too heated. */
+  | 'TOO_HEATED';
+
 /** The possible states for a merge queue entry. */
 export type MergeQueueEntryState =
   /** The entry is currently waiting for checks to pass. */
@@ -202,6 +213,42 @@ export type PullRequestState =
   | 'MERGED'
   /** A pull request that is still open. */
   | 'OPEN';
+
+/** Emojis that can be attached to Issues, Pull Requests and Comments. */
+export type ReactionContent =
+  /** Represents the `:confused:` emoji. */
+  | 'CONFUSED'
+  /** Represents the `:eyes:` emoji. */
+  | 'EYES'
+  /** Represents the `:heart:` emoji. */
+  | 'HEART'
+  /** Represents the `:hooray:` emoji. */
+  | 'HOORAY'
+  /** Represents the `:laugh:` emoji. */
+  | 'LAUGH'
+  /** Represents the `:rocket:` emoji. */
+  | 'ROCKET'
+  /** Represents the `:-1:` emoji. */
+  | 'THUMBS_DOWN'
+  /** Represents the `:+1:` emoji. */
+  | 'THUMBS_UP';
+
+/** The reasons a piece of content can be reported or minimized. */
+export type ReportedContentClassifiers =
+  /** An abusive or harassing piece of content */
+  | 'ABUSE'
+  /** A duplicated piece of content */
+  | 'DUPLICATE'
+  /** A low quality piece of content */
+  | 'LOW_QUALITY'
+  /** An irrelevant piece of content */
+  | 'OFF_TOPIC'
+  /** An outdated piece of content */
+  | 'OUTDATED'
+  /** The content has been resolved */
+  | 'RESOLVED'
+  /** A spammy piece of content */
+  | 'SPAM';
 
 /** The access level to a repository */
 export type RepositoryPermission =
@@ -335,26 +382,32 @@ export type PrDetailQueryVariables = Exact<{
 
 
 export type PrDetailQuery = { node:
-    | { id: string, headRefOid: string, bodyHTML: string, viewerLatestReview: { state: PullRequestReviewState, submittedAt: string | null, commit: { oid: string } | null } | null, pendingReviews: { nodes: Array<{ id: string, commit: { oid: string } | null, comments: { nodes: Array<{ id: string, body: string, path: string, line: number | null, startLine: number | null, originalLine: number | null, diffHunk: string } | null> | null } } | null> | null } | null, reviewThreads: { nodes: Array<{ id: string, isResolved: boolean, isOutdated: boolean, path: string, line: number | null, startLine: number | null, originalLine: number | null, originalStartLine: number | null, diffSide: DiffSide, startDiffSide: DiffSide | null, subjectType: PullRequestReviewThreadSubjectType, viewerCanResolve: boolean, viewerCanUnresolve: boolean, viewerCanReply: boolean, resolvedBy: { login: string } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, diffHunk: string, state: PullRequestReviewCommentState, author:
+    | { id: string, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, locked: boolean, activeLockReason: LockReason | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, viewerLatestReview: { state: PullRequestReviewState, submittedAt: string | null, commit: { oid: string } | null } | null, pendingReviews: { nodes: Array<{ id: string, commit: { oid: string } | null, comments: { nodes: Array<{ id: string, body: string, path: string, line: number | null, startLine: number | null, originalLine: number | null, diffHunk: string } | null> | null } } | null> | null } | null, reviewThreads: { nodes: Array<{ id: string, isResolved: boolean, isOutdated: boolean, path: string, line: number | null, startLine: number | null, originalLine: number | null, originalStartLine: number | null, diffSide: DiffSide, startDiffSide: DiffSide | null, subjectType: PullRequestReviewThreadSubjectType, viewerCanResolve: boolean, viewerCanUnresolve: boolean, viewerCanReply: boolean, resolvedBy: { login: string } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, diffHunk: string, state: PullRequestReviewCommentState, viewerCanUpdate: boolean, viewerCanDelete: boolean, viewerCanMinimize: boolean, isMinimized: boolean, minimizedReason: string | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, author:
                 | { login: string, avatarUrl: string }
                 | { login: string, avatarUrl: string }
                 | { login: string, avatarUrl: string }
                 | { login: string, avatarUrl: string }
                 | { login: string, avatarUrl: string }
-               | null, originalCommit: { oid: string } | null } | null> | null } } | null> | null }, reviews: { nodes: Array<{ id: string, state: PullRequestReviewState, bodyHTML: string, body: string, submittedAt: string | null, author:
+               | null, originalCommit: { oid: string } | null } | null> | null } } | null> | null }, reviews: { nodes: Array<{ id: string, state: PullRequestReviewState, bodyHTML: string, body: string, submittedAt: string | null, lastEditedAt: string | null, viewerCanUpdate: boolean, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, author:
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
-           | null, commit: { oid: string } | null } | null> | null } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, author:
+           | null, commit: { oid: string } | null } | null> | null } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, viewerCanUpdate: boolean, viewerCanDelete: boolean, viewerCanMinimize: boolean, isMinimized: boolean, minimizedReason: string | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, author:
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
            | null } | null> | null }, allCommits: { totalCount: number, nodes: Array<{ commit: { oid: string, messageHeadline: string, committedDate: string, author: { name: string | null, user: { login: string } | null } | null, statusCheckRollup: { state: StatusState } | null } } | null> | null }, timelineItems: { nodes: Array<
-          | { __typename: 'AddedToMergeQueueEvent' }
+          | { __typename: 'AddedToMergeQueueEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'AddedToProjectEvent' }
           | { __typename: 'AddedToProjectV2Event' }
           | { __typename: 'AddedToStackEvent' }
@@ -368,13 +421,37 @@ export type PrDetailQuery = { node:
               | { login: string }
               | Record<PropertyKey, never>
              | null }
-          | { __typename: 'AutoMergeDisabledEvent' }
-          | { __typename: 'AutoMergeEnabledEvent' }
+          | { __typename: 'AutoMergeDisabledEvent', createdAt: string, reason: string | null, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
+          | { __typename: 'AutoMergeEnabledEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'AutoRebaseEnabledEvent' }
           | { __typename: 'AutoSquashEnabledEvent' }
           | { __typename: 'AutomaticBaseChangeFailedEvent' }
-          | { __typename: 'AutomaticBaseChangeSucceededEvent' }
-          | { __typename: 'BaseRefChangedEvent' }
+          | { __typename: 'AutomaticBaseChangeSucceededEvent', createdAt: string, oldBase: string, newBase: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
+          | { __typename: 'BaseRefChangedEvent', createdAt: string, previousRefName: string, currentRefName: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'BaseRefDeletedEvent' }
           | { __typename: 'BaseRefForcePushedEvent', createdAt: string, actor:
               | { login: string }
@@ -394,8 +471,29 @@ export type PrDetailQuery = { node:
               | { login: string }
               | { login: string }
              | null }
-          | { __typename: 'CommentDeletedEvent' }
-          | { __typename: 'ConnectedEvent' }
+          | { __typename: 'CommentDeletedEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, deletedCommentAuthor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
+          | { __typename: 'ConnectedEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, subject:
+              | { __typename: 'Issue', number: number, title: string, url: string, repository: { nameWithOwner: string } }
+              | { __typename: 'PullRequest', number: number, title: string, url: string, repository: { nameWithOwner: string } }
+             }
           | { __typename: 'ConvertToDraftEvent', createdAt: string, actor:
               | { login: string }
               | { login: string }
@@ -406,7 +504,16 @@ export type PrDetailQuery = { node:
           | { __typename: 'ConvertedFromDraftEvent' }
           | { __typename: 'ConvertedNoteToIssueEvent' }
           | { __typename: 'ConvertedToDiscussionEvent' }
-          | { __typename: 'CrossReferencedEvent' }
+          | { __typename: 'CrossReferencedEvent', createdAt: string, willCloseTarget: boolean, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, source:
+              | { __typename: 'Issue', number: number, title: string, url: string, repository: { nameWithOwner: string } }
+              | { __typename: 'PullRequest', number: number, title: string, url: string, repository: { nameWithOwner: string } }
+             }
           | { __typename: 'DemilestonedEvent', createdAt: string, milestoneTitle: string, actor:
               | { login: string }
               | { login: string }
@@ -414,10 +521,31 @@ export type PrDetailQuery = { node:
               | { login: string }
               | { login: string }
              | null }
-          | { __typename: 'DeployedEvent' }
+          | { __typename: 'DeployedEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, deployment: { environment: string | null } }
           | { __typename: 'DeploymentEnvironmentChangedEvent' }
-          | { __typename: 'DisconnectedEvent' }
-          | { __typename: 'HeadRefDeletedEvent' }
+          | { __typename: 'DisconnectedEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, subject:
+              | { __typename: 'Issue', number: number, title: string, url: string, repository: { nameWithOwner: string } }
+              | { __typename: 'PullRequest', number: number, title: string, url: string, repository: { nameWithOwner: string } }
+             }
+          | { __typename: 'HeadRefDeletedEvent', createdAt: string, headRefName: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'HeadRefForcePushedEvent', createdAt: string, actor:
               | { login: string }
               | { login: string }
@@ -425,7 +553,13 @@ export type PrDetailQuery = { node:
               | { login: string }
               | { login: string }
              | null, beforeCommit: { oid: string } | null, afterCommit: { oid: string } | null }
-          | { __typename: 'HeadRefRestoredEvent' }
+          | { __typename: 'HeadRefRestoredEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'IssueComment' }
           | { __typename: 'IssueCommentPinnedEvent' }
           | { __typename: 'IssueCommentUnpinnedEvent' }
@@ -442,8 +576,23 @@ export type PrDetailQuery = { node:
               | { login: string }
               | { login: string }
              | null, label: { name: string } }
-          | { __typename: 'LockedEvent' }
-          | { __typename: 'MarkedAsDuplicateEvent' }
+          | { __typename: 'LockedEvent', createdAt: string, lockReason: LockReason | null, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
+          | { __typename: 'MarkedAsDuplicateEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null, canonical:
+              | { __typename: 'Issue', number: number, title: string, url: string, repository: { nameWithOwner: string } }
+              | { __typename: 'PullRequest', number: number, title: string, url: string, repository: { nameWithOwner: string } }
+             | null }
           | { __typename: 'MentionedEvent' }
           | { __typename: 'MergedEvent', createdAt: string, actor:
               | { login: string }
@@ -477,7 +626,13 @@ export type PrDetailQuery = { node:
               | { login: string }
              | null }
           | { __typename: 'ReferencedEvent' }
-          | { __typename: 'RemovedFromMergeQueueEvent' }
+          | { __typename: 'RemovedFromMergeQueueEvent', createdAt: string, reason: string | null, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'RemovedFromProjectEvent' }
           | { __typename: 'RemovedFromProjectV2Event' }
           | { __typename: 'RemovedFromStackEvent' }
@@ -549,7 +704,13 @@ export type PrDetailQuery = { node:
               | { login: string }
               | { login: string }
              | null, label: { name: string } }
-          | { __typename: 'UnlockedEvent' }
+          | { __typename: 'UnlockedEvent', createdAt: string, actor:
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+              | { login: string }
+             | null }
           | { __typename: 'UnmarkedAsDuplicateEvent' }
           | { __typename: 'UnpinnedEvent' }
           | { __typename: 'UnsubscribedEvent' }
@@ -691,6 +852,221 @@ export type ReopenPrMutationVariables = Exact<{
 
 
 export type ReopenPrMutation = { reopenPullRequest: { pullRequest: { id: string } | null } | null };
+
+export type AddReactionMutationVariables = Exact<{
+  subjectId: string | number;
+  content: ReactionContent;
+}>;
+
+
+export type AddReactionMutation = { addReaction: { reaction: { content: ReactionContent } | null } | null };
+
+export type RemoveReactionMutationVariables = Exact<{
+  subjectId: string | number;
+  content: ReactionContent;
+}>;
+
+
+export type RemoveReactionMutation = { removeReaction: { reaction: { content: ReactionContent } | null } | null };
+
+export type UpdateIssueCommentMutationVariables = Exact<{
+  id: string | number;
+  body: string;
+}>;
+
+
+export type UpdateIssueCommentMutation = { updateIssueComment: { issueComment: { id: string } | null } | null };
+
+export type UpdateReviewCommentMutationVariables = Exact<{
+  id: string | number;
+  body: string;
+}>;
+
+
+export type UpdateReviewCommentMutation = { updatePullRequestReviewComment: { pullRequestReviewComment: { id: string } | null } | null };
+
+export type UpdateReviewMutationVariables = Exact<{
+  id: string | number;
+  body: string;
+}>;
+
+
+export type UpdateReviewMutation = { updatePullRequestReview: { pullRequestReview: { id: string } | null } | null };
+
+export type UpdatePrMutationVariables = Exact<{
+  prId: string | number;
+  title?: string | null | undefined;
+  body?: string | null | undefined;
+  base?: string | null | undefined;
+}>;
+
+
+export type UpdatePrMutation = { updatePullRequest: { pullRequest: { id: string } | null } | null };
+
+export type DeleteIssueCommentMutationVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type DeleteIssueCommentMutation = { deleteIssueComment: { clientMutationId: string | null } | null };
+
+export type DeleteReviewCommentMutationVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type DeleteReviewCommentMutation = { deletePullRequestReviewComment: { clientMutationId: string | null } | null };
+
+export type MinimizeMutationVariables = Exact<{
+  id: string | number;
+  classifier: ReportedContentClassifiers;
+}>;
+
+
+export type MinimizeMutation = { minimizeComment: { minimizedComment:
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+     | null } | null };
+
+export type UnminimizeMutationVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type UnminimizeMutation = { unminimizeComment: { unminimizedComment:
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+      | { isMinimized: boolean }
+     | null } | null };
+
+export type DismissReviewMutationVariables = Exact<{
+  id: string | number;
+  message: string;
+}>;
+
+
+export type DismissReviewMutation = { dismissPullRequestReview: { pullRequestReview: { id: string } | null } | null };
+
+export type PendingReviewQueryVariables = Exact<{
+  prId: string | number;
+}>;
+
+
+export type PendingReviewQuery = { node:
+    | { reviews: { nodes: Array<{ id: string, comments: { nodes: Array<{ path: string, body: string } | null> | null } } | null> | null } | null }
+    | Record<PropertyKey, never>
+   | null };
+
+export type StartReviewMutationVariables = Exact<{
+  prId: string | number;
+  commit: string;
+  threads?: Array<DraftPullRequestReviewThread> | DraftPullRequestReviewThread | null | undefined;
+}>;
+
+
+export type StartReviewMutation = { addPullRequestReview: { pullRequestReview: { id: string } | null } | null };
+
+export type AddReviewThreadMutationVariables = Exact<{
+  reviewId: string | number;
+  path: string;
+  body: string;
+  subject: PullRequestReviewThreadSubjectType;
+  line?: number | null | undefined;
+  side?: DiffSide | null | undefined;
+  startLine?: number | null | undefined;
+  startSide?: DiffSide | null | undefined;
+}>;
+
+
+export type AddReviewThreadMutation = { addPullRequestReviewThread: { thread: { id: string } | null } | null };
+
+export type SubmitPendingReviewMutationVariables = Exact<{
+  reviewId: string | number;
+  event: PullRequestReviewEvent;
+  body?: string | null | undefined;
+}>;
+
+
+export type SubmitPendingReviewMutation = { submitPullRequestReview: { pullRequestReview: { id: string, state: PullRequestReviewState, submittedAt: string | null, commit: { oid: string } | null } | null } | null };
+
+export type HistoryQueryVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type HistoryQuery = { node:
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | { userContentEdits: { nodes: Array<{ editedAt: string, diff: string | null, editor:
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+            | { login: string }
+           | null } | null> | null } | null }
+    | Record<PropertyKey, never>
+   | null };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -987,6 +1363,16 @@ export const PrDetailDocument = new TypedDocumentString(`
       id
       headRefOid
       bodyHTML
+      viewerCanUpdate
+      locked
+      activeLockReason
+      reactionGroups {
+        content
+        viewerHasReacted
+        reactors {
+          totalCount
+        }
+      }
       viewerLatestReview {
         state
         submittedAt
@@ -1041,6 +1427,18 @@ export const PrDetailDocument = new TypedDocumentString(`
               lastEditedAt
               diffHunk
               state
+              viewerCanUpdate
+              viewerCanDelete
+              viewerCanMinimize
+              isMinimized
+              minimizedReason
+              reactionGroups {
+                content
+                viewerHasReacted
+                reactors {
+                  totalCount
+                }
+              }
               author {
                 login
                 avatarUrl(size: 64)
@@ -1059,6 +1457,15 @@ export const PrDetailDocument = new TypedDocumentString(`
           bodyHTML
           body
           submittedAt
+          lastEditedAt
+          viewerCanUpdate
+          reactionGroups {
+            content
+            viewerHasReacted
+            reactors {
+              totalCount
+            }
+          }
           author {
             login
             avatarUrl(size: 64)
@@ -1075,6 +1482,18 @@ export const PrDetailDocument = new TypedDocumentString(`
           bodyHTML
           createdAt
           lastEditedAt
+          viewerCanUpdate
+          viewerCanDelete
+          viewerCanMinimize
+          isMinimized
+          minimizedReason
+          reactionGroups {
+            content
+            viewerHasReacted
+            reactors {
+              totalCount
+            }
+          }
           author {
             login
             avatarUrl(size: 64)
@@ -1120,6 +1539,22 @@ export const PrDetailDocument = new TypedDocumentString(`
           MILESTONED_EVENT
           DEMILESTONED_EVENT
           REVIEW_REQUEST_REMOVED_EVENT
+          LOCKED_EVENT
+          UNLOCKED_EVENT
+          BASE_REF_CHANGED_EVENT
+          AUTOMATIC_BASE_CHANGE_SUCCEEDED_EVENT
+          CROSS_REFERENCED_EVENT
+          CONNECTED_EVENT
+          DISCONNECTED_EVENT
+          AUTO_MERGE_ENABLED_EVENT
+          AUTO_MERGE_DISABLED_EVENT
+          HEAD_REF_DELETED_EVENT
+          HEAD_REF_RESTORED_EVENT
+          ADDED_TO_MERGE_QUEUE_EVENT
+          REMOVED_FROM_MERGE_QUEUE_EVENT
+          MARKED_AS_DUPLICATE_EVENT
+          COMMENT_DELETED_EVENT
+          DEPLOYED_EVENT
         ]
       ) {
         nodes {
@@ -1234,6 +1669,193 @@ export const PrDetailDocument = new TypedDocumentString(`
               login
             }
             milestoneTitle
+          }
+          ... on LockedEvent {
+            createdAt
+            actor {
+              login
+            }
+            lockReason
+          }
+          ... on UnlockedEvent {
+            createdAt
+            actor {
+              login
+            }
+          }
+          ... on BaseRefChangedEvent {
+            createdAt
+            actor {
+              login
+            }
+            previousRefName
+            currentRefName
+          }
+          ... on AutomaticBaseChangeSucceededEvent {
+            createdAt
+            actor {
+              login
+            }
+            oldBase
+            newBase
+          }
+          ... on CrossReferencedEvent {
+            createdAt
+            actor {
+              login
+            }
+            willCloseTarget
+            source {
+              __typename
+              ... on Issue {
+                number
+                title
+                url
+                repository {
+                  nameWithOwner
+                }
+              }
+              ... on PullRequest {
+                number
+                title
+                url
+                repository {
+                  nameWithOwner
+                }
+              }
+            }
+          }
+          ... on ConnectedEvent {
+            createdAt
+            actor {
+              login
+            }
+            subject {
+              __typename
+              ... on Issue {
+                number
+                title
+                url
+                repository {
+                  nameWithOwner
+                }
+              }
+              ... on PullRequest {
+                number
+                title
+                url
+                repository {
+                  nameWithOwner
+                }
+              }
+            }
+          }
+          ... on DisconnectedEvent {
+            createdAt
+            actor {
+              login
+            }
+            subject {
+              __typename
+              ... on Issue {
+                number
+                title
+                url
+                repository {
+                  nameWithOwner
+                }
+              }
+              ... on PullRequest {
+                number
+                title
+                url
+                repository {
+                  nameWithOwner
+                }
+              }
+            }
+          }
+          ... on AutoMergeEnabledEvent {
+            createdAt
+            actor {
+              login
+            }
+          }
+          ... on AutoMergeDisabledEvent {
+            createdAt
+            actor {
+              login
+            }
+            reason
+          }
+          ... on HeadRefDeletedEvent {
+            createdAt
+            actor {
+              login
+            }
+            headRefName
+          }
+          ... on HeadRefRestoredEvent {
+            createdAt
+            actor {
+              login
+            }
+          }
+          ... on AddedToMergeQueueEvent {
+            createdAt
+            actor {
+              login
+            }
+          }
+          ... on RemovedFromMergeQueueEvent {
+            createdAt
+            actor {
+              login
+            }
+            reason
+          }
+          ... on MarkedAsDuplicateEvent {
+            createdAt
+            actor {
+              login
+            }
+            canonical {
+              __typename
+              ... on Issue {
+                number
+                title
+                url
+                repository {
+                  nameWithOwner
+                }
+              }
+              ... on PullRequest {
+                number
+                title
+                url
+                repository {
+                  nameWithOwner
+                }
+              }
+            }
+          }
+          ... on CommentDeletedEvent {
+            createdAt
+            actor {
+              login
+            }
+            deletedCommentAuthor {
+              login
+            }
+          }
+          ... on DeployedEvent {
+            createdAt
+            actor {
+              login
+            }
+            deployment {
+              environment
+            }
           }
           ... on ReviewRequestRemovedEvent {
             createdAt
@@ -1482,3 +2104,185 @@ export const ReopenPrDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<ReopenPrMutation, ReopenPrMutationVariables>;
+export const AddReactionDocument = new TypedDocumentString(`
+    mutation AddReaction($subjectId: ID!, $content: ReactionContent!) {
+  addReaction(input: { subjectId: $subjectId, content: $content }) {
+    reaction {
+      content
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<AddReactionMutation, AddReactionMutationVariables>;
+export const RemoveReactionDocument = new TypedDocumentString(`
+    mutation RemoveReaction($subjectId: ID!, $content: ReactionContent!) {
+  removeReaction(input: { subjectId: $subjectId, content: $content }) {
+    reaction {
+      content
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<RemoveReactionMutation, RemoveReactionMutationVariables>;
+export const UpdateIssueCommentDocument = new TypedDocumentString(`
+    mutation UpdateIssueComment($id: ID!, $body: String!) {
+  updateIssueComment(input: { id: $id, body: $body }) {
+    issueComment {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<UpdateIssueCommentMutation, UpdateIssueCommentMutationVariables>;
+export const UpdateReviewCommentDocument = new TypedDocumentString(`
+    mutation UpdateReviewComment($id: ID!, $body: String!) {
+  updatePullRequestReviewComment(
+    input: { pullRequestReviewCommentId: $id, body: $body }
+  ) {
+    pullRequestReviewComment {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<UpdateReviewCommentMutation, UpdateReviewCommentMutationVariables>;
+export const UpdateReviewDocument = new TypedDocumentString(`
+    mutation UpdateReview($id: ID!, $body: String!) {
+  updatePullRequestReview(input: { pullRequestReviewId: $id, body: $body }) {
+    pullRequestReview {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<UpdateReviewMutation, UpdateReviewMutationVariables>;
+export const UpdatePrDocument = new TypedDocumentString(`
+    mutation UpdatePr($prId: ID!, $title: String, $body: String, $base: String) {
+  updatePullRequest(
+    input: { pullRequestId: $prId, title: $title, body: $body, baseRefName: $base }
+  ) {
+    pullRequest {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<UpdatePrMutation, UpdatePrMutationVariables>;
+export const DeleteIssueCommentDocument = new TypedDocumentString(`
+    mutation DeleteIssueComment($id: ID!) {
+  deleteIssueComment(input: { id: $id }) {
+    clientMutationId
+  }
+}
+    `) as unknown as TypedDocumentString<DeleteIssueCommentMutation, DeleteIssueCommentMutationVariables>;
+export const DeleteReviewCommentDocument = new TypedDocumentString(`
+    mutation DeleteReviewComment($id: ID!) {
+  deletePullRequestReviewComment(input: { id: $id }) {
+    clientMutationId
+  }
+}
+    `) as unknown as TypedDocumentString<DeleteReviewCommentMutation, DeleteReviewCommentMutationVariables>;
+export const MinimizeDocument = new TypedDocumentString(`
+    mutation Minimize($id: ID!, $classifier: ReportedContentClassifiers!) {
+  minimizeComment(input: { subjectId: $id, classifier: $classifier }) {
+    minimizedComment {
+      isMinimized
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<MinimizeMutation, MinimizeMutationVariables>;
+export const UnminimizeDocument = new TypedDocumentString(`
+    mutation Unminimize($id: ID!) {
+  unminimizeComment(input: { subjectId: $id }) {
+    unminimizedComment {
+      isMinimized
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<UnminimizeMutation, UnminimizeMutationVariables>;
+export const DismissReviewDocument = new TypedDocumentString(`
+    mutation DismissReview($id: ID!, $message: String!) {
+  dismissPullRequestReview(input: { pullRequestReviewId: $id, message: $message }) {
+    pullRequestReview {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<DismissReviewMutation, DismissReviewMutationVariables>;
+export const PendingReviewDocument = new TypedDocumentString(`
+    query PendingReview($prId: ID!) {
+  node(id: $prId) {
+    ... on PullRequest {
+      reviews(states: PENDING, first: 1) {
+        nodes {
+          id
+          comments(first: 100) {
+            nodes {
+              path
+              body
+            }
+          }
+        }
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<PendingReviewQuery, PendingReviewQueryVariables>;
+export const StartReviewDocument = new TypedDocumentString(`
+    mutation StartReview($prId: ID!, $commit: GitObjectID!, $threads: [DraftPullRequestReviewThread!]) {
+  addPullRequestReview(
+    input: { pullRequestId: $prId, commitOID: $commit, threads: $threads }
+  ) {
+    pullRequestReview {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<StartReviewMutation, StartReviewMutationVariables>;
+export const AddReviewThreadDocument = new TypedDocumentString(`
+    mutation AddReviewThread($reviewId: ID!, $path: String!, $body: String!, $subject: PullRequestReviewThreadSubjectType!, $line: Int, $side: DiffSide, $startLine: Int, $startSide: DiffSide) {
+  addPullRequestReviewThread(
+    input: {
+      pullRequestReviewId: $reviewId
+      path: $path
+      body: $body
+      subjectType: $subject
+      line: $line
+      side: $side
+      startLine: $startLine
+      startSide: $startSide
+    }
+  ) {
+    thread {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<AddReviewThreadMutation, AddReviewThreadMutationVariables>;
+export const SubmitPendingReviewDocument = new TypedDocumentString(`
+    mutation SubmitPendingReview($reviewId: ID!, $event: PullRequestReviewEvent!, $body: String) {
+  submitPullRequestReview(
+    input: { pullRequestReviewId: $reviewId, event: $event, body: $body }
+  ) {
+    pullRequestReview {
+      id
+      state
+      submittedAt
+      commit {
+        oid
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<SubmitPendingReviewMutation, SubmitPendingReviewMutationVariables>;
+export const HistoryDocument = new TypedDocumentString(`
+    query History($id: ID!) {
+  node(id: $id) {
+    ... on Comment {
+      userContentEdits(first: 30) {
+        nodes {
+          editedAt
+          diff
+          editor {
+            login
+          }
+        }
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<HistoryQuery, HistoryQueryVariables>;

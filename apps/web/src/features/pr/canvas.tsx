@@ -1,10 +1,9 @@
 import type { SelectedLineRange } from "@pierre/diffs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { Milestone, UserRound, Users } from "lucide-react";
+import { Lock, Milestone, UserRound, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { Html } from "@/components/markdown";
 import { errorText, markDone, openOnGitHub, rerun } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
 import { plural, since } from "@/lib/format";
@@ -22,6 +21,8 @@ import { type MetadataKind, MetadataPicker } from "./metadata";
 import { type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
 import { RunwayPanel } from "./runway";
+import { TitlePanel } from "./title";
+import { Writing } from "./writing";
 
 // One PR on one page. The stream reads top to bottom: what this is, whose turn it is, then the
 // files (source first) with conversation inline. Re-reviews open on what changed since you last
@@ -33,7 +34,17 @@ const WIDE = 1600;
 type Raised =
   | { kind: "review"; event: ReviewEvent }
   | { kind: "runway" }
-  | { kind: "picker"; field: MetadataKind };
+  | { kind: "picker"; field: MetadataKind }
+  | { kind: "title" };
+
+const PICKERS: { field: MetadataKind; key: string; title: string }[] = [
+  { field: "labels", key: "l", title: "Edit labels" },
+  { field: "assignees", key: "a", title: "Edit assignees" },
+  { field: "reviewers", key: "r", title: "Edit reviewers" },
+  { field: "milestone", key: "m", title: "Set milestone" },
+  { field: "base", key: "b", title: "Change base branch" },
+  { field: "lock", key: "k", title: "Lock or unlock the conversation" },
+];
 
 export function PrCanvas({ repo, number }: { repo: string; number: number }) {
   const { data: pr, isPending } = useQuery(q("pr", { repo, number }));
@@ -103,6 +114,7 @@ function Loaded({ pr }: { pr: PrView }) {
 
   const threadsByPath = Map.groupBy(pr.threads, (t) => t.path);
   const draftsByPath = Map.groupBy(pr.drafts, (d) => d.path);
+  const pendingByPath = Map.groupBy(pr.pendingReview?.comments ?? [], (c) => c.path);
   const threadCounts = new Map([...threadsByPath].map(([path, list]) => [path, list.length]));
   const openThreads = pr.threads.filter((t) => !t.resolved);
   const currentIndex = Math.max(
@@ -265,18 +277,15 @@ function Loaded({ pr }: { pr: PrView }) {
     },
     {
       id: "pr.comment",
-      title: "Comment on selected lines",
+      title: "Comment on the selected lines, or on the current file",
       keys: ["c"],
       scope: "surface",
       hint: selection ? "comment" : undefined,
       group: "Review",
       run: () => {
+        const file = ordered[currentIndex];
         if (selection) setComposing(fromRange(selection.path, selection.range));
-        else
-          toast({
-            text: "Select lines first: click a line number, shift-click to extend",
-            tone: "neutral",
-          });
+        else if (file) setComposing({ kind: "file", path: file.path });
       },
     },
     {
@@ -358,14 +367,22 @@ function Loaded({ pr }: { pr: PrView }) {
       group: "Merge",
       run: () => setRaised({ kind: "runway" }),
     },
-    ...(["labels", "assignees", "reviewers", "milestone"] as const).map((field): Command => ({
+    ...PICKERS.map(({ field, key, title }): Command => ({
       id: `pr.pick-${field}`,
-      title: `Edit ${field}`,
-      keys: [`s ${field === "assignees" ? "a" : field.charAt(0)}`],
+      title,
+      keys: [`s ${key}`],
       scope: "surface",
       group: "Edit",
       run: () => setRaised({ kind: "picker", field }),
     })),
+    {
+      id: "pr.edit-title",
+      title: "Edit title",
+      keys: ["s e"],
+      scope: "surface",
+      group: "Edit",
+      run: () => setRaised({ kind: "title" }),
+    },
     {
       id: "pr.draft",
       title: pr.isDraft ? "Mark ready for review" : "Convert to draft",
@@ -426,15 +443,27 @@ function Loaded({ pr }: { pr: PrView }) {
             <Header pr={pr} />
             <Checks pr={pr} />
             <TurnLine pr={pr} range={range} fallback={diff?.fallback ?? null} />
-            {pr.bodyHTML || pr.body.trim() ? (
-              <section className="mt-6 border-t border-line pt-6">
-                {pr.bodyHTML ? (
-                  <Html html={pr.bodyHTML} />
-                ) : (
-                  <p className="text-prose text-muted">{pr.body}</p>
-                )}
-              </section>
-            ) : null}
+            <section className="mt-6 border-t border-line pt-6">
+              <Writing
+                prId={pr.id}
+                id={pr.id}
+                writing={{
+                  subject: "pull-request",
+                  body: pr.body,
+                  edited: false,
+                  canEdit: pr.canEdit,
+                  canDelete: false,
+                  canMinimize: false,
+                  minimized: null,
+                  reactions: pr.reactions,
+                  unsent: false,
+                }}
+                html={pr.bodyHTML}
+                quoteInto={rail ? "conversation" : null}
+                bodyClassName="prose-pier"
+              />
+              {!pr.body.trim() && <p className="text-meta text-faint">No description.</p>}
+            </section>
 
             <section className="mt-10">
               <h2 className="mb-3 flex items-baseline gap-3">
@@ -460,6 +489,7 @@ function Loaded({ pr }: { pr: PrView }) {
                     file={file}
                     threads={threadsByPath.get(file.path) ?? []}
                     drafts={draftsByPath.get(file.path) ?? []}
+                    pending={pendingByPath.get(file.path) ?? []}
                     viewed={pr.viewed[file.path] ?? "unviewed"}
                     current={file.path === ordered[currentIndex]?.path && current !== null}
                     focusedThread={focusedThread}
@@ -482,6 +512,7 @@ function Loaded({ pr }: { pr: PrView }) {
       {raised?.kind === "picker" && (
         <MetadataPicker key={raised.field} pr={pr} kind={raised.field} onClose={lower} />
       )}
+      {raised?.kind === "title" && <TitlePanel pr={pr} onClose={lower} />}
     </div>
   );
 }
@@ -518,6 +549,15 @@ function Header({ pr }: { pr: PrView }) {
           <span className="text-faint">{pr.state === "MERGED" ? "Merged" : "Closed"}</span>
         ) : (
           pr.pending?.kind === "close" && <span className="text-warn">Closing</span>
+        )}
+        {pr.locked && (
+          <span
+            className="flex items-center gap-1.5 text-faint"
+            title="Only people who can write to the repo can comment"
+          >
+            <Lock aria-hidden size={13} className="text-off" />
+            Locked{pr.locked !== "locked" && ` as ${pr.locked}`}
+          </span>
         )}
       </div>
       {triage && (
