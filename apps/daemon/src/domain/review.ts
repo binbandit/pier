@@ -20,6 +20,7 @@ import type {
   MinimizeReason,
   Person,
   PrDiff,
+  PrProjects,
   PrView,
   ReactionContent,
   Revision,
@@ -38,6 +39,7 @@ import type { Details } from "./details";
 import type { Drafts } from "./drafts";
 import { overlayMetadata, type RepoKnown } from "./metadata";
 import type { Model, PrRecord } from "./model";
+import { Refusal } from "./refusal";
 import { buildRunway } from "./runway";
 import { SuggestionError, applySplices, hunkLines } from "./suggestions";
 
@@ -254,6 +256,16 @@ export class ReviewService {
       commits: detail?.commits ?? [],
       commitsTotal: Math.max(doc.commitsTotal, detail?.commits.length ?? 0),
       codeOwners,
+      // Titles from what pier tracks; one it doesn't shows by number.
+      stack: detail?.stack
+        ? {
+            ...detail.stack,
+            prs: detail.stack.prs.map((member) => ({
+              ...member,
+              title: this.find(doc.repo, member.number)?.doc.title ?? member.title,
+            })),
+          }
+        : null,
       subscription:
         writes.findLast((w) => w.kind === "subscription")?.payload.subscription ??
         detail?.subscription ??
@@ -709,6 +721,46 @@ export class ReviewService {
 
   setMilestone(prId: string, milestone: number | null): string[] {
     return this.enqueue(this.require(prId), "milestone", { milestone }, 0);
+  }
+
+  /** The projects the PR is on and could go on, as the reading account sees them. */
+  projects(prId: string): Promise<PrProjects> {
+    const record = this.require(prId);
+    const port = this.deps.ports.get(record.reader);
+    return port ? port.projects(prId) : Promise.resolve({ state: "ok", on: [], available: [] });
+  }
+
+  /** Puts the PR on these projects and takes it off those (by item). */
+  setProjects(
+    prId: string,
+    add: string[],
+    remove: { projectId: string; itemId: string }[],
+  ): string[] {
+    const record = this.require(prId);
+    return [
+      ...add.flatMap((projectId) =>
+        this.enqueue(record, "project", { projectId, itemId: null }, 0),
+      ),
+      ...remove.flatMap(({ projectId, itemId }) =>
+        this.enqueue(record, "project", { projectId, itemId }, 0),
+      ),
+    ];
+  }
+
+  /** Archiving closes the PR, so it waits out an undo window; unarchiving goes straight away. */
+  setArchived(prId: string, archived: boolean): string[] {
+    const record = this.require(prId);
+    return archived
+      ? this.enqueue(record, "archive", {}, CLOSE_HOLD_MS)
+      : this.enqueue(record, "unarchive", {}, 0);
+  }
+
+  /** Dissolves the PR's stack (its PRs stay, unstacked), after the usual five seconds. */
+  async unstack(prId: string): Promise<string[]> {
+    const record = this.require(prId);
+    const stack = (await this.detail(record))?.stack;
+    if (!stack) throw new Refusal("This PR isn't in a stack");
+    return this.enqueue(record, "unstack", { stackNumber: stack.number }, CLOSE_HOLD_MS);
   }
 
   /** Watch the PR, go back to being notified only when involved, or mute it. */

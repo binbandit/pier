@@ -61,6 +61,8 @@ export type FakeRepo = {
   milestones: { number: number; title: string; dueOn: string | null }[];
   /** The default branch's CODEOWNERS, if it has one. */
   codeOwners: string | null;
+  /** Projects (v2) its PRs can go on. */
+  projects: { id: string; title: string }[];
 };
 
 export type RepoOptions = Partial<
@@ -160,6 +162,10 @@ export type FakePr = {
   body: string;
   author: string;
   state: PrState;
+  /** Archived (a public preview): closed, and set aside. */
+  archived?: boolean;
+  /** Its items on projects, by project id. */
+  projectItems?: Map<string, { itemId: string; status: string | null }>;
   isDraft: boolean;
   createdAt: string;
   updatedAt: string;
@@ -339,6 +345,8 @@ export class FakeWorld {
   /** `${repo}@${oid}` -> path -> contents, for the files scenarios gave contents for. */
   private readonly trees = new Map<string, Map<string, string>>();
   private readonly notes = new Map<string, Map<string, FakeNotification>>();
+  /** Stacks by `${repo}#${number}`; their PRs bottom to top. */
+  readonly stacks = new Map<string, { number: number; repo: FakeRepo; prIds: string[] }>();
   /** Per PR, who has changed how they're notified about it. */
   readonly subscriptions = new Map<string, Map<string, Subscription>>();
   private readonly noteIds = new Map<string, string>();
@@ -478,6 +486,7 @@ export class FakeWorld {
       labels: new Map(DEFAULT_LABELS.map(({ name: label, ...rest }) => [label, rest])),
       mergeQueue: options.mergeQueue ?? false,
       codeOwners: options.codeOwners ?? null,
+      projects: [],
       deletedBranches: new Set(),
       milestones: [
         { number: 1, title: "Next release", dueOn: this.iso(this.now() + 14 * 86_400_000) },
@@ -959,7 +968,13 @@ export class FakeWorld {
     this.mergeRequests.set(uuid, request);
     this.schedule(this.options.mergeDelayMs, () => {
       const landed = pr.state === "OPEN" && this.head(pr) === input.sha;
-      if (landed) this.merge(pr.id, by);
+      if (landed) {
+        // Merging a stacked PR merges every PR below it first, all together.
+        const stack = this.stackOf(pr);
+        const below = stack ? stack.prIds.slice(0, stack.prIds.indexOf(pr.id)) : [];
+        for (const id of below) if (this.prs.get(id)?.state === "OPEN") this.merge(id, by);
+        this.merge(pr.id, by);
+      }
       this.mergeRequests.set(uuid, {
         prId,
         status: landed ? "merged" : "failed",
@@ -1545,6 +1560,58 @@ export class FakeWorld {
       b.updatedAt.localeCompare(a.updatedAt),
     );
     return { version: this.noteVersions.get(login) ?? 0, threads };
+  }
+
+  /** Stacks PRs bottom to top, each on the one below's branch, as GitHub's stacks API does. */
+  stack(repo: string, numbers: number[]): number {
+    const prs = numbers.map((n) => this.prByNumber(repo, n));
+    prs.forEach((pr, i) => {
+      const below = prs[i - 1];
+      if (!pr || (below && pr.baseRefName !== below.headRefName))
+        throw new GitHubError("422 These pull requests can't form a stack", "validation", 422);
+    });
+    const owner = this.repos.get(repo);
+    if (!owner) throw new Error(`no repo ${repo}`);
+    const number = [...this.stacks.values()].filter((s) => s.repo === owner).length + 1;
+    this.stacks.set(`${repo}#${number}`, {
+      number,
+      repo: owner,
+      prIds: prs.flatMap((pr) => (pr ? [pr.id] : [])),
+    });
+    return number;
+  }
+
+  stackOf(pr: FakePr): { number: number; repo: FakeRepo; prIds: string[] } | undefined {
+    return [...this.stacks.values()].find((s) => s.prIds.includes(pr.id));
+  }
+
+  /** Archiving closes a PR and marks it; unarchiving takes the mark off and leaves it closed. */
+  setArchived(prId: string, archived: boolean, by: string): void {
+    const pr = this.mustPr(prId);
+    if (!this.canWrite(pr.repo, by)) throw graphqlError(`${by} can't archive this pull request`);
+    if (archived && pr.state === "OPEN") this.close(prId, by);
+    pr.archived = archived;
+  }
+
+  /** Puts a PR on one of its repo's projects, or takes its item off. */
+  setProject(prId: string, projectId: string, itemId: string | null, by: string): void {
+    const pr = this.mustPr(prId);
+    if (!this.canWrite(pr.repo, by)) throw graphqlError(`${by} can't change this PR's projects`);
+    if (!pr.repo.projects.some((p) => p.id === projectId))
+      throw graphqlError(`Could not resolve to a node with the global id of '${projectId}'`);
+    const items = pr.projectItems ?? new Map<string, { itemId: string; status: string | null }>();
+    if (itemId) items.delete(projectId);
+    else if (!items.has(projectId))
+      items.set(projectId, { itemId: this.nodeId("PVTI"), status: "Todo" });
+    pr.projectItems = items;
+  }
+
+  /** Takes the unmerged PRs out of a stack; one with none left is gone. */
+  unstack(repo: string, number: number): void {
+    const stack = this.stacks.get(`${repo}#${number}`);
+    if (!stack) throw new GitHubError("404 Not Found", "not-found", 404);
+    stack.prIds = stack.prIds.filter((id) => this.prs.get(id)?.state === "MERGED");
+    if (stack.prIds.length === 0) this.stacks.delete(`${repo}#${number}`);
   }
 
   subscribe(prId: string, login: string, state: Subscription): void {

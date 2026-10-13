@@ -49,6 +49,8 @@ export type RestRequest = {
   accept?: string;
   /** The body as text rather than JSON (diffs and patches). */
   text?: boolean;
+  /** For endpoints newer than the default API version (stacks: 2026-03-10). */
+  apiVersion?: string;
   /** Revalidate with the cached validator and return the cached body on 304. GET only. */
   cache?: boolean;
   /** Send `If-Modified-Since` with this value instead of the cached one (notifications). */
@@ -150,6 +152,7 @@ export class GitHubClient implements GitHubTransport {
 
       const send = (conditional: boolean) => {
         const headers: Record<string, string> = { accept };
+        if (request.apiVersion) headers["x-github-api-version"] = request.apiVersion;
         if (conditional && cached?.etag) headers["if-none-match"] = cached.etag;
         const ifModifiedSince = request.ifModifiedSince ?? cached?.last_modified;
         if (conditional && ifModifiedSince) headers["if-modified-since"] = ifModifiedSince;
@@ -226,10 +229,10 @@ export class GitHubClient implements GitHubTransport {
       response = await fetch(url, {
         method: init.method,
         headers: {
+          "x-github-api-version": "2022-11-28",
           ...init.headers,
           authorization: `Bearer ${this.token}`,
           "user-agent": `pier/${VERSION}`,
-          "x-github-api-version": "2022-11-28",
         },
         body: init.body ?? null,
         signal: AbortSignal.timeout(init.timeoutMs),

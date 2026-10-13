@@ -38,20 +38,20 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | CONV-MINIMIZE | Hide a comment with a reason, unhide | `minimizeComment` | I6 | sandbox |
 | CONV-REACT | Reactions | `addReaction` / `removeReaction` | I6 | sandbox |
 | CONV-QUOTE | Quote reply | client | I6 | sandbox |
-| CONV-SAVED-REPLIES | Saved replies | read-only `viewer.savedReplies` (needs `read:user`) | I10 | - |
+| CONV-SAVED-REPLIES | Saved replies (`Ctrl+.` in any comment box), kept in pier; GitHub's brought over with `read:user` | local; `viewer.savedReplies` | I10 | sandbox |
 | CONV-UPLOAD | Paste or drop images and files | undocumented attachments endpoint | gap | - |
 | META-TITLE | Edit title and body | `updatePullRequest` | I6 | sandbox |
 | META-REVIEWERS | Request / re-request / remove reviewers (users, teams, Copilot), suggested reviewers | `requestReviewsByLogin` (users, team slugs, bots), REST removal, `suggestedReviewerActors`; listing every team needs org access, so only already-requested teams are offered | I6 | sandbox |
 | META-ASSIGNEES | Assignees | REST issue `assignees` | I6 | sandbox |
 | META-LABELS | Labels | REST issue `labels` | I6 | sandbox |
 | META-MILESTONE | Milestone | REST issue `milestone` | I6 | sandbox |
-| META-PROJECTS | Projects (v2) fields | `addProjectV2ItemById` (needs `project` scope) | I10 | - |
+| META-PROJECTS | Projects (v2): on/off a project, Status shown (`s p`); without the `project` scope pier says how to add it | `projectItems`, `addProjectV2ItemById`, `deleteProjectV2Item` | I10 | built |
 | META-LINKED | Linked issues (Development) | `closingIssuesReferences` (shown); link by writing `Closes #n` in the description, as GitHub's API offers no other way | I6 | sandbox |
 | LIFE-DRAFT | Draft ⇄ ready for review | `convertPullRequestToDraft` / `markPullRequestReadyForReview` | I6 | sandbox |
 | LIFE-CLOSE | Close / reopen | `closePullRequest` / `reopenPullRequest` | I6 | sandbox |
 | LIFE-BASE | Change base branch | `updatePullRequest` | I6 | sandbox |
 | LIFE-LOCK | Lock / unlock conversation | `lockLockable` | I6 | sandbox |
-| LIFE-ARCHIVE | Archive a PR | `archivePullRequest` | I10 | - |
+| LIFE-ARCHIVE | Archive / unarchive a PR (palette); GitHub doesn't expose whether one is archived | `archivePullRequest` (preview, typed by hand) | I10 | sandbox |
 
 ## C. Files and code review
 
@@ -116,7 +116,7 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | MERGE-BRANCH | Delete / restore head branch | REST refs (delete; restore at the PR's last head) | I3 | sandbox |
 | MERGE-REVERT | Revert a merged PR | `revertPullRequest` | I3 | sandbox |
 | MERGE-BYPASS | Merge bypassing rules (with typed confirmation) | `merge-async` with `merge_action: direct_merge`, offered to admins after typing the repo's name (no rules on the sandbox's private repos, so tested in fake mode) | I3 | built |
-| STACKS | Stack map, move between layers, merge a stack | stacks REST, `merge-async` | I10 | - |
+| STACKS | Stack map, move between layers (`g j`/`g k`), merging says what it takes along, dissolve | stacks REST (2026-03-10), `merge-async` | I10 | sandbox |
 
 ## F. Dependency bumps (beyond GitHub)
 

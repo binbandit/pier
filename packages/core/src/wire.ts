@@ -142,7 +142,11 @@ export type CommandKind =
   | "revert"
   | "suggestions"
   | "subscription"
-  | "notification-read";
+  | "notification-read"
+  | "unstack"
+  | "archive"
+  | "unarchive"
+  | "project";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -191,6 +195,24 @@ export type SearchResult = { items: PrItem[]; total: number; errors: string[] };
 
 /** GitHub's own answer to a search: what it found, the query it was asked, what was left out. */
 export type RemoteSearch = { items: PrItem[]; query: string; dropped: string[] };
+
+/** The projects a PR is on and could go on, or the scope it would take to see them. */
+export type PrProjects =
+  | {
+      state: "ok";
+      on: {
+        projectId: string;
+        itemId: string;
+        title: string;
+        status: string | null;
+        url: string;
+      }[];
+      available: { id: string; title: string; url: string }[];
+    }
+  | { state: "no-scope"; fix: string };
+
+/** A reply saved for reuse. */
+export type SavedReply = { id: string; title: string; body: string };
 
 /** A saved search, with how many PRs it finds now. */
 export type SavedView = { id: string; name: string; query: string; count: number };
@@ -511,6 +533,8 @@ export type PrView = {
   canApplySuggestions: boolean;
   /** Whether GitHub notifies you about everything here, only when you're involved, or never. */
   subscription: Subscription | null;
+  /** The stack it's part of, if it is. */
+  stack: PrStack | null;
   /** The head branch: whether it's still there, and what you can do about it. */
   headBranch: { exists: boolean; canDelete: boolean; canRestore: boolean };
   account: string;
@@ -543,6 +567,24 @@ export type DiffRange = DiffView["range"];
 
 /** The base branch's CODEOWNERS, and the owner names that mean you (`@login`, `@org/team`). */
 export type CodeOwners = { rules: CodeOwnerRule[]; you: string[] };
+
+/**
+ * A stack of PRs, each on top of the one below: merging one merges everything under it too.
+ * Position 1 sits on `base`.
+ */
+export type PrStack = {
+  number: number;
+  base: string;
+  /** Bottom to top. `title` is null for a PR pier doesn't track. */
+  prs: {
+    number: number;
+    position: number;
+    title: string | null;
+    state: "open" | "closed";
+    draft: boolean;
+    merged: boolean;
+  }[];
+};
 
 /** GitHub's notification settings for one PR: all activity, only when involved, or muted. */
 export type Subscription = "SUBSCRIBED" | "UNSUBSCRIBED" | "IGNORED";

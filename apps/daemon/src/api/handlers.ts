@@ -1,4 +1,5 @@
 import type { App } from "@/app";
+import { Refusal } from "@/domain/refusal";
 import { searchGitHub } from "@/domain/remote-search";
 import type { Output, ParsedInput, ProcedureName } from "@pier/core/contract";
 
@@ -114,6 +115,57 @@ export function createHandlers(app: App): Handlers {
     fileBytes: (input) => app.review.fileBytes(input),
     fileDiff: (input) => app.review.fileDiff(input),
     views: () => app.views.savedViews(),
+    replies: () => app.settings.get("replies"),
+    saveReply({ title, body }) {
+      const id = crypto.randomUUID();
+      app.settings.set("replies", [...app.settings.get("replies"), { id, title, body }]);
+      app.events.emit(["replies"]);
+      return { id };
+    },
+    deleteReply({ id }) {
+      app.settings.set(
+        "replies",
+        app.settings.get("replies").filter((r) => r.id !== id),
+      );
+      app.events.emit(["replies"]);
+      return { ok: true as const };
+    },
+    async importReplies() {
+      // Every account's replies, once each; an account without read:user is skipped.
+      const read = await Promise.allSettled([...app.ports.values()].map((p) => p.savedReplies()));
+      const found = read.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+      if (found.length === 0 && read.some((r) => r.status === "rejected")) {
+        const failed = read.find((r): r is PromiseRejectedResult => r.status === "rejected");
+        throw new Refusal(failed?.reason instanceof Error ? failed.reason.message : "No replies");
+      }
+      const have = app.settings.get("replies");
+      const fresh = found.filter(
+        (r) => !have.some((h) => h.title === r.title && h.body === r.body),
+      );
+      const unique = [...new Map(fresh.map((r) => [`${r.title}\u0000${r.body}`, r])).values()];
+      app.settings.set("replies", [
+        ...have,
+        ...unique.map((r) => ({ id: crypto.randomUUID(), ...r })),
+      ]);
+      app.events.emit(["replies"]);
+      return { added: unique.length };
+    },
+    projects: ({ prId }) => app.review.projects(prId),
+    setProjects({ prId, add, remove }) {
+      const commandIds = app.review.setProjects(prId, add, remove);
+      app.events.emit(["pr", "log", "projects"]);
+      return { commandIds };
+    },
+    setArchived({ prId, archived }) {
+      const commandIds = app.review.setArchived(prId, archived);
+      app.events.emit(["pr", "log"]);
+      return { commandIds };
+    },
+    async unstack({ prId }) {
+      const commandIds = await app.review.unstack(prId);
+      app.events.emit(["pr", "log"]);
+      return { commandIds };
+    },
     setSubscription({ prId, subscription }) {
       const commandIds = app.review.setSubscription(prId, subscription);
       app.events.emit(["pr"]);

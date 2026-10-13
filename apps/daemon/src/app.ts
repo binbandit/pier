@@ -61,6 +61,7 @@ export function createApp(options: AppOptions) {
     sandbox: { writeOwners: null },
     logSeenAt: new Date(0).toISOString(),
     views: [],
+    replies: [],
     ...options.defaults,
   });
   const model = new Model(stores.cache, (login) => {
@@ -219,7 +220,7 @@ export function createApp(options: AppOptions) {
   }
   outbox.onChange((prIds) => {
     sync.nudge(prIds);
-    events.emit([...VIEW_TOPICS, "log", "pr"]);
+    events.emit([...VIEW_TOPICS, "log", "pr", "projects"]);
   });
   sync.onStatus(() => events.emit(["status"]));
   outbox.onAcked((command) => {

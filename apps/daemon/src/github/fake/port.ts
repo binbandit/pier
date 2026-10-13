@@ -30,6 +30,8 @@ import type {
   Milestone,
   MinimizeReason,
   Person,
+  PrProjects,
+  PrStack,
   Reaction,
   ReactionContent,
   ReviewDecision,
@@ -142,6 +144,62 @@ export class FakeGitHub implements GitHubPort {
 
   commitParent(repo: string, oid: string): Promise<string | null> {
     return this.call("commitParent", "core", () => this.world.parentOf(repo, oid));
+  }
+
+  stackOf(repo: string, number: number): Promise<PrStack | null> {
+    return this.call("stackOf", "core", () => {
+      const pr = this.world.prByNumber(repo, number);
+      return pr && this.canSee(pr) ? this.stackView(pr) : null;
+    });
+  }
+
+  projects(prId: string): Promise<PrProjects> {
+    return this.call("projects", "graphql", () => {
+      const pr = this.world.pr(prId);
+      if (!pr || !this.canSee(pr)) return { state: "ok" as const, on: [], available: [] };
+      const url = (id: string) => `https://github.com/${pr.repo.owner}/projects/${id.slice(-2)}`;
+      return {
+        state: "ok" as const,
+        on: [...(pr.projectItems ?? new Map())].flatMap(([projectId, item]) => {
+          const project = pr.repo.projects.find((p) => p.id === projectId);
+          return project
+            ? [
+                {
+                  projectId,
+                  itemId: item.itemId,
+                  title: project.title,
+                  status: item.status,
+                  url: url(projectId),
+                },
+              ]
+            : [];
+        }),
+        available: pr.repo.projects.map((p) => ({ id: p.id, title: p.title, url: url(p.id) })),
+      };
+    });
+  }
+
+  setProject(prId: string, projectId: string, itemId: string | null): Promise<void> {
+    return this.call("setProject", "graphql", () =>
+      this.world.setProject(prId, projectId, itemId, this.login),
+    );
+  }
+
+  savedReplies(): Promise<{ title: string; body: string }[]> {
+    return this.call("savedReplies", "graphql", () => [
+      { title: "Thanks", body: "Thanks for this! Merging once checks are green." },
+      { title: "Needs a test", body: "Could you add a test that covers this case?" },
+    ]);
+  }
+
+  setArchived(prId: string, archived: boolean): Promise<void> {
+    return this.call("setArchived", "graphql", () =>
+      this.world.setArchived(prId, archived, this.login),
+    );
+  }
+
+  unstack(repo: string, stackNumber: number): Promise<void> {
+    return this.call("unstack", "core", () => this.world.unstack(repo, stackNumber));
   }
 
   commitFiles(input: CommitFilesInput): Promise<{ oid: string }> {
@@ -764,6 +822,25 @@ export class FakeGitHub implements GitHubPort {
     };
   }
 
+  /** The stack a PR is in, as GitHub's stacks API answers it. */
+  private stackView(pr: FakePr): PrStack | null {
+    const stack = this.world.stackOf(pr);
+    if (!stack) return null;
+    const members = stack.prIds.flatMap((id) => this.world.prs.get(id) ?? []);
+    return {
+      number: stack.number,
+      base: members[0]?.baseRefName ?? stack.repo.defaultBranch,
+      prs: members.map((member, i) => ({
+        number: member.number,
+        position: i + 1,
+        title: null,
+        state: member.state === "OPEN" ? ("open" as const) : ("closed" as const),
+        draft: member.isDraft,
+        merged: member.state === "MERGED",
+      })),
+    };
+  }
+
   private canSee(pr: FakePr): boolean {
     return this.world.permission(pr.repo, this.login) !== null;
   }
@@ -1070,6 +1147,7 @@ export class FakeGitHub implements GitHubPort {
         canEditFiles: pr.state === "OPEN" && world.canWrite(pr.repo, this.login),
       },
       subscription: world.subscriptions.get(pr.id)?.get(this.login) ?? "UNSUBSCRIBED",
+      stack: this.stackView(pr),
       userIds: Object.fromEntries(
         pr.threads.flatMap((t) =>
           t.comments.flatMap((c) => {

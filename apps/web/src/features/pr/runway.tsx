@@ -11,6 +11,8 @@ import { Dot } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
 import type { MergeMethod, PrView, Runway } from "@pier/core/wire";
 
+import { mergedAlong } from "./stack";
+
 // The merge runway rises out of the status line: what still stands between this PR and merging,
 // each with the key that clears it, then the method and message, and Enter to merge. A merge waits
 // five seconds before it goes, so `z` can still stop it.
@@ -76,6 +78,8 @@ function Loaded({
 }) {
   const client = useQueryClient();
   const toast = useUi((s) => s.toast);
+  // GitHub merges a stack from the bottom, so merging this takes the open PRs below with it.
+  const along = mergedAlong(pr);
   const [method, setMethod] = useState<MergeMethod>(runway.defaultMethod);
   const message = runway.messages[method];
   const [headline, setHeadline] = useState(message?.headline ?? "");
@@ -283,6 +287,13 @@ function Loaded({
             </span>
           )}
         </div>
+
+        {along.length > 0 && (
+          <p className="mb-3 text-ui text-warn">
+            This is in a stack: merging it also merges{" "}
+            {along.map((member) => `#${member.number}`).join(", ")} below it.
+          </p>
+        )}
 
         {runway.blockers.length > 0 && (
           <ul className="mb-4 space-y-1">

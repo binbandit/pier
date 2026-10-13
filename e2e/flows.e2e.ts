@@ -350,3 +350,42 @@ test("a 400-file PR lists every file but draws only the diffs within reach", asy
   ).toBeAttached();
   await expect(tree.locator('[data-path="services/svc-399/start.ts"]')).toBeInViewport();
 });
+
+test("a stacked PR shows its stack, and the palette moves through it", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (msg) => {
+    if (msg.type() === "error" || msg.type() === "warning") errors.push(msg.text());
+  });
+  await page.goto("/WastedHippie/sandbox-cli/pull/6");
+  await expect(
+    page.getByRole("heading", { name: "Validate config against the schema" }),
+  ).toBeVisible();
+  const stack = page.getByRole("list", { name: "Stack" });
+  await expect(stack.locator("..")).toContainText("2 of 3 on main");
+
+  await page.keyboard.press("g");
+  await page.keyboard.press("k");
+  await expect(page).toHaveURL(/\/pull\/7$/);
+
+  await page.keyboard.press("Meta+k");
+  await page.keyboard.type("Go down the stack");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/pull\/6$/);
+  expect(errors.filter((e) => /Maximum update depth/.test(e))).toEqual([]);
+});
+
+test("a saved reply goes in where the cursor is", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-web/pull/8");
+  await expect(page.getByRole("heading", { name: "Document local setup and tests" })).toBeVisible();
+  const box = page.getByPlaceholder("Add to the conversation");
+  await box.click();
+  await page.keyboard.type("Nice. ");
+  await page.keyboard.press("Control+.");
+  const replies = page.getByRole("list", { name: "Saved replies" });
+  // Bring the (fake) GitHub ones over, then use the first.
+  await replies.getByRole("button", { name: /from GitHub/ }).click();
+  await expect(replies).toContainText("Needs a test");
+  await page.keyboard.press("Enter");
+  await expect(box).toHaveValue("Nice. Thanks for this! Merging once checks are green.");
+});

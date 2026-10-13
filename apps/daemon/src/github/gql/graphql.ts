@@ -591,7 +591,7 @@ export type PrDetailQueryVariables = Exact<{
 
 
 export type PrDetailQuery = { node:
-    | { id: string, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, viewerCanDeleteHeadRef: boolean, viewerCanEditFiles: boolean, viewerSubscription: SubscriptionState | null, isCrossRepository: boolean, headRefName: string, locked: boolean, activeLockReason: LockReason | null, headRepository: { nameWithOwner: string } | null, headRef: { id: string } | null, headChecks: { nodes: Array<{ commit: { statusCheckRollup: { contexts: { nodes: Array<
+    | { id: string, number: number, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, viewerCanDeleteHeadRef: boolean, viewerCanEditFiles: boolean, viewerSubscription: SubscriptionState | null, isCrossRepository: boolean, headRefName: string, locked: boolean, activeLockReason: LockReason | null, repository: { nameWithOwner: string }, headRepository: { nameWithOwner: string } | null, headRef: { id: string } | null, headChecks: { nodes: Array<{ commit: { statusCheckRollup: { contexts: { nodes: Array<
                   | { __typename: 'CheckRun', name: string, isRequired: boolean }
                   | { __typename: 'StatusContext', context: string, isRequired: boolean }
                  | null> | null } } | null } } | null> | null }, closingIssuesReferences: { nodes: Array<{ number: number, title: string, url: string, state: IssueState, repository: { nameWithOwner: string } } | null> | null } | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, viewerLatestReview: { state: PullRequestReviewState, submittedAt: string | null, commit: { oid: string } | null } | null, pendingReviews: { nodes: Array<{ id: string, commit: { oid: string } | null, comments: { nodes: Array<{ id: string, body: string, path: string, line: number | null, startLine: number | null, originalLine: number | null, diffHunk: string } | null> | null } } | null> | null } | null, reviewThreads: { nodes: Array<{ id: string, isResolved: boolean, isOutdated: boolean, path: string, line: number | null, startLine: number | null, originalLine: number | null, originalStartLine: number | null, diffSide: DiffSide, startDiffSide: DiffSide | null, subjectType: PullRequestReviewThreadSubjectType, viewerCanResolve: boolean, viewerCanUnresolve: boolean, viewerCanReply: boolean, resolvedBy: { login: string } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, diffHunk: string, state: PullRequestReviewCommentState, viewerCanUpdate: boolean, viewerCanDelete: boolean, viewerCanMinimize: boolean, isMinimized: boolean, minimizedReason: string | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, author:
@@ -1387,6 +1387,54 @@ export type UpdateSubscriptionMutation = { updateSubscription: { subscribable:
       | { viewerSubscription: SubscriptionState | null }
      | null } | null };
 
+export type SavedRepliesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type SavedRepliesQuery = { viewer: { savedReplies: { nodes: Array<{ title: string, body: string } | null> | null } | null } };
+
+export type PrProjectsQueryVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type PrProjectsQuery = { node:
+    | { projectItems: { nodes: Array<{ id: string, isArchived: boolean, project: { id: string, title: string, url: string }, fieldValueByName:
+            | { __typename: 'ProjectV2ItemFieldDateValue' }
+            | { __typename: 'ProjectV2ItemFieldIterationValue' }
+            | { __typename: 'ProjectV2ItemFieldLabelValue' }
+            | { __typename: 'ProjectV2ItemFieldMilestoneValue' }
+            | { __typename: 'ProjectV2ItemFieldMultiSelectValue' }
+            | { __typename: 'ProjectV2ItemFieldNumberValue' }
+            | { __typename: 'ProjectV2ItemFieldPullRequestValue' }
+            | { __typename: 'ProjectV2ItemFieldRepositoryValue' }
+            | { __typename: 'ProjectV2ItemFieldReviewerValue' }
+            | { __typename: 'ProjectV2ItemFieldSingleSelectValue', name: string | null }
+            | { __typename: 'ProjectV2ItemFieldTextValue' }
+            | { __typename: 'ProjectV2ItemFieldUserValue' }
+            | { __typename: 'ProjectV2ItemIssueFieldValue' }
+           | null } | null> | null } | null, repository: { projectsV2: { nodes: Array<{ id: string, title: string, closed: boolean, url: string } | null> | null }, owner:
+          | { projectsV2: { nodes: Array<{ id: string, title: string, closed: boolean, url: string } | null> | null } }
+          | { projectsV2: { nodes: Array<{ id: string, title: string, closed: boolean, url: string } | null> | null } }
+         } }
+    | Record<PropertyKey, never>
+   | null };
+
+export type AddToProjectMutationVariables = Exact<{
+  project: string | number;
+  content: string | number;
+}>;
+
+
+export type AddToProjectMutation = { addProjectV2ItemById: { item: { id: string } | null } | null };
+
+export type RemoveFromProjectMutationVariables = Exact<{
+  project: string | number;
+  item: string | number;
+}>;
+
+
+export type RemoveFromProjectMutation = { deleteProjectV2Item: { deletedItemId: string | null } | null };
+
 export class TypedDocumentString<TResult, TVariables>
   extends String
   implements DocumentTypeDecoration<TResult, TVariables>
@@ -1680,6 +1728,10 @@ export const PrDetailDocument = new TypedDocumentString(`
   node(id: $id) {
     ... on PullRequest {
       id
+      number
+      repository {
+        nameWithOwner
+      }
       headRefOid
       bodyHTML
       viewerCanUpdate
@@ -2776,3 +2828,78 @@ export const UpdateSubscriptionDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<UpdateSubscriptionMutation, UpdateSubscriptionMutationVariables>;
+export const SavedRepliesDocument = new TypedDocumentString(`
+    query SavedReplies {
+  viewer {
+    savedReplies(first: 100) {
+      nodes {
+        title
+        body
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<SavedRepliesQuery, SavedRepliesQueryVariables>;
+export const PrProjectsDocument = new TypedDocumentString(`
+    query PrProjects($id: ID!) {
+  node(id: $id) {
+    ... on PullRequest {
+      projectItems(first: 20) {
+        nodes {
+          id
+          isArchived
+          project {
+            id
+            title
+            url
+          }
+          fieldValueByName(name: "Status") {
+            __typename
+            ... on ProjectV2ItemFieldSingleSelectValue {
+              name
+            }
+          }
+        }
+      }
+      repository {
+        projectsV2(first: 30, orderBy: { field: UPDATED_AT, direction: DESC }) {
+          nodes {
+            id
+            title
+            closed
+            url
+          }
+        }
+        owner {
+          ... on ProjectV2Owner {
+            projectsV2(first: 30, orderBy: { field: UPDATED_AT, direction: DESC }) {
+              nodes {
+                id
+                title
+                closed
+                url
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<PrProjectsQuery, PrProjectsQueryVariables>;
+export const AddToProjectDocument = new TypedDocumentString(`
+    mutation AddToProject($project: ID!, $content: ID!) {
+  addProjectV2ItemById(input: { projectId: $project, contentId: $content }) {
+    item {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<AddToProjectMutation, AddToProjectMutationVariables>;
+export const RemoveFromProjectDocument = new TypedDocumentString(`
+    mutation RemoveFromProject($project: ID!, $item: ID!) {
+  deleteProjectV2Item(input: { projectId: $project, itemId: $item }) {
+    deletedItemId
+  }
+}
+    `) as unknown as TypedDocumentString<RemoveFromProjectMutation, RemoveFromProjectMutationVariables>;

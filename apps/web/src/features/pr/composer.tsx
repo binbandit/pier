@@ -5,6 +5,8 @@ import { useCommands } from "@/keys/registry";
 import { useUi } from "@/stores/ui";
 import { Keys } from "@/ui/kbd";
 
+import { SavedReplies } from "./replies";
+
 // The one text box pier writes comments in: inline drafts, thread replies, review bodies and the
 // conversation. While it has focus it owns the keyboard, so typing "a" never approves anything.
 
@@ -40,6 +42,8 @@ export function Composer({
   });
   const [focused, setFocused] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Where the cursor was when saved replies opened, so one goes in there.
+  const [replying, setReplying] = useState<{ start: number; end: number } | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -77,6 +81,24 @@ export function Composer({
     }
   };
 
+  const openReplies = () => {
+    const el = ref.current;
+    setReplying({ start: el?.selectionStart ?? body.length, end: el?.selectionEnd ?? body.length });
+  };
+  const insertReply = (text: string) => {
+    if (!replying) return;
+    setBody(body.slice(0, replying.start) + text + body.slice(replying.end));
+    const caret = replying.start + text.length;
+    setReplying(null);
+    queueMicrotask(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = caret;
+      grow(el);
+    });
+  };
+
   const insertSuggestion = () => {
     const el = ref.current;
     if (!el) return;
@@ -106,6 +128,15 @@ export function Composer({
               ref.current?.blur();
               onCancel?.();
             },
+          },
+          {
+            id: `${id}.replies`,
+            title: "Saved replies",
+            // GitHub's key everywhere; Cmd+. too on a Mac.
+            keys: ["ctrl+.", "mod+."],
+            scope: "panel",
+            inInputs: true,
+            run: openReplies,
           },
           ...(suggestionSource !== null
             ? [
@@ -145,6 +176,14 @@ export function Composer({
       />
       <div className="flex items-center gap-4 border-t border-line px-3 py-1.5 text-meta text-faint">
         <span>Markdown</span>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={openReplies}
+          className="flex items-center gap-1.5 hover:text-fg"
+        >
+          <Keys sequence="ctrl+." /> Saved replies
+        </button>
         {suggestionSource !== null && (
           <button
             type="button"
@@ -172,6 +211,16 @@ export function Composer({
           </button>
         </span>
       </div>
+      {replying && (
+        <SavedReplies
+          written={body}
+          onInsert={insertReply}
+          onClose={() => {
+            setReplying(null);
+            ref.current?.focus();
+          }}
+        />
+      )}
     </div>
   );
 }

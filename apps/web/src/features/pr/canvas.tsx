@@ -39,11 +39,13 @@ import {
 import { FileTree } from "./file-tree";
 import { type MetadataKind, MetadataPicker } from "./metadata";
 import { NotificationsPicker, useSubscription } from "./notifications";
+import { ProjectsLine, ProjectsPicker } from "./projects";
 import { RevertPanel } from "./revert";
 import { type Anchors, type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
 import { richKindOf } from "./rich";
 import { RunwayPanel } from "./runway";
+import { StackStrip } from "./stack";
 import { SuggestionsPanel, applicableSuggestions } from "./suggestions";
 import { TitlePanel } from "./title";
 import { Writing } from "./writing";
@@ -64,6 +66,7 @@ type Raised =
   | { kind: "commits" }
   | { kind: "filter" }
   | { kind: "notifications" }
+  | { kind: "projects" }
   | { kind: "suggestions"; initial: string[] };
 
 const PICKERS: { field: MetadataKind; key: string; title: string }[] = [
@@ -248,6 +251,75 @@ function Loaded({ pr }: { pr: PrView }) {
       }
     })();
   }, [ordered]);
+
+  /** `g j` and `g k`: the PR below and above this one in its stack. */
+  const stackMoves = (): Command[] => {
+    const here = pr.stack?.prs.find((member) => member.number === pr.number);
+    if (!pr.stack || !here) return [];
+    const [owner = "", name = ""] = pr.repo.split("/");
+    const go = (position: number) => {
+      const target = pr.stack?.prs.find((member) => member.position === position);
+      if (target)
+        void navigate({
+          to: "/$owner/$repo/pull/$number",
+          params: { owner, repo: name, number: target.number },
+        });
+    };
+    return [
+      {
+        id: "pr.stack-down",
+        title: "Go down the stack",
+        keys: ["g j"],
+        scope: "surface",
+        group: "Go to",
+        run: () => go(here.position - 1),
+      },
+      {
+        id: "pr.stack-up",
+        title: "Go up the stack",
+        keys: ["g k"],
+        scope: "surface",
+        group: "Go to",
+        run: () => go(here.position + 1),
+      },
+    ];
+  };
+
+  const archive = async (archived: boolean) => {
+    const name = `${pr.repo.split("/")[1]}#${pr.number}`;
+    try {
+      const { commandIds } = await rpc("setArchived", { prId: pr.id, archived });
+      void client.invalidateQueries();
+      toast(
+        archived
+          ? {
+              text: `Archiving ${name} in 5s`,
+              tone: "ok",
+              undo: () => void takeBack(commandIds, "Archiving"),
+            }
+          : { text: `Unarchived ${name}`, tone: "ok" },
+        5_000,
+      );
+    } catch (error) {
+      toast({ text: errorText(error), tone: "bad" });
+    }
+  };
+
+  const unstack = async () => {
+    try {
+      const { commandIds } = await rpc("unstack", { prId: pr.id });
+      toast(
+        {
+          text: `Dissolving stack #${pr.stack?.number ?? ""} in 5s`,
+          tone: "ok",
+          undo: () => void takeBack(commandIds, "Dissolving the stack"),
+        },
+        5_000,
+      );
+    } catch (error) {
+      toast({ text: errorText(error), tone: "bad" });
+    }
+  };
 
   /** Copies github.com's link to the selected lines, or to the PR. */
   const copyLink = async () => {
@@ -501,6 +573,36 @@ function Loaded({ pr }: { pr: PrView }) {
       group: "Display",
       run: () => setRaised({ kind: "filter" }),
     },
+    ...stackMoves(),
+    {
+      id: "pr.archive",
+      title: "Archive this PR (closes it)",
+      scope: "surface",
+      group: "Edit",
+      run: () => void archive(true),
+    },
+    ...(pr.state !== "OPEN"
+      ? [
+          {
+            id: "pr.unarchive",
+            title: "Unarchive this PR",
+            scope: "surface" as const,
+            group: "Edit",
+            run: () => void archive(false),
+          },
+        ]
+      : []),
+    ...(pr.stack
+      ? [
+          {
+            id: "pr.unstack",
+            title: "Dissolve the stack (its PRs stay, unstacked)",
+            scope: "surface" as const,
+            group: "Edit",
+            run: () => void unstack(),
+          },
+        ]
+      : []),
     {
       id: "pr.copy-link",
       title: selection ? "Copy a link to these lines" : "Copy a link to this PR",
@@ -588,6 +690,14 @@ function Loaded({ pr }: { pr: PrView }) {
       hint: pr.author?.login === pr.account ? "merge" : undefined,
       group: "Merge",
       run: () => setRaised({ kind: "runway" }),
+    },
+    {
+      id: "pr.projects",
+      title: "Projects",
+      keys: ["s p"],
+      scope: "surface",
+      group: "Edit",
+      run: () => setRaised({ kind: "projects" }),
     },
     {
       id: "pr.notifications",
@@ -806,6 +916,7 @@ function Loaded({ pr }: { pr: PrView }) {
         <SuggestionsPanel pr={pr} initial={raised.initial} onClose={lower} />
       )}
       {raised?.kind === "notifications" && <NotificationsPicker pr={pr} onClose={lower} />}
+      {raised?.kind === "projects" && <ProjectsPicker pr={pr} onClose={lower} />}
       {raised?.kind === "filter" && (
         <FileFilterPicker
           files={listed}
@@ -902,6 +1013,7 @@ function Header({ pr }: { pr: PrView }) {
           </span>
         )}
       </div>
+      {pr.stack && <StackStrip pr={pr} stack={pr.stack} />}
       {triage && (
         <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 text-meta text-muted">
           {pr.reviewers.length > 0 && (
@@ -949,6 +1061,7 @@ function Header({ pr }: { pr: PrView }) {
               ))}
             </span>
           )}
+          <ProjectsLine pr={pr} />
           {pr.milestone && (
             <span aria-label="Milestone" className="flex items-center gap-2">
               <Milestone aria-hidden size={14} className="text-off" />

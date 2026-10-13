@@ -68,3 +68,28 @@ describe("merging, past the basics", () => {
     expect(opened?.author).toBe("binbandit");
   });
 });
+
+describe("stacks", () => {
+  test("merging a stacked PR merges the ones below it, not the ones above", async () => {
+    const world = generateScenario({ preset: "sandbox", clock: "manual" });
+    const owner = createFakePorts(world).get("WastedHippie")!;
+    const layer = (title: string) => [...world.prs.values()].find((p) => p.title === title)!;
+    const [load, validate, reload] = [
+      layer("Load config from TOML files"),
+      layer("Validate config against the schema"),
+      layer("Reload config when the file changes"),
+    ];
+    const stack = await owner.stackOf(validate.repo.fullName, validate.number);
+    expect(stack?.prs.map((p) => p.number)).toEqual([load.number, validate.number, reload.number]);
+
+    // Each layer needs its approval before the rules let it merge.
+    for (const pr of [load, validate])
+      world.review(pr.id, "binbandit", { event: "APPROVE", body: "" });
+    await owner.merge(validate.repo.fullName, validate.number, {
+      sha: world.head(validate),
+      method: "MERGE",
+    });
+    world.advance(60_000);
+    expect([load.state, validate.state, reload.state]).toEqual(["MERGED", "MERGED", "OPEN"]);
+  });
+});

@@ -62,6 +62,10 @@ const KIND: Record<LogEntry["kind"], string> = {
   suggestions: "Suggestions",
   subscription: "Notifications",
   "notification-read": "Mark read",
+  unstack: "Unstack",
+  archive: "Archive",
+  unarchive: "Unarchive",
+  project: "Project",
 };
 
 export function Log() {

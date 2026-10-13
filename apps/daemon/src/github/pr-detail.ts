@@ -1,13 +1,14 @@
 import type {
   Actor,
   CommitView,
-  Subscription,
   LinkedIssue,
   LockReason,
   PendingReview,
+  PrStack,
   Reaction,
   ReactionContent,
   Side,
+  Subscription,
   Thread,
   TimelineEntry,
 } from "@pier/core/wire";
@@ -36,6 +37,8 @@ export type PrDetail = {
   /** GitHub's numeric ids of the people commenting in threads, for Co-authored-by trailers. */
   userIds: Record<string, number>;
   subscription: Subscription | null;
+  /** The stack it's part of; titles are filled in from what pier tracks. */
+  stack: PrStack | null;
   viewerLatestReview: {
     state: string;
     commitOid: string | null;
@@ -85,7 +88,7 @@ function actor(author: { login: string; avatarUrl: string } | null | undefined):
     : null;
 }
 
-export function toPrDetail(node: Node): PrDetail {
+export function toPrDetail(node: Node, stack: PrStack | null): PrDetail {
   const pending = node.pendingReviews?.nodes?.[0] ?? null;
   const userIds: Record<string, number> = {};
 
@@ -250,6 +253,7 @@ export function toPrDetail(node: Node): PrDetail {
     },
     userIds,
     subscription: node.viewerSubscription ?? null,
+    stack,
     requiredChecks: (
       node.headChecks.nodes?.[0]?.commit.statusCheckRollup?.contexts.nodes ?? []
     ).flatMap((ctx) => {

@@ -14,6 +14,8 @@ import type {
   Milestone,
   MinimizeReason,
   Person,
+  PrProjects,
+  PrStack,
   ReactionContent,
   Revision,
   Subscription,
@@ -73,6 +75,10 @@ import {
   UpdateReviewMutation,
   ViewerQuery,
   UpdateSubscriptionMutation,
+  SavedRepliesQuery,
+  PrProjectsQuery,
+  AddToProjectMutation,
+  RemoveFromProjectMutation,
 } from "./ops";
 import type {
   BranchHead,
@@ -91,6 +97,7 @@ import type {
 } from "./port";
 import { isDetailNode, toPrDetail } from "./pr-detail";
 import { isHydrated, isSwept, toPrDoc, toVolatile } from "./pr-doc";
+import { ArchivePrMutation, UnarchivePrMutation } from "./preview";
 
 type RestThread = components["schemas"]["thread"];
 type RestFile = components["schemas"]["diff-entry"];
@@ -102,6 +109,16 @@ const HYDRATE_BATCH = 25;
 const SWEEP_BATCH = 50;
 
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
+
+/** Stacks are a public preview, documented under this API version. */
+const STACKS_API = "2026-03-10";
+
+/** GitHub's list of stacks; its PRs run bottom to top. */
+type StackResponse = {
+  number: number;
+  base: { ref: string };
+  pull_requests: { number: number; state: string; draft: boolean; merged_at: string | null }[];
+};
 
 export class LiveGitHub implements GitHubPort {
   constructor(private readonly client: GitHubTransport) {}
@@ -303,7 +320,132 @@ export class LiveGitHub implements GitHubPort {
 
   async detail(prId: string) {
     const data = await this.client.graphql(PrDetailQuery, { id: prId }, "interactive");
-    return isDetailNode(data.node) ? toPrDetail(data.node) : null;
+    if (!isDetailNode(data.node)) return null;
+    // A stack is a public preview; a failure to read one leaves the PR shown without it.
+    const stack = await this.stackOf(data.node.repository.nameWithOwner, data.node.number).catch(
+      () => null,
+    );
+    return toPrDetail(data.node, stack);
+  }
+
+  async stackOf(repo: string, number: number): Promise<PrStack | null> {
+    const response = await this.client.rest<StackResponse[]>({
+      path: `/repos/${repo}/stacks?pull_request=${number}`,
+      apiVersion: STACKS_API,
+      cache: true,
+      priority: "interactive",
+    });
+    const [stack] = response.data;
+    return stack
+      ? {
+          number: stack.number,
+          base: stack.base.ref,
+          prs: stack.pull_requests.map((pr, i) => ({
+            number: pr.number,
+            position: i + 1,
+            title: null,
+            state: pr.state === "open" ? ("open" as const) : ("closed" as const),
+            draft: pr.draft,
+            merged: pr.merged_at !== null,
+          })),
+        }
+      : null;
+  }
+
+  async projects(prId: string): Promise<PrProjects> {
+    try {
+      const data = await this.client.graphql(PrProjectsQuery, { id: prId }, "interactive");
+      const node = data.node && "projectItems" in data.node ? data.node : null;
+      if (!node) return { state: "ok", on: [], available: [] };
+      const on = (node.projectItems?.nodes ?? []).flatMap((item) =>
+        item && !item.isArchived
+          ? [
+              {
+                projectId: item.project.id,
+                itemId: item.id,
+                title: item.project.title,
+                status:
+                  item.fieldValueByName?.__typename === "ProjectV2ItemFieldSingleSelectValue"
+                    ? (item.fieldValueByName.name ?? null)
+                    : null,
+                url: item.project.url,
+              },
+            ]
+          : [],
+      );
+      const owner = node.repository.owner;
+      const listed = [
+        ...(node.repository.projectsV2.nodes ?? []),
+        ...("projectsV2" in owner ? (owner.projectsV2.nodes ?? []) : []),
+      ];
+      const available = [
+        ...new Map(
+          listed.flatMap((p) =>
+            p && !p.closed ? [[p.id, { id: p.id, title: p.title, url: p.url }] as const] : [],
+          ),
+        ).values(),
+      ];
+      return { state: "ok", on, available };
+    } catch (error) {
+      if (
+        error instanceof GitHubError &&
+        /project/i.test(error.message) &&
+        /scope/i.test(error.message)
+      ) {
+        return {
+          state: "no-scope",
+          fix: `gh auth refresh -h github.com -u ${this.login} -s project`,
+        };
+      }
+      throw error;
+    }
+  }
+
+  async setProject(prId: string, projectId: string, itemId: string | null): Promise<void> {
+    if (itemId)
+      await this.client.graphql(
+        RemoveFromProjectMutation,
+        { project: projectId, item: itemId },
+        "interactive",
+      );
+    else
+      await this.client.graphql(
+        AddToProjectMutation,
+        { project: projectId, content: prId },
+        "interactive",
+      );
+  }
+
+  async savedReplies(): Promise<{ title: string; body: string }[]> {
+    try {
+      const data = await this.client.graphql(SavedRepliesQuery, {}, "interactive");
+      return (data.viewer.savedReplies?.nodes ?? []).flatMap((r) =>
+        r ? [{ title: r.title, body: r.body }] : [],
+      );
+    } catch (error) {
+      if (error instanceof GitHubError && /read:user|scope/i.test(error.message)) {
+        throw new GitHubError(
+          `Reading ${this.login}'s saved replies needs the read:user scope: gh auth refresh -h github.com -u ${this.login} -s read:user`,
+          "forbidden",
+          error.status,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async setArchived(prId: string, archived: boolean): Promise<void> {
+    if (archived) await this.client.graphql(ArchivePrMutation, { id: prId }, "interactive");
+    else await this.client.graphql(UnarchivePrMutation, { id: prId }, "interactive");
+  }
+
+  async unstack(repo: string, stackNumber: number): Promise<void> {
+    await this.client.rest({
+      method: "POST",
+      path: `/repos/${repo}/stacks/${stackNumber}/unstack`,
+      apiVersion: STACKS_API,
+      priority: "interactive",
+    });
   }
 
   async mergeBase(repo: string, base: string, head: string): Promise<string | null> {

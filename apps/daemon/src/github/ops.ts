@@ -296,6 +296,10 @@ export const PrDetailQuery = graphql(`
     node(id: $id) {
       ... on PullRequest {
         id
+        number
+        repository {
+          nameWithOwner
+        }
         headRefOid
         bodyHTML
         viewerCanUpdate
@@ -1450,6 +1454,90 @@ export const UpdateSubscriptionMutation = graphql(`
       subscribable {
         viewerSubscription
       }
+    }
+  }
+`);
+
+/** Your saved replies on GitHub, to bring into pier (needs the `read:user` scope). */
+export const SavedRepliesQuery = graphql(`
+  query SavedReplies {
+    viewer {
+      savedReplies(first: 100) {
+        nodes {
+          title
+          body
+        }
+      }
+    }
+  }
+`);
+
+/**
+ * The projects a PR is on (with its Status there), and the projects it could go on. Asked on its
+ * own: without the read:project scope GitHub fails the whole query.
+ */
+export const PrProjectsQuery = graphql(`
+  query PrProjects($id: ID!) {
+    node(id: $id) {
+      ... on PullRequest {
+        projectItems(first: 20) {
+          nodes {
+            id
+            isArchived
+            project {
+              id
+              title
+              url
+            }
+            fieldValueByName(name: "Status") {
+              __typename
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+              }
+            }
+          }
+        }
+        repository {
+          projectsV2(first: 30, orderBy: { field: UPDATED_AT, direction: DESC }) {
+            nodes {
+              id
+              title
+              closed
+              url
+            }
+          }
+          owner {
+            ... on ProjectV2Owner {
+              projectsV2(first: 30, orderBy: { field: UPDATED_AT, direction: DESC }) {
+                nodes {
+                  id
+                  title
+                  closed
+                  url
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`);
+
+export const AddToProjectMutation = graphql(`
+  mutation AddToProject($project: ID!, $content: ID!) {
+    addProjectV2ItemById(input: { projectId: $project, contentId: $content }) {
+      item {
+        id
+      }
+    }
+  }
+`);
+
+export const RemoveFromProjectMutation = graphql(`
+  mutation RemoveFromProject($project: ID!, $item: ID!) {
+    deleteProjectV2Item(input: { projectId: $project, itemId: $item }) {
+      deletedItemId
     }
   }
 `);

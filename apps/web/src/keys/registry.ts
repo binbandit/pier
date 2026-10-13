@@ -1,4 +1,4 @@
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useState } from "react";
 import { create } from "zustand";
 
 // Every action in pier is a command. The same registry drives keyboard shortcuts, chords with
@@ -29,34 +29,69 @@ export type Command = {
 type KeyState = {
   commands: Map<string, Command>;
   pending: string | null;
-  register: (commands: Command[]) => () => void;
+  /** Each mounted user of `useCommands`, with what it registered last. */
+  owners: Map<symbol, Command[]>;
+  /** Sets (or, with null, removes) what one owner registers. */
+  publish: (owner: symbol, commands: Command[] | null) => void;
   setPending: (pending: string | null) => void;
 };
 
 export const useKeys = create<KeyState>((set, get) => ({
   commands: new Map(),
   pending: null,
-  register(commands) {
-    const next = new Map(get().commands);
-    for (const command of commands) next.set(command.id, command);
-    set({ commands: next });
-    return () => {
-      const current = new Map(get().commands);
-      for (const command of commands)
-        if (current.get(command.id) === command) current.delete(command.id);
-      set({ commands: current });
-    };
+  owners: new Map(),
+  publish(owner, commands) {
+    const { owners, commands: current } = get();
+    const before = owners.get(owner);
+    if (commands && before && sameCommands(before, commands)) {
+      // The same commands with fresh closures: swap them in without telling anyone, since nothing
+      // anyone shows has changed. Telling them would re-render, re-register, and so on forever.
+      owners.set(owner, commands);
+      for (const command of commands) current.set(command.id, command);
+      return;
+    }
+    const next = new Map(owners);
+    if (commands) next.set(owner, commands);
+    else next.delete(owner);
+    // Later owners win a shared id, as the most recently mounted surface should.
+    const merged = new Map<string, Command>();
+    for (const list of next.values()) for (const command of list) merged.set(command.id, command);
+    set({ owners: next, commands: merged });
   },
   setPending: (pending) => set({ pending }),
 }));
 
+/** Whether two lists show the same commands, whatever their `run` closures. */
+function sameCommands(a: Command[], b: Command[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((x, i) => {
+      const y = b[i];
+      return (
+        y !== undefined &&
+        x.id === y.id &&
+        x.title === y.title &&
+        x.scope === y.scope &&
+        x.hint === y.hint &&
+        x.group === y.group &&
+        x.inInputs === y.inInputs &&
+        x.hidden === y.hidden &&
+        (x.keys ?? []).join("|") === (y.keys ?? []).join("|")
+      );
+    })
+  );
+}
+
 /**
- * Registers commands for as long as the calling component is mounted. Layout effects run before
+ * Registers commands for as long as the calling component is mounted. They're published before
  * the browser paints, so whatever is on screen already answers its keys.
  */
 export function useCommands(commands: Command[]): void {
-  const register = useKeys((s) => s.register);
-  useLayoutEffect(() => register(commands), [register, commands]);
+  const publish = useKeys((s) => s.publish);
+  const [owner] = useState(() => Symbol("commands"));
+  // Every render: the latest closures, quietly unless what's shown changed.
+  useLayoutEffect(() => publish(owner, commands));
+  useLayoutEffect(() => () => publish(owner, null), [owner, publish]);
 }
 
 const SCOPE_RANK: Record<Scope, number> = { panel: 2, surface: 1, global: 0 };

@@ -79,6 +79,11 @@ export type CommandPayload = {
    * repo the head branch lives in (a fork's, for a PR from one). */
   files?: { path: string; contents: string }[];
   subscription?: Subscription;
+  /** The stack to dissolve. */
+  stackNumber?: number;
+  /** The project to put the PR on, or (with its item) take it off. */
+  projectId?: string;
+  itemId?: string | null;
   threadIds?: string[];
   headRepo?: string;
 };
@@ -671,6 +676,16 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
     case "viewed":
     case "unviewed":
       return port.setViewed(command.prId, payload.path ?? "", command.kind === "viewed");
+    case "project":
+      return port.setProject(command.prId, payload.projectId ?? "", payload.itemId ?? null);
+    case "archive":
+    case "unarchive":
+      return port.setArchived(command.prId, command.kind === "archive");
+    case "unstack":
+      // A stack that's already gone is what we wanted (a resend after a lost answer).
+      return port.unstack(command.repo, payload.stackNumber ?? 0).catch((error: unknown) => {
+        if (!(error instanceof GitHubError && error.kind === "not-found")) throw error;
+      });
     case "notification-read":
       return port.markNotificationRead(payload.threadId ?? "");
     case "subscription":

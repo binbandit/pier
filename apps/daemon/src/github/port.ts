@@ -10,6 +10,8 @@ import type {
   Milestone,
   MinimizeReason,
   Person,
+  PrProjects,
+  PrStack,
   ReactionContent,
   Revision,
   Subscription,
@@ -144,6 +146,18 @@ export interface GitHubPort {
   commitParent(repo: string, oid: string): Promise<string | null>;
   /** Per-file diffs between two commits, for commit-range views without the git store. */
   compareFiles(repo: string, base: string, head: string): Promise<DiffFile[]>;
+  /** The stack a PR is in, bottom to top, or null (titles left for the caller to fill). */
+  stackOf(repo: string, number: number): Promise<PrStack | null>;
+  /** The projects a PR is on and could go on (or the scope that's missing to read them). */
+  projects(prId: string): Promise<PrProjects>;
+  /** Puts a PR on a project, or takes its item off. */
+  setProject(prId: string, projectId: string, itemId: string | null): Promise<void>;
+  /** The account's saved replies on GitHub. */
+  savedReplies(): Promise<{ title: string; body: string }[]>;
+  /** Archives a PR (which closes it), or takes the mark off again. */
+  setArchived(prId: string, archived: boolean): Promise<void>;
+  /** Takes every unmerged PR out of a stack, which dissolves it. */
+  unstack(repo: string, stackNumber: number): Promise<void>;
   /** Commits whole files onto a branch, only if it still points at `expectedHeadOid`. */
   commitFiles(input: CommitFilesInput): Promise<{ oid: string }>;
   /** A branch's latest commit, to check whether a commit we sent landed. */

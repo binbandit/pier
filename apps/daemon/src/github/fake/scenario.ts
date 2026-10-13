@@ -404,6 +404,20 @@ class Builder {
     this.humanPr(api.repo, owner, bigChange(), now - 26 * HOUR, [you], "success");
     this.authored(web.repo, other, "changes-requested", now - 30 * HOUR);
 
+    // Two boards the web repo's PRs can go on; the pagination work is on the roadmap, in review.
+    web.repo.projects.push(
+      { id: "PVT_kwDOroadmap01", title: "Q4 roadmap" },
+      { id: "PVT_kwDObugs0002", title: "Bugs" },
+    );
+    const paging = [...world.prs.values()].find(
+      (pr) =>
+        pr.repo === web.repo && pr.title === "Paginate events with cursors" && pr.author === other,
+    );
+    if (paging)
+      paging.projectItems = new Map([
+        ["PVT_kwDOroadmap01", { itemId: "PVTI_kwDOpaging01", status: "In review" }],
+      ]);
+
     // A sweeping rename: hundreds of small changes, the shape that strains a review screen.
     world.openPr({
       repo: api.repo.fullName,
@@ -421,6 +435,31 @@ class Builder {
       checks: "success",
       createdAt: now - 3 * HOUR,
     });
+
+    // A stack: config loading, then validation on top of it, then hot reload on top of that.
+    const layers = [
+      ["config-load", "main", "Load config from TOML files"],
+      ["config-validate", "config-load", "Validate config against the schema"],
+      ["config-reload", "config-validate", "Reload config when the file changes"],
+    ] as const;
+    const stacked = layers.map(([branch, base, title], i) =>
+      world.openPr({
+        repo: cli.repo.fullName,
+        author: other,
+        title,
+        body: `Part ${i + 1} of the config work.`,
+        headRefName: branch,
+        baseRefName: base,
+        files: [{ path: `src/config/${branch}.ts`, after: `export const step = ${i + 1};\n` }],
+        reviewers: [you],
+        checks: "success",
+        createdAt: now - (12 - i) * HOUR,
+      }),
+    );
+    world.stack(
+      cli.repo.fullName,
+      stacked.map((pr) => pr.number),
+    );
 
     // The owner suggests changes on your PR, to apply one at a time or together.
     const yours = [...world.prs.values()].find(

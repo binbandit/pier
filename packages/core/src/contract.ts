@@ -15,12 +15,14 @@ import type {
   Person,
   PlanPreview,
   PrDiff,
+  PrProjects,
   PrView,
   QueueItem,
   Revision,
   SuggestedReviewer,
   RemoteSearch,
   Runway,
+  SavedReply,
   SavedView,
   SearchResult,
   SplitCounts,
@@ -177,6 +179,19 @@ export const inputs = {
   /** Saves a search as a view; an `id` updates that view. */
   saveView: type({ "id?": "string", name: "string > 0", query: "string" }),
   deleteView: type({ id: "string" }),
+  unstack: type({ prId: "string" }),
+  setArchived: type({ prId: "string", archived: "boolean" }),
+  projects: type({ prId: "string" }),
+  setProjects: type({
+    prId: "string",
+    add: "string[]",
+    remove: type({ projectId: "string", itemId: "string" }).array(),
+  }),
+  replies: type({}),
+  saveReply: type({ title: "string > 0", body: "string > 0" }),
+  deleteReply: type({ id: "string" }),
+  /** Brings your GitHub saved replies in (needs read:user on an account). */
+  importReplies: type({}),
   setSubscription: type({
     prId: "string",
     subscription: "'SUBSCRIBED' | 'UNSUBSCRIBED' | 'IGNORED'",
@@ -261,6 +276,14 @@ export type Outputs = {
   searchGitHub: RemoteSearch;
   saveView: { id: string };
   deleteView: { ok: true };
+  unstack: { commandIds: string[] };
+  setArchived: { commandIds: string[] };
+  projects: PrProjects;
+  setProjects: { commandIds: string[] };
+  replies: SavedReply[];
+  saveReply: { id: string };
+  deleteReply: { ok: true };
+  importReplies: { added: number };
   setSubscription: { commandIds: string[] };
   planAction: PlanPreview;
   commitPlan: { commandIds: string[] };
