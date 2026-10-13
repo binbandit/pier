@@ -293,6 +293,7 @@ export class Views {
 
   private row(e: BotEval, group: Group, repShape: string): GroupRow {
     const doc = e.record.doc;
+    const pending = this.ctx.outbox.pending(doc.id);
     const own = e.bumps.find((b) => bumpKey(b) === group.key);
     const others: BumpRef[] = e.bumps
       .filter((b) => bumpKey(b) !== group.key)
@@ -321,10 +322,11 @@ export class Views {
       otherBumps: others,
       // A grouped PR always differs; saying which bumps it carries is the useful part.
       differs: others.length === 0 && shape(e.record) !== repShape,
-      approvedByYou: e.approvedAtHead,
+      // An approval that just landed counts before the next read shows it.
+      approvedByYou: e.approvedAtHead || (e.approving && pending === null),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
-      pending: this.ctx.outbox.pending(doc.id),
+      pending,
     };
   }
 

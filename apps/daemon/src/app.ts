@@ -210,6 +210,10 @@ export function createApp(options: AppOptions) {
   });
   sync.onStatus(() => events.emit(["status"]));
   outbox.onAcked((command) => {
+    // Read the PR again straight away: the sweep can't see most of what a write changes (your
+    // review, labels, people), and waiting for the next sync leaves it looking untouched.
+    const record = model.get(command.prId);
+    if (record && command.kind !== "notification-done") sync.markDirty(command.prId, record.reader);
     if (command.kind === "notification-done" && command.payload.threadId) {
       sync.forgetThread(command.account, command.payload.threadId);
     }
