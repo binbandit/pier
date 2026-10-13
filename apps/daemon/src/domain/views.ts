@@ -1,5 +1,7 @@
+import type { PrDoc } from "@/github/pr-doc";
 import type { Outbox } from "@/outbox/outbox";
 import type { ReleaseRegistry } from "@/registry/release";
+import { parseQuery } from "@pier/core/query";
 import type {
   Bump,
   BumpRef,
@@ -13,6 +15,8 @@ import type {
   PrItem,
   QueueItem,
   ReleaseInfo,
+  SavedView,
+  SearchResult,
   SemverClass,
   Split,
 } from "@pier/core/wire";
@@ -22,6 +26,7 @@ import type { DoneItems, Verdicts } from "./decisions";
 import { evaluateGates, type Placement, place, summarizeGates } from "./gates";
 import type { Model, PrRecord } from "./model";
 import { checksFailing } from "./runway";
+import { searchRecords } from "./search";
 import type { SettingsStore } from "./settings";
 
 // Everything the web app shows is derived here from the model plus Brayden's decisions.
@@ -56,6 +61,8 @@ type Snapshot = {
   groups: Map<string, Group>;
   inbox: Record<Split, QueueItem[]>;
   flight: FlightItem[];
+  /** PRs where it's your turn, with why. */
+  turn: Map<string, string>;
 };
 
 export class Views {
@@ -74,6 +81,38 @@ export class Views {
 
   flight(): FlightItem[] {
     return this.snapshot().flight;
+  }
+
+  /** Saved searches, each with how many PRs it finds right now. */
+  savedViews(): SavedView[] {
+    return this.ctx.settings
+      .get("views")
+      .map((view) => ({ ...view, count: this.search(view.query, 0).total }));
+  }
+
+  /** Every tracked PR matching the query, newest first unless it says otherwise. */
+  search(text: string, limit = 300): SearchResult {
+    const snapshot = this.snapshot();
+    const query = parseQuery(text);
+    const found = searchRecords([...this.ctx.model.all()], query, {
+      you: this.ctx.accounts(),
+      turn: new Set(snapshot.turn.keys()),
+      bots: new Map(
+        [...snapshot.bots].map(([id, e]) => [
+          id,
+          { semvers: e.bumps.map((b) => b.semver), cohort: e.placement.cohort },
+        ]),
+      ),
+      now: this.ctx.now(),
+    });
+    return {
+      items: found.slice(0, limit).map((record) => ({
+        ...prItemBase(record.doc, record.reader),
+        reason: snapshot.turn.get(record.doc.id) ?? standing(record.doc),
+      })),
+      total: found.length,
+      errors: query.errors,
+    };
   }
 
   /** The open PRs behind a done key: a bump group's members, or the PR itself. */
@@ -237,6 +276,7 @@ export class Views {
     return {
       bots,
       groups,
+      turn: new Map([...review, ...mine].map((item) => [item.id, item.reason])),
       inbox: { review: review.toSorted(byRecent), deps, mine: mine.toSorted(byRecent) },
       flight: flight.toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     };
@@ -340,28 +380,7 @@ export class Views {
     const personal = [...record.scopes].some((s) => s.endsWith(":involved"));
     if (!personal && !mineAuthor) return null;
 
-    const base = {
-      kind: "pr" as const,
-      id: doc.id,
-      repo: doc.repo,
-      number: doc.number,
-      title: doc.title,
-      url: doc.url,
-      author: doc.author,
-      additions: doc.additions,
-      deletions: doc.deletions,
-      changedFiles: doc.changedFiles,
-      isDraft: doc.isDraft,
-      checks: {
-        state: doc.checks.state,
-        total: doc.checks.total,
-        failing: doc.checks.failing,
-        pending: doc.checks.pending,
-      },
-      reviewDecision: doc.reviewDecision,
-      updatedAt: doc.updatedAt,
-      account: record.reader,
-    };
+    const base = prItemBase(doc, record.reader);
     const isDone = this.ctx.done.isDone(`pr:${doc.id}`, prCursor(record));
 
     if (mineAuthor) {
@@ -499,4 +518,41 @@ function worstSemver(semvers: SemverClass[]): SemverClass {
 
 function cohortOrder(cohort: Cohort): number {
   return cohort === "clear" ? 0 : cohort === "look" ? 1 : 2;
+}
+
+/** A PR as a list row, before saying why it's on the list. */
+export function prItemBase(doc: PrDoc, account: string): Omit<PrItem, "reason"> {
+  return {
+    kind: "pr",
+    id: doc.id,
+    repo: doc.repo,
+    number: doc.number,
+    title: doc.title,
+    url: doc.url,
+    state: doc.state,
+    author: doc.author,
+    additions: doc.additions,
+    deletions: doc.deletions,
+    changedFiles: doc.changedFiles,
+    isDraft: doc.isDraft,
+    checks: {
+      state: doc.checks.state,
+      total: doc.checks.total,
+      failing: doc.checks.failing,
+      pending: doc.checks.pending,
+    },
+    reviewDecision: doc.reviewDecision,
+    updatedAt: doc.updatedAt,
+    account,
+  };
+}
+
+/** Where a PR stands, for lists where it isn't there because it's your turn. */
+export function standing(doc: PrDoc): string {
+  if (doc.state === "MERGED") return "Merged";
+  if (doc.state === "CLOSED") return "Closed";
+  if (doc.reviewDecision === "changes_requested") return "Changes requested";
+  if (doc.reviewDecision === "approved") return "Approved";
+  if (doc.checks.state === "failure") return checksFailing(doc.checks.failing);
+  return doc.reviewDecision === "review_required" ? "Waiting on review" : "Open";
 }

@@ -12,6 +12,7 @@ import type {
   Person,
   ReactionContent,
   Revision,
+  Subscription,
   SuggestedReviewer,
 } from "@pier/core/wire";
 
@@ -121,12 +122,17 @@ export interface GitHubPort {
   prId(repo: string, number: number): Promise<string | null>;
   /** Every PR matching the query, splitting by creation date past GitHub's 1,000-result cap. */
   search(query: string): Promise<SearchHit[]>;
+  /** Just the first matches, for a one-off search rather than a scope to keep in sync. */
+  searchFirst(query: string, limit: number): Promise<SearchHit[]>;
   sweep(ids: string[]): Promise<VolatileState[]>;
   hydrate(ids: string[]): Promise<{ doc: PrDoc; viewer: PrViewer }[]>;
   files(repo: string, number: number): Promise<DiffFile[]>;
   /** `fresh` skips the 304 shortcut, to learn every thread after a restart. */
   notifications(fresh?: boolean): Promise<NotificationPoll>;
   markNotificationDone(threadId: string): Promise<void>;
+  markNotificationRead(threadId: string): Promise<void>;
+  /** Through the account's notification thread for the PR when it has one, else directly. */
+  setSubscription(prId: string, state: Subscription, threadId: string | null): Promise<void>;
   approve(prId: string, commitOid: string, body?: string): Promise<ReviewSummary>;
   comment(subjectId: string, body: string): Promise<{ id: string }>;
   reviewsBy(prId: string, author: string): Promise<ReviewSummary[]>;

@@ -301,6 +301,7 @@ export const PrDetailQuery = graphql(`
         viewerCanUpdate
         viewerCanDeleteHeadRef
         viewerCanEditFiles
+        viewerSubscription
         isCrossRepository
         headRefName
         headRepository {
@@ -1437,6 +1438,17 @@ export const CommitOnBranchMutation = graphql(`
     createCommitOnBranch(input: $input) {
       commit {
         oid
+      }
+    }
+  }
+`);
+
+/** Watch a PR, go back to being notified only when involved, or mute it. */
+export const UpdateSubscriptionMutation = graphql(`
+  mutation UpdateSubscription($id: ID!, $state: SubscriptionState!) {
+    updateSubscription(input: { subscribableId: $id, state: $state }) {
+      subscribable {
+        viewerSubscription
       }
     }
   }

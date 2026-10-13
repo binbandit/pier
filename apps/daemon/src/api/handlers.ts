@@ -1,4 +1,5 @@
 import type { App } from "@/app";
+import { searchGitHub } from "@/domain/remote-search";
 import type { Output, ParsedInput, ProcedureName } from "@pier/core/contract";
 
 // One handler per procedure in the contract. The mapped type makes a missing or mistyped
@@ -108,6 +109,42 @@ export function createHandlers(app: App): Handlers {
     milestones: ({ repo }) => app.review.milestones(repo),
     flight: () => app.views.flight(),
     log: ({ limit }) => app.outbox.log(limit ?? 100),
+    search: ({ q, limit }) => app.views.search(q, limit),
+    views: () => app.views.savedViews(),
+    setSubscription({ prId, subscription }) {
+      const commandIds = app.review.setSubscription(prId, subscription);
+      app.events.emit(["pr"]);
+      return { commandIds };
+    },
+    searchGitHub: ({ q }) => searchGitHub(q, app.ports, app.model),
+    saveView({ id, name, query }) {
+      const views = app.settings.get("views");
+      const existing = views.find((v) => v.id === id);
+      const saved = existing
+        ? { ...existing, name, query }
+        : {
+            id: uniqueSlug(
+              name,
+              views.map((v) => v.id),
+            ),
+            name,
+            query,
+          };
+      app.settings.set(
+        "views",
+        existing ? views.map((v) => (v === existing ? saved : v)) : [...views, saved],
+      );
+      app.events.emit(["views"]);
+      return { id: saved.id };
+    },
+    deleteView({ id }) {
+      app.settings.set(
+        "views",
+        app.settings.get("views").filter((v) => v.id !== id),
+      );
+      app.events.emit(["views"]);
+      return { ok: true as const };
+    },
     async applySuggestions(input) {
       const commandIds = await app.review.applySuggestions(input);
       app.events.emit(["pr", "log"]);
@@ -151,4 +188,16 @@ export function createHandlers(app: App): Handlers {
       return { ok: true };
     },
   };
+}
+
+/** "Waiting on QA" -> "waiting-on-qa", with a number added when that's taken. */
+function uniqueSlug(name: string, taken: string[]): string {
+  const base =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "view";
+  let slug = base;
+  for (let n = 2; taken.includes(slug); n++) slug = `${base}-${n}`;
+  return slug;
 }

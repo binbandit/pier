@@ -25,8 +25,8 @@ import type {
   DiffFile,
   Label,
   LockReason,
-  Mergeable,
   MergeMethod,
+  Mergeable,
   Milestone,
   MinimizeReason,
   Person,
@@ -34,6 +34,7 @@ import type {
   ReactionContent,
   ReviewDecision,
   Revision,
+  Subscription,
   SuggestedReviewer,
   TimelineEntry,
   WorkflowRunView,
@@ -115,6 +116,10 @@ export class FakeGitHub implements GitHubPort {
       },
       (hits) => pages(hits.length, 100),
     );
+  }
+
+  async searchFirst(query: string, limit: number): Promise<SearchHit[]> {
+    return (await this.search(query)).slice(0, limit);
   }
 
   sweep(ids: string[]): Promise<VolatileState[]> {
@@ -222,6 +227,18 @@ export class FakeGitHub implements GitHubPort {
     // Only a response that arrived moves the validator, as with a real ETag cache.
     this.seenNotifications = result.version;
     return result.poll;
+  }
+
+  markNotificationRead(threadId: string): Promise<void> {
+    return this.call("markNotificationRead", "core", () =>
+      this.world.markRead(this.login, threadId),
+    );
+  }
+
+  setSubscription(prId: string, state: Subscription, _threadId: string | null): Promise<void> {
+    return this.call("setSubscription", "graphql", () =>
+      this.world.subscribe(prId, this.login, state),
+    );
   }
 
   markNotificationDone(threadId: string): Promise<void> {
@@ -1027,6 +1044,7 @@ export class FakeGitHub implements GitHubPort {
         branch: pr.headRefName,
         canEditFiles: pr.state === "OPEN" && world.canWrite(pr.repo, this.login),
       },
+      subscription: world.subscriptions.get(pr.id)?.get(this.login) ?? "UNSUBSCRIBED",
       userIds: Object.fromEntries(
         pr.threads.flatMap((t) =>
           t.comments.flatMap((c) => {

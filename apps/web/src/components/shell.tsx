@@ -58,6 +58,14 @@ export function Shell({ children }: { children: ReactNode }) {
       run: () => void navigate({ to: "/flight" }),
     },
     {
+      id: "go.search",
+      title: "Search",
+      keys: ["/", "g s"],
+      scope: "global",
+      group: "Go to",
+      run: () => void navigate({ to: "/search", search: { q: "" } }),
+    },
+    {
       id: "go.log",
       title: "Go to Log",
       keys: ["g l"],
@@ -102,6 +110,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
 function Rail() {
   const { data: counts } = useQuery(q("counts", {}));
+  const { data: views = [] } = useQuery(q("views", {}));
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
@@ -123,9 +132,23 @@ function Rail() {
           />
         ))}
       </ul>
+      {views.length > 0 && (
+        <ul aria-label="Views" className="mt-6 space-y-0.5">
+          {views.map((view) => (
+            <RailItem
+              key={view.id}
+              to={`/v/${view.id}`}
+              label={view.name}
+              count={view.count}
+              active={pathname === `/v/${view.id}`}
+            />
+          ))}
+        </ul>
+      )}
       <ul className="mt-6 space-y-0.5">
         <RailItem to="/flight" label="In flight" active={pathname === "/flight"} />
         <RailItem to="/log" label="Log" active={pathname === "/log"} />
+        <RailItem to="/search" label="Search" active={pathname === "/search"} />
       </ul>
     </nav>
   );

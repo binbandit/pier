@@ -24,6 +24,7 @@ import type {
   Runway,
   SuggestedReviewer,
   Side,
+  Subscription,
   Thread,
   ViewedState,
 } from "@pier/core/wire";
@@ -78,6 +79,8 @@ export type ReviewDeps = {
   sync: SyncEngine;
   planner: Planner;
   codeOwners: CodeOwnersCache;
+  /** Whether every account is one person (normally), or each is someone else (the sandbox). */
+  linked: () => boolean;
   /** The git store, once it's available; without it, diffs come from GitHub's patches. */
   git: () => InterdiffSource | null;
 };
@@ -91,6 +94,7 @@ export class ReviewService {
   constructor(private readonly deps: ReviewDeps) {
     // Once GitHub accepts something we sent, our cached threads and drafts are out of date.
     deps.outbox.onAcked((command) => {
+      if (command.kind === "notification-read") return;
       deps.details.invalidate(command.prId, command.account);
       if (command.kind === "review" && command.payload.draftIds?.length) {
         deps.drafts.clear(command.prId, command.account, command.payload.draftIds);
@@ -144,6 +148,7 @@ export class ReviewService {
     const account = record.reader;
     const port = this.deps.ports.get(account);
     this.deps.sync.nudge([doc.id]);
+    this.markRead(record);
 
     const [detail, codeOwners] = await Promise.all([
       this.detail(record),
@@ -161,17 +166,14 @@ export class ReviewService {
     // minute regardless: GitHub's reads can trail its writes, so the first re-read may not show
     // them yet. These edits are idempotent sets, so overlapping GitHub's own copy is harmless.
     const settling = new Date(Date.now() - 30_000).toISOString();
-    const meta = overlayMetadata(
-      doc,
-      [
-        ...this.deps.outbox.ackedSince(
-          doc.id,
-          settling < record.fetchedAt ? settling : record.fetchedAt,
-        ),
-        ...pending,
-      ],
-      this.knownFor(doc.repo),
-    );
+    const writes = [
+      ...this.deps.outbox.ackedSince(
+        doc.id,
+        settling < record.fetchedAt ? settling : record.fetchedAt,
+      ),
+      ...pending,
+    ];
+    const meta = overlayMetadata(doc, writes, this.knownFor(doc.repo));
 
     const canWrite = ["ADMIN", "MAINTAIN", "WRITE"].includes(doc.viewerPermission ?? "");
     // Code owners of what this PR changes: whoever GitHub asked as one, or CODEOWNERS names.
@@ -242,6 +244,10 @@ export class ReviewService {
       requiredChecks: detail?.requiredChecks ?? [],
       commits: detail?.commits ?? [],
       codeOwners,
+      subscription:
+        writes.findLast((w) => w.kind === "subscription")?.payload.subscription ??
+        detail?.subscription ??
+        null,
       canApplySuggestions:
         doc.state === "OPEN" && detail !== null && detail.head.canEditFiles && !!detail.head.repo,
       // A deleted branch can come back once the PR is closed or merged, from its last head.
@@ -596,6 +602,20 @@ export class ReviewService {
     return this.enqueue(this.require(prId), "milestone", { milestone }, 0);
   }
 
+  /** Watch the PR, go back to being notified only when involved, or mute it. */
+  setSubscription(prId: string, subscription: Subscription): string[] {
+    const record = this.require(prId);
+    const thread = this.deps.sync
+      .threadsFor(record.doc.repo, record.doc.number)
+      .find((t) => t.account === record.reader);
+    return this.enqueue(
+      record,
+      "subscription",
+      { subscription, ...(thread ? { threadId: thread.threadId } : {}) },
+      0,
+    );
+  }
+
   setDraft(prId: string, draft: boolean): string[] {
     return this.enqueue(this.require(prId), "draft", { draft }, 0);
   }
@@ -737,6 +757,35 @@ export class ReviewService {
         },
       ],
       holdMs,
+    );
+  }
+
+  /**
+   * Opening a PR reads its notifications, as opening it on github.com does: on every account when
+   * they're all you, only the reading account's when they're separate people. Sent once each.
+   */
+  private markRead(record: PrRecord): void {
+    const { doc } = record;
+    const unread = this.deps.sync.takeUnread(
+      doc.repo,
+      doc.number,
+      this.deps.linked() ? null : record.reader,
+    );
+    if (unread.length === 0) return;
+    this.deps.outbox.enqueue(
+      unread.map((thread) => ({
+        planId: null,
+        account: thread.account,
+        kind: "notification-read" as const,
+        prId: doc.id,
+        repo: doc.repo,
+        number: doc.number,
+        title: doc.title,
+        expectedHead: doc.headRefOid,
+        payload: { threadId: thread.threadId },
+        priority: 1 as const,
+      })),
+      0,
     );
   }
 

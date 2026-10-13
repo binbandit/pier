@@ -14,15 +14,15 @@ Milestones follow docs/design.md: M1a bots, M1b human review, I2 to I10 incremen
 | FIND-MINE | Your PRs that need you (changes requested, red, conflicts, approved and idle) | search `involves:@me` | M1b | built |
 | FIND-BOTS | Dependabot / Renovate PRs across owned repos and orgs | search `author:app/dependabot user:X` | M1a | sandbox |
 | FIND-INFLIGHT | Things waiting on others | derived | M1a | built |
-| FIND-SEARCH | Search with every qualifier (`is:`, `review:`, `label:`, `status:`, `sort:` ...) | search API | I8 | - |
-| FIND-VIEWS | Saved views / custom inbox sections | local | I8 | - |
-| FIND-REPO-LIST | Per-repo PR list with filters | search `repo:` | I8 | - |
+| FIND-SEARCH | Search with every qualifier (`is:`, `review:`, `label:`, `status:`, `sort:` ...), plus pier's (`turn:`, `checks:`, `size:`, `acct:`, `bot:`, `semver:`, `cohort:`); instant over the replica, ⌘⏎ asks GitHub for the rest | replica; search API | I8 | sandbox |
+| FIND-VIEWS | Saved views / custom inbox sections (⌘S on a search; in the sidebar with counts) | local | I8 | sandbox |
+| FIND-REPO-LIST | Per-repo PR list with filters, at github.com's `/:owner/:repo/pulls` | replica `repo:` | I8 | sandbox |
 | NOTIF-FEED | Notifications as a change feed (304s free) | REST `/notifications` | M1a | built |
 | NOTIF-DONE | Mark done also clears the GitHub notification | `DELETE /notifications/threads/:id` | M1b | built |
-| NOTIF-SUBSCRIBE | Subscribe / unsubscribe / mute a PR | thread subscription | I8 | - |
-| NOTIF-READ | Mark read / unread | `PATCH` thread (read only; no unread API) | I8 | - |
+| NOTIF-SUBSCRIBE | Watch / stop watching a PR (`!`, `s n`) | REST thread subscription (`repo` scope); `updateSubscription` without a thread (needs `notifications`) | I8 | sandbox |
+| NOTIF-READ | Opening a PR marks its notifications read, as github.com does (no unread API) | `PATCH` thread | I8 | sandbox |
 | NOTIF-SAVED | "Saved" notifications | none | gap | - |
-| NOTIF-FILTERS | Custom inbox filters | none (use pier views) | I8 | - |
+| NOTIF-FILTERS | Custom inbox filters | pier views | I8 | sandbox |
 
 ## B. Conversation and metadata
 

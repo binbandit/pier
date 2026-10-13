@@ -8,11 +8,12 @@ import type {
   CheckState,
   DiffFile,
   Ecosystem,
-  Mergeable,
   MergeMethod,
+  Mergeable,
   MinimizeReason,
   ReactionContent,
   ReviewDecision,
+  Subscription,
   TimelineEntry,
 } from "@pier/core/wire";
 
@@ -338,6 +339,8 @@ export class FakeWorld {
   /** `${repo}@${oid}` -> path -> contents, for the files scenarios gave contents for. */
   private readonly trees = new Map<string, Map<string, string>>();
   private readonly notes = new Map<string, Map<string, FakeNotification>>();
+  /** Per PR, who has changed how they're notified about it. */
+  readonly subscriptions = new Map<string, Map<string, Subscription>>();
   private readonly noteIds = new Map<string, string>();
   private readonly noteVersions = new Map<string, number>();
   private timers: { at: number; seq: number; run: () => void }[] = [];
@@ -1544,6 +1547,13 @@ export class FakeWorld {
     return { version: this.noteVersions.get(login) ?? 0, threads };
   }
 
+  subscribe(prId: string, login: string, state: Subscription): void {
+    const pr = this.mustPr(prId);
+    const states = this.subscriptions.get(pr.id) ?? new Map<string, Subscription>();
+    states.set(login, state);
+    this.subscriptions.set(pr.id, states);
+  }
+
   markRead(login: string, threadId: string): void {
     for (const note of this.notes.get(login)?.values() ?? []) {
       if (note.threadId !== threadId || !note.unread) continue;
@@ -1870,6 +1880,8 @@ export class FakeWorld {
       const user = this.users.get(login);
       if (login === actor || !user || user.isBot || this.permission(pr.repo, login) === null)
         continue;
+      // Muted means nothing about this PR reaches them.
+      if (this.subscriptions.get(pr.id)?.get(login) === "IGNORED") continue;
       const key = `${login}|${pr.id}`;
       let threadId = this.noteIds.get(key);
       if (!threadId) {

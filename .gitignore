@@ -7,3 +7,5 @@ dist/
 # local corpora built from real (non-sandbox) GitHub data never get committed
 **/fixtures/local/
 .build/
+# the router plugin's scratch files
+.tanstack/

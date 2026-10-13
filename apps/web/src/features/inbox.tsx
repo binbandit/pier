@@ -1,16 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { clsx } from "clsx";
 
 import { Ledger, countTicks } from "@/components/ledger";
+import { PrLine } from "@/components/pr-line";
 import { VirtualRows } from "@/components/rows";
 import { markDone, openOnGitHub, propose } from "@/features/actions";
 import type { Command } from "@/keys/registry";
 import { ago, plural, shortRepo } from "@/lib/format";
 import { q, rpc } from "@/lib/rpc";
 import { useList } from "@/lib/use-list";
-import { AccountAvatar, Avatar } from "@/ui/avatar";
-import { CHECK_TONE, Dot, type Tone } from "@/ui/dot";
+import { AccountAvatar } from "@/ui/avatar";
+import { Dot, type Tone } from "@/ui/dot";
 import { Keys } from "@/ui/kbd";
 import type { GroupItem, PrItem, QueueItem, Split } from "@pier/core/wire";
 
@@ -188,32 +188,6 @@ function GroupLine({ item }: { item: GroupItem }) {
           <AccountAvatar key={login} login={login} size={16} />
         ))}
       </span>
-    </div>
-  );
-}
-
-function PrLine({ item }: { item: PrItem }) {
-  return (
-    <div className="grid w-full max-w-[1320px] grid-cols-[16px_minmax(0,2fr)_minmax(120px,0.8fr)_minmax(0,1.2fr)_88px_48px_20px] items-center gap-x-4">
-      <Dot tone={CHECK_TONE[item.checks.state]} label={`checks ${item.checks.state}`} />
-      <span className={clsx("truncate", item.isDraft ? "text-muted" : "text-strong")}>
-        {item.isDraft && <span className="mr-2 text-faint">Draft</span>}
-        {item.title}
-      </span>
-      <span className="truncate font-code text-meta text-faint">
-        {shortRepo(item.repo)}#{item.number}
-      </span>
-      <span className="truncate text-meta text-muted">{item.reason}</span>
-      <span className="text-right font-code text-meta">
-        <span className="text-ok">+{item.additions}</span>{" "}
-        <span className="text-bad">−{item.deletions}</span>
-      </span>
-      <span className="text-right text-meta text-faint">{ago(item.updatedAt)}</span>
-      {item.author ? (
-        <Avatar login={item.author.login} url={item.author.avatarUrl} size={16} />
-      ) : (
-        <span />
-      )}
     </div>
   );
 }

@@ -60,6 +60,8 @@ const KIND: Record<LogEntry["kind"], string> = {
   "restore-branch": "Restore branch",
   revert: "Revert",
   suggestions: "Suggestions",
+  subscription: "Notifications",
+  "notification-read": "Mark read",
 };
 
 export function Log() {

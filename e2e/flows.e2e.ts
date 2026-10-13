@@ -292,3 +292,29 @@ test("a reviewer's suggestion goes in as a commit on your branch", async ({ page
   );
   await expect(thread).toContainText("Resolved");
 });
+
+test("a search narrows as you type and keeps as a view in the sidebar", async ({ page }) => {
+  await page.goto("/inbox/review");
+  await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
+  await page.keyboard.press("/");
+  const search = page.getByRole("textbox", { name: "Search" });
+  await expect(search).toBeFocused();
+  await search.fill("is:open author:sage-smudge cursors");
+  const results = page.getByRole("list", { name: "Results" });
+  await expect(results).toContainText("Paginate events with cursors");
+  await expect(results).not.toContainText("chore(deps)");
+
+  await page.keyboard.press("Meta+s");
+  await page.getByRole("textbox", { name: "View name" }).fill("Cursor work");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/v\/cursor-work(-\d+)?$/);
+  await expect(page.getByRole("navigation", { name: "Main" })).toContainText("Cursor work");
+});
+
+test("a PR can be watched from the keyboard", async ({ page }) => {
+  await page.goto("/WastedHippie/sandbox-web/pull/8");
+  await expect(page.getByRole("heading", { name: "Document local setup and tests" })).toBeVisible();
+  await page.keyboard.press("!");
+  await expect(toast(page, "Watching: sandbox-web#8")).toBeVisible();
+  await expect(page.locator("header").first()).toContainText("Watching");
+});

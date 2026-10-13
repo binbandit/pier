@@ -481,6 +481,15 @@ export type StatusState =
   /** Status is successful. */
   | 'SUCCESS';
 
+/** The possible states of a subscription. */
+export type SubscriptionState =
+  /** The User is never notified. */
+  | 'IGNORED'
+  /** The User is notified of all conversations. */
+  | 'SUBSCRIBED'
+  /** The User is only notified when participating or @mentioned. */
+  | 'UNSUBSCRIBED';
+
 export type ViewerQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -582,7 +591,7 @@ export type PrDetailQueryVariables = Exact<{
 
 
 export type PrDetailQuery = { node:
-    | { id: string, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, viewerCanDeleteHeadRef: boolean, viewerCanEditFiles: boolean, isCrossRepository: boolean, headRefName: string, locked: boolean, activeLockReason: LockReason | null, headRepository: { nameWithOwner: string } | null, headRef: { id: string } | null, headChecks: { nodes: Array<{ commit: { statusCheckRollup: { contexts: { nodes: Array<
+    | { id: string, headRefOid: string, bodyHTML: string, viewerCanUpdate: boolean, viewerCanDeleteHeadRef: boolean, viewerCanEditFiles: boolean, viewerSubscription: SubscriptionState | null, isCrossRepository: boolean, headRefName: string, locked: boolean, activeLockReason: LockReason | null, headRepository: { nameWithOwner: string } | null, headRef: { id: string } | null, headChecks: { nodes: Array<{ commit: { statusCheckRollup: { contexts: { nodes: Array<
                   | { __typename: 'CheckRun', name: string, isRequired: boolean }
                   | { __typename: 'StatusContext', context: string, isRequired: boolean }
                  | null> | null } } | null } } | null> | null }, closingIssuesReferences: { nodes: Array<{ number: number, title: string, url: string, state: IssueState, repository: { nameWithOwner: string } } | null> | null } | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, viewerLatestReview: { state: PullRequestReviewState, submittedAt: string | null, commit: { oid: string } | null } | null, pendingReviews: { nodes: Array<{ id: string, commit: { oid: string } | null, comments: { nodes: Array<{ id: string, body: string, path: string, line: number | null, startLine: number | null, originalLine: number | null, diffHunk: string } | null> | null } } | null> | null } | null, reviewThreads: { nodes: Array<{ id: string, isResolved: boolean, isOutdated: boolean, path: string, line: number | null, startLine: number | null, originalLine: number | null, originalStartLine: number | null, diffSide: DiffSide, startDiffSide: DiffSide | null, subjectType: PullRequestReviewThreadSubjectType, viewerCanResolve: boolean, viewerCanUnresolve: boolean, viewerCanReply: boolean, resolvedBy: { login: string } | null, comments: { nodes: Array<{ id: string, body: string, bodyHTML: string, createdAt: string, lastEditedAt: string | null, diffHunk: string, state: PullRequestReviewCommentState, viewerCanUpdate: boolean, viewerCanDelete: boolean, viewerCanMinimize: boolean, isMinimized: boolean, minimizedReason: string | null, reactionGroups: Array<{ content: ReactionContent, viewerHasReacted: boolean, reactors: { totalCount: number } }> | null, author:
@@ -1363,6 +1372,21 @@ export type CommitOnBranchMutationVariables = Exact<{
 
 export type CommitOnBranchMutation = { createCommitOnBranch: { commit: { oid: string } | null } | null };
 
+export type UpdateSubscriptionMutationVariables = Exact<{
+  id: string | number;
+  state: SubscriptionState;
+}>;
+
+
+export type UpdateSubscriptionMutation = { updateSubscription: { subscribable:
+      | { viewerSubscription: SubscriptionState | null }
+      | { viewerSubscription: SubscriptionState | null }
+      | { viewerSubscription: SubscriptionState | null }
+      | { viewerSubscription: SubscriptionState | null }
+      | { viewerSubscription: SubscriptionState | null }
+      | { viewerSubscription: SubscriptionState | null }
+     | null } | null };
+
 export class TypedDocumentString<TResult, TVariables>
   extends String
   implements DocumentTypeDecoration<TResult, TVariables>
@@ -1661,6 +1685,7 @@ export const PrDetailDocument = new TypedDocumentString(`
       viewerCanUpdate
       viewerCanDeleteHeadRef
       viewerCanEditFiles
+      viewerSubscription
       isCrossRepository
       headRefName
       headRepository {
@@ -2742,3 +2767,12 @@ export const CommitOnBranchDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<CommitOnBranchMutation, CommitOnBranchMutationVariables>;
+export const UpdateSubscriptionDocument = new TypedDocumentString(`
+    mutation UpdateSubscription($id: ID!, $state: SubscriptionState!) {
+  updateSubscription(input: { subscribableId: $id, state: $state }) {
+    subscribable {
+      viewerSubscription
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<UpdateSubscriptionMutation, UpdateSubscriptionMutationVariables>;

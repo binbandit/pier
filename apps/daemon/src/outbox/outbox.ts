@@ -12,6 +12,7 @@ import type {
   OutboxState,
   PendingWrite,
   ReactionContent,
+  Subscription,
 } from "@pier/core/wire";
 
 // Every write to GitHub is a persisted command. Its lifecycle:
@@ -77,6 +78,7 @@ export type CommandPayload = {
   /** Whole new contents of the files suggestions change, the threads they came from, and the
    * repo the head branch lives in (a fork's, for a PR from one). */
   files?: { path: string; contents: string }[];
+  subscription?: Subscription;
   threadIds?: string[];
   headRepo?: string;
 };
@@ -336,26 +338,31 @@ export class Outbox {
   }
 
   log(limit = 100): LogEntry[] {
-    return this.db
-      .query<Row, [number]>("SELECT * FROM outbox ORDER BY created_at DESC LIMIT ?")
-      .all(limit)
-      .map((row) => ({
-        commandId: row.id,
-        kind: row.kind,
-        account: row.account,
-        target: { repo: row.repo, number: row.number, title: row.title },
-        state: row.state,
-        detail: row.detail,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
+    return (
+      this.db
+        // Marking notifications read happens on every PR you open; it's housekeeping, not news.
+        .query<Row, [number]>(
+          "SELECT * FROM outbox WHERE kind != 'notification-read' ORDER BY created_at DESC LIMIT ?",
+        )
+        .all(limit)
+        .map((row) => ({
+          commandId: row.id,
+          kind: row.kind,
+          account: row.account,
+          target: { repo: row.repo, number: row.number, title: row.title },
+          state: row.state,
+          detail: row.detail,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }))
+    );
   }
 
   /** How many writes are in each state; failures only count once they're newer than `seenAt`. */
   counts(seenAt: string) {
     const rows = this.db
       .query<{ state: OutboxState; n: number }, [string]>(
-        "SELECT state, count(*) AS n FROM outbox WHERE state != 'failed' OR updated_at > ? GROUP BY state",
+        "SELECT state, count(*) AS n FROM outbox WHERE kind != 'notification-read' AND (state != 'failed' OR updated_at > ?) GROUP BY state",
       )
       .all(seenAt);
     const by = Object.fromEntries(rows.map((r) => [r.state, r.n]));
@@ -660,6 +667,14 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
     case "viewed":
     case "unviewed":
       return port.setViewed(command.prId, payload.path ?? "", command.kind === "viewed");
+    case "notification-read":
+      return port.markNotificationRead(payload.threadId ?? "");
+    case "subscription":
+      return port.setSubscription(
+        command.prId,
+        payload.subscription ?? "UNSUBSCRIBED",
+        payload.threadId ?? null,
+      );
     case "notification-done":
       return port.markNotificationDone(payload.threadId ?? "");
     case "rerun-failed":

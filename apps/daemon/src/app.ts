@@ -59,6 +59,7 @@ export function createApp(options: AppOptions) {
     identity: { linked: true },
     sandbox: { writeOwners: null },
     logSeenAt: new Date(0).toISOString(),
+    views: [],
     ...options.defaults,
   });
   const model = new Model(stores.cache, (login) => {
@@ -179,10 +180,11 @@ export function createApp(options: AppOptions) {
     sync,
     planner,
     codeOwners: new CodeOwnersCache(ports),
+    linked: () => settings.get("identity").linked,
     git: () => options.git ?? null,
   });
 
-  const VIEW_TOPICS: Topic[] = ["inbox", "counts", "group", "flight", "status"];
+  const VIEW_TOPICS: Topic[] = ["inbox", "counts", "group", "flight", "status", "search", "views"];
   model.onChange((ids) => {
     events.emit([...VIEW_TOPICS, "pr"]);
     fetchHumanHeads(ids);
@@ -217,7 +219,9 @@ export function createApp(options: AppOptions) {
     // Read the PR again straight away: the sweep can't see most of what a write changes (your
     // review, labels, people), and waiting for the next sync leaves it looking untouched.
     const record = model.get(command.prId);
-    if (record && command.kind !== "notification-done") sync.markDirty(command.prId, record.reader);
+    const aboutNotifications =
+      command.kind === "notification-done" || command.kind === "notification-read";
+    if (record && !aboutNotifications) sync.markDirty(command.prId, record.reader);
     if (command.kind === "notification-done" && command.payload.threadId) {
       sync.forgetThread(command.account, command.payload.threadId);
     }

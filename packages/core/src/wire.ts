@@ -140,7 +140,9 @@ export type CommandKind =
   | "delete-branch"
   | "restore-branch"
   | "revert"
-  | "suggestions";
+  | "suggestions"
+  | "subscription"
+  | "notification-read";
 
 // ---------------------------------------------------------------------------
 // Inbox
@@ -169,6 +171,7 @@ export type PrItem = {
   number: number;
   title: string;
   url: string;
+  state: PrView["state"];
   author: Actor | null;
   additions: number;
   deletions: number;
@@ -182,6 +185,15 @@ export type PrItem = {
 };
 
 export type QueueItem = GroupItem | PrItem;
+
+/** What a search found: the first matches, how many there were, and what didn't parse. */
+export type SearchResult = { items: PrItem[]; total: number; errors: string[] };
+
+/** GitHub's own answer to a search: what it found, the query it was asked, what was left out. */
+export type RemoteSearch = { items: PrItem[]; query: string; dropped: string[] };
+
+/** A saved search, with how many PRs it finds now. */
+export type SavedView = { id: string; name: string; query: string; count: number };
 
 export type SplitCounts = Record<Split, number>;
 
@@ -493,6 +505,8 @@ export type PrView = {
   codeOwners: CodeOwners | null;
   /** You can push to the head branch, so review suggestions can be committed to it. */
   canApplySuggestions: boolean;
+  /** Whether GitHub notifies you about everything here, only when you're involved, or never. */
+  subscription: Subscription | null;
   /** The head branch: whether it's still there, and what you can do about it. */
   headBranch: { exists: boolean; canDelete: boolean; canRestore: boolean };
   account: string;
@@ -525,6 +539,9 @@ export type DiffRange = DiffView["range"];
 
 /** The base branch's CODEOWNERS, and the owner names that mean you (`@login`, `@org/team`). */
 export type CodeOwners = { rules: CodeOwnerRule[]; you: string[] };
+
+/** GitHub's notification settings for one PR: all activity, only when involved, or muted. */
+export type Subscription = "SUBSCRIBED" | "UNSUBSCRIBED" | "IGNORED";
 
 /** One commit on the PR, for picking which ones to look at. */
 export type CommitView = {

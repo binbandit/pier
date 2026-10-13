@@ -1,6 +1,7 @@
 import type {
   Actor,
   CommitView,
+  Subscription,
   LinkedIssue,
   LockReason,
   PendingReview,
@@ -34,6 +35,7 @@ export type PrDetail = {
   head: { repo: string | null; branch: string; canEditFiles: boolean };
   /** GitHub's numeric ids of the people commenting in threads, for Co-authored-by trailers. */
   userIds: Record<string, number>;
+  subscription: Subscription | null;
   viewerLatestReview: {
     state: string;
     commitOid: string | null;
@@ -241,6 +243,7 @@ export function toPrDetail(node: Node): PrDetail {
       canEditFiles: node.viewerCanEditFiles,
     },
     userIds,
+    subscription: node.viewerSubscription ?? null,
     requiredChecks: (
       node.headChecks.nodes?.[0]?.commit.statusCheckRollup?.contexts.nodes ?? []
     ).flatMap((ctx) => {

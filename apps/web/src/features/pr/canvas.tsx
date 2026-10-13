@@ -2,7 +2,16 @@ import type { SelectedLineRange } from "@pierre/diffs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { clsx } from "clsx";
-import { CircleDot, Lock, Milestone, ShieldCheck, UserRound, Users } from "lucide-react";
+import {
+  Bell,
+  BellOff,
+  CircleDot,
+  Lock,
+  Milestone,
+  ShieldCheck,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { errorText, markDone, openOnGitHub } from "@/features/actions";
@@ -27,6 +36,7 @@ import {
 } from "./file-filter";
 import { FileTree } from "./file-tree";
 import { type MetadataKind, MetadataPicker } from "./metadata";
+import { NotificationsPicker, useSubscription } from "./notifications";
 import { RevertPanel } from "./revert";
 import { type Anchors, type NewComment, ReviewFile, fromRange } from "./review-file";
 import { type ReviewEvent, ReviewPanel } from "./review-panel";
@@ -50,6 +60,7 @@ type Raised =
   | { kind: "revert" }
   | { kind: "commits" }
   | { kind: "filter" }
+  | { kind: "notifications" }
   | { kind: "suggestions"; initial: string[] };
 
 const PICKERS: { field: MetadataKind; key: string; title: string }[] = [
@@ -97,6 +108,7 @@ function Loaded({ pr }: { pr: PrView }) {
   const navigate = useNavigate();
   const router = useRouter();
   const toast = useUi((s) => s.toast);
+  const subscribe = useSubscription(pr);
   const streamRef = useRef<HTMLDivElement>(null);
 
   const reReview = pr.lastReviewedOid !== null && pr.lastReviewedOid !== pr.headRefOid;
@@ -457,6 +469,22 @@ function Loaded({ pr }: { pr: PrView }) {
       group: "Merge",
       run: () => setRaised({ kind: "runway" }),
     },
+    {
+      id: "pr.notifications",
+      title: "Notifications for this PR",
+      keys: ["s n"],
+      scope: "surface",
+      group: "Edit",
+      run: () => setRaised({ kind: "notifications" }),
+    },
+    {
+      id: "pr.mute",
+      title: pr.subscription === "SUBSCRIBED" ? "Stop watching this PR" : "Watch this PR",
+      keys: ["!"],
+      scope: "surface",
+      group: "Edit",
+      run: () => void subscribe(pr.subscription === "SUBSCRIBED" ? "UNSUBSCRIBED" : "SUBSCRIBED"),
+    },
     ...PICKERS.map(({ field, key, title }): Command => ({
       id: `pr.pick-${field}`,
       title,
@@ -651,6 +679,7 @@ function Loaded({ pr }: { pr: PrView }) {
       {raised?.kind === "suggestions" && (
         <SuggestionsPanel pr={pr} initial={raised.initial} onClose={lower} />
       )}
+      {raised?.kind === "notifications" && <NotificationsPicker pr={pr} onClose={lower} />}
       {raised?.kind === "filter" && (
         <FileFilterPicker
           files={listed}
@@ -724,6 +753,18 @@ function Header({ pr }: { pr: PrView }) {
           </span>
         ) : (
           pr.pending?.kind === "close" && <span className="text-warn">Closing</span>
+        )}
+        {pr.subscription === "IGNORED" && (
+          <span className="flex items-center gap-1.5 text-faint" title="Ignored on github.com">
+            <BellOff aria-hidden size={13} className="text-off" />
+            Muted
+          </span>
+        )}
+        {pr.subscription === "SUBSCRIBED" && (
+          <span className="flex items-center gap-1.5 text-faint" title="s n changes it">
+            <Bell aria-hidden size={13} className="text-off" />
+            Watching
+          </span>
         )}
         {pr.locked && (
           <span

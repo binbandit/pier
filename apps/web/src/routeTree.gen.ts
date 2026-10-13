@@ -12,8 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FlightRouteImport } from './routes/flight'
 import { Route as LogRouteImport } from './routes/log'
+import { Route as SearchRouteImport } from './routes/search'
 import { Route as DepsSplatRouteImport } from './routes/deps.$'
 import { Route as InboxSplitRouteImport } from './routes/inbox.$split'
+import { Route as VIdRouteImport } from './routes/v.$id'
+import { Route as OwnerRepoPullsRouteImport } from './routes/$owner.$repo.pulls'
 import { Route as OwnerRepoPullNumberRouteImport } from './routes/$owner.$repo.pull.$number'
 
 const IndexRoute = IndexRouteImport.update({
@@ -31,6 +34,11 @@ const LogRoute = LogRouteImport.update({
   path: '/log',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DepsSplatRoute = DepsSplatRouteImport.update({
   id: '/deps/$',
   path: '/deps/$',
@@ -39,6 +47,16 @@ const DepsSplatRoute = DepsSplatRouteImport.update({
 const InboxSplitRoute = InboxSplitRouteImport.update({
   id: '/inbox/$split',
   path: '/inbox/$split',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VIdRoute = VIdRouteImport.update({
+  id: '/v/$id',
+  path: '/v/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OwnerRepoPullsRoute = OwnerRepoPullsRouteImport.update({
+  id: '/$owner/$repo/pulls',
+  path: '/$owner/$repo/pulls',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OwnerRepoPullNumberRoute = OwnerRepoPullNumberRouteImport.update({
@@ -51,16 +69,22 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
+  '/search': typeof SearchRoute
   '/deps/$': typeof DepsSplatRoute
   '/inbox/$split': typeof InboxSplitRoute
+  '/v/$id': typeof VIdRoute
+  '/$owner/$repo/pulls': typeof OwnerRepoPullsRoute
   '/$owner/$repo/pull/$number': typeof OwnerRepoPullNumberRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
+  '/search': typeof SearchRoute
   '/deps/$': typeof DepsSplatRoute
   '/inbox/$split': typeof InboxSplitRoute
+  '/v/$id': typeof VIdRoute
+  '/$owner/$repo/pulls': typeof OwnerRepoPullsRoute
   '/$owner/$repo/pull/$number': typeof OwnerRepoPullNumberRoute
 }
 export interface FileRoutesById {
@@ -68,8 +92,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
+  '/search': typeof SearchRoute
   '/deps/$': typeof DepsSplatRoute
   '/inbox/$split': typeof InboxSplitRoute
+  '/v/$id': typeof VIdRoute
+  '/$owner/$repo/pulls': typeof OwnerRepoPullsRoute
   '/$owner/$repo/pull/$number': typeof OwnerRepoPullNumberRoute
 }
 export interface FileRouteTypes {
@@ -78,24 +105,33 @@ export interface FileRouteTypes {
     | '/'
     | '/flight'
     | '/log'
+    | '/search'
     | '/deps/$'
     | '/inbox/$split'
+    | '/v/$id'
+    | '/$owner/$repo/pulls'
     | '/$owner/$repo/pull/$number'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/flight'
     | '/log'
+    | '/search'
     | '/deps/$'
     | '/inbox/$split'
+    | '/v/$id'
+    | '/$owner/$repo/pulls'
     | '/$owner/$repo/pull/$number'
   id:
     | '__root__'
     | '/'
     | '/flight'
     | '/log'
+    | '/search'
     | '/deps/$'
     | '/inbox/$split'
+    | '/v/$id'
+    | '/$owner/$repo/pulls'
     | '/$owner/$repo/pull/$number'
   fileRoutesById: FileRoutesById
 }
@@ -103,8 +139,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FlightRoute: typeof FlightRoute
   LogRoute: typeof LogRoute
+  SearchRoute: typeof SearchRoute
   DepsSplatRoute: typeof DepsSplatRoute
   InboxSplitRoute: typeof InboxSplitRoute
+  VIdRoute: typeof VIdRoute
+  OwnerRepoPullsRoute: typeof OwnerRepoPullsRoute
   OwnerRepoPullNumberRoute: typeof OwnerRepoPullNumberRoute
 }
 
@@ -131,6 +170,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/deps/$': {
       id: '/deps/$'
       path: '/deps/$'
@@ -143,6 +189,20 @@ declare module '@tanstack/react-router' {
       path: '/inbox/$split'
       fullPath: '/inbox/$split'
       preLoaderRoute: typeof InboxSplitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/v/$id': {
+      id: '/v/$id'
+      path: '/v/$id'
+      fullPath: '/v/$id'
+      preLoaderRoute: typeof VIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$owner/$repo/pulls': {
+      id: '/$owner/$repo/pulls'
+      path: '/$owner/$repo/pulls'
+      fullPath: '/$owner/$repo/pulls'
+      preLoaderRoute: typeof OwnerRepoPullsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$owner/$repo/pull/$number': {
@@ -159,8 +219,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FlightRoute: FlightRoute,
   LogRoute: LogRoute,
+  SearchRoute: SearchRoute,
   DepsSplatRoute: DepsSplatRoute,
   InboxSplitRoute: InboxSplitRoute,
+  VIdRoute: VIdRoute,
+  OwnerRepoPullsRoute: OwnerRepoPullsRoute,
   OwnerRepoPullNumberRoute: OwnerRepoPullNumberRoute,
 }
 export const routeTree = rootRouteImport

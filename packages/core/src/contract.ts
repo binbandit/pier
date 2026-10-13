@@ -18,7 +18,10 @@ import type {
   QueueItem,
   Revision,
   SuggestedReviewer,
+  RemoteSearch,
   Runway,
+  SavedView,
+  SearchResult,
   SplitCounts,
 } from "./wire";
 
@@ -142,6 +145,17 @@ export const inputs = {
   milestones: type({ repo: "string" }),
   flight: type({}),
   log: type({ "limit?": "1 <= number.integer <= 500" }),
+  search: type({ q: "string", "limit?": "0 <= number.integer <= 1000" }),
+  /** The same search, asked of GitHub (for PRs pier doesn't track). */
+  searchGitHub: type({ q: "string > 0" }),
+  views: type({}),
+  /** Saves a search as a view; an `id` updates that view. */
+  saveView: type({ "id?": "string", name: "string > 0", query: "string" }),
+  deleteView: type({ id: "string" }),
+  setSubscription: type({
+    prId: "string",
+    subscription: "'SUBSCRIBED' | 'UNSUBSCRIBED' | 'IGNORED'",
+  }),
   /** Commits the suggestions in these review comments to the PR's branch, in one commit. */
   applySuggestions: type({
     prId: "string",
@@ -214,6 +228,12 @@ export type Outputs = {
   log: LogEntry[];
   seenLog: { ok: true };
   applySuggestions: { commandIds: string[] };
+  search: SearchResult;
+  views: SavedView[];
+  searchGitHub: RemoteSearch;
+  saveView: { id: string };
+  deleteView: { ok: true };
+  setSubscription: { commandIds: string[] };
   planAction: PlanPreview;
   commitPlan: { commandIds: string[] };
   cancelCommands: { cancelled: number };

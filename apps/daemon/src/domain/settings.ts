@@ -49,6 +49,8 @@ export const settingSchemas = {
   sandbox,
   /** When the Log was last looked at; failed writes after it are the ones still to see. */
   logSeenAt: type("string"),
+  /** Saved searches, shown in the sidebar under the splits. */
+  views: type({ id: "string", name: "string", query: "string" }).array(),
 } as const;
 
 export type Scope = typeof scope.infer;

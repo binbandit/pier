@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { create } from "zustand";
 
 // Every action in pier is a command. The same registry drives keyboard shortcuts, chords with
@@ -50,10 +50,13 @@ export const useKeys = create<KeyState>((set, get) => ({
   setPending: (pending) => set({ pending }),
 }));
 
-/** Registers commands for as long as the calling component is mounted. */
+/**
+ * Registers commands for as long as the calling component is mounted. Layout effects run before
+ * the browser paints, so whatever is on screen already answers its keys.
+ */
 export function useCommands(commands: Command[]): void {
   const register = useKeys((s) => s.register);
-  useEffect(() => register(commands), [register, commands]);
+  useLayoutEffect(() => register(commands), [register, commands]);
 }
 
 const SCOPE_RANK: Record<Scope, number> = { panel: 2, surface: 1, global: 0 };
@@ -126,7 +129,7 @@ const CHORD_TIMEOUT_MS = 1500;
 
 /** The single window keydown listener. Mounted once at the root. */
 export function useKeyDispatcher(): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const clearPending = () => {
       if (timer) clearTimeout(timer);

@@ -341,6 +341,25 @@ export class SyncEngine {
       .map((row) => ({ account: row.account, threadId: row.thread_id }));
   }
 
+  /** This PR's unread notification threads (one account's, or any), now counted as read. */
+  takeUnread(
+    repo: string,
+    number: number,
+    account: string | null,
+  ): { account: string; threadId: string }[] {
+    const rows = this.cache
+      .query<{ account: string; thread_id: string }, [string, number]>(
+        "SELECT account, thread_id FROM notif_thread WHERE repo = ? AND number = ? AND unread = 1",
+      )
+      .all(repo, number)
+      .filter((row) => account === null || row.account === account);
+    const read = this.cache.query(
+      "UPDATE notif_thread SET unread = 0 WHERE account = ? AND thread_id = ?",
+    );
+    for (const row of rows) read.run(row.account, row.thread_id);
+    return rows.map((row) => ({ account: row.account, threadId: row.thread_id }));
+  }
+
   /** Forgets a thread once it's been marked done on GitHub. */
   forgetThread(account: string, threadId: string): void {
     this.cache

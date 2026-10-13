@@ -6,6 +6,7 @@ import type {
   CheckRunView,
   ChecksView,
   CommentSubject,
+  DeploymentView,
   DiffFile,
   Label,
   LockReason,
@@ -14,8 +15,8 @@ import type {
   MinimizeReason,
   Person,
   ReactionContent,
-  DeploymentView,
   Revision,
+  Subscription,
   SuggestedReviewer,
   WorkflowRunView,
 } from "@pier/core/wire";
@@ -71,6 +72,7 @@ import {
   UpdateReviewCommentMutation,
   UpdateReviewMutation,
   ViewerQuery,
+  UpdateSubscriptionMutation,
 } from "./ops";
 import type {
   BranchHead,
@@ -132,6 +134,10 @@ export class LiveGitHub implements GitHubPort {
     if (first.total <= SEARCH_CAP) return this.collect(query, first);
     // Past the cap, halve the creation-date range until every slice fits.
     return this.searchByDate(query, new Date("2008-01-01"), new Date());
+  }
+
+  async searchFirst(query: string, limit: number): Promise<SearchHit[]> {
+    return (await this.searchPage(query, null)).hits.slice(0, limit);
   }
 
   async sweep(ids: string[]): Promise<ReturnType<typeof toVolatile>[]> {
@@ -211,6 +217,37 @@ export class LiveGitHub implements GitHubPort {
       next = nextLink(response.headers.get("link"));
     }
     return { changed: true, pollIntervalSec, threads };
+  }
+
+  async markNotificationRead(threadId: string): Promise<void> {
+    await this.client.rest({
+      method: "PATCH",
+      path: `/notifications/threads/${threadId}`,
+      priority: "interactive",
+    });
+  }
+
+  async setSubscription(prId: string, state: Subscription, threadId: string | null): Promise<void> {
+    // A PR GitHub has notified you about can be changed through that thread with the `repo`
+    // scope. Otherwise only GraphQL can do it, and that needs the `notifications` scope.
+    if (threadId) {
+      const path = `/notifications/threads/${threadId}/subscription`;
+      if (state === "UNSUBSCRIBED") await this.write("DELETE", path);
+      else await this.write("PUT", path, { ignored: state === "IGNORED" });
+      return;
+    }
+    try {
+      await this.client.graphql(UpdateSubscriptionMutation, { id: prId, state }, "interactive");
+    } catch (error) {
+      if (error instanceof GitHubError && error.message.includes("'notifications'")) {
+        throw new GitHubError(
+          `GitHub hasn't notified ${this.login} about this PR, and changing that needs the notifications scope: gh auth refresh -h github.com -u ${this.login} -s notifications`,
+          "forbidden",
+          error.status,
+        );
+      }
+      throw error;
+    }
   }
 
   async markNotificationDone(threadId: string): Promise<void> {
