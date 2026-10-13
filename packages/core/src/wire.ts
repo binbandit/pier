@@ -76,13 +76,8 @@ export type Actor = {
 export type Split = "review" | "deps" | "mine";
 
 export type OutboxState =
-  | "held"
-  | "queued"
-  | "claimed"
-  | "acked"
-  | "unknown"
-  | "failed"
-  | "cancelled";
+  /** Waiting for another PR in the same repo to merge first. */
+  "waiting" | "held" | "queued" | "claimed" | "acked" | "unknown" | "failed" | "cancelled";
 
 export type PendingWrite = {
   commandId: string;
@@ -428,6 +423,6 @@ export type AppStatus = {
     trackedPrs: number;
     message: string | null;
   };
-  outbox: { queued: number; held: number; failed: number; unknown: number };
+  outbox: { queued: number; held: number; waiting: number; failed: number; unknown: number };
   counts: SplitCounts;
 };

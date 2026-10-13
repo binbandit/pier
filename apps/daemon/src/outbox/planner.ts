@@ -61,7 +61,13 @@ export class Planner {
 
       if (action === "approve") {
         step.writes = ["approve"];
-        commands.push({ ...target(record), planId, kind: "approve", payload: {}, priority });
+        commands.push({
+          ...target(record),
+          planId,
+          kind: "approve",
+          payload: { bumpKeys: (record.bot?.bumps ?? []).map(bumpKey) },
+          priority,
+        });
         for (const bump of record.bot?.bumps ?? []) verdicts.set(bumpKey(bump), bump.semver);
       } else {
         step.writes = ["comment"];
@@ -77,11 +83,23 @@ export class Planner {
 
     // Approving one of several bumps in a repo makes Dependabot rebase the others, which dismisses
     // approvals where stale-review dismissal is on. Worth knowing before spending writes.
+    // Automation merges an approved bump straight away; approving a second bump in the same repo at
+    // the same moment makes its merge fail on the moved base. So within a repo, each approval waits
+    // for the one before it to merge.
     const perRepo = Map.groupBy(commands, (c) => c.repo);
-    const crowded = [...perRepo].filter(([, cs]) => cs.length > 1).map(([repo]) => repo);
-    if (action === "approve" && crowded.length > 0) {
+    let chained = 0;
+    if (action === "approve") {
+      for (const sameRepo of perRepo.values()) {
+        for (const [i, command] of sameRepo.entries()) {
+          if (i === 0) continue;
+          command.afterPr = sameRepo[i - 1]?.prId ?? null;
+          chained++;
+        }
+      }
+    }
+    if (chained > 0) {
       warnings.push(
-        `${crowded.length} repo${crowded.length === 1 ? " has" : "s have"} more than one PR in this plan; merging one may make the others rebase.`,
+        `${chained} ${chained === 1 ? "approval waits" : "approvals wait"} for an earlier PR in the same repo to merge first.`,
       );
     }
     if (groupKey) {
@@ -174,7 +192,7 @@ export class Planner {
     const review = record.viewers.get(record.reader)?.latestReview;
     if (review?.state === "APPROVED" && review.commitOid === doc.headRefOid)
       return "Already approved";
-    if (!options.ignoreQueued && this.deps.outbox.approvingPrIds().has(doc.id))
+    if (!options.ignoreQueued && this.deps.outbox.approving().has(doc.id, doc.headRefOid))
       return "Approval already queued";
     if (doc.reviewDecision === null && !this.deps.settings.get("policy").approveWhenNotRequired)
       return "No review required";

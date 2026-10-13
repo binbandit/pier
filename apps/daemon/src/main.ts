@@ -85,15 +85,17 @@ async function runServe(dev: boolean) {
   console.log(`  accounts: ${accounts.map((a) => a.login).join(", ")}`);
   console.log(`  data: ${paths.home}`);
 
-  const shutdown = () => {
+  const shutdown = (signal: string) => {
+    console.log(`stopping (${signal})`);
     app.stop();
     void server.stop();
     stores.cache.close();
     stores.state.close();
     process.exit(0);
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGHUP", () => shutdown("SIGHUP"));
 }
 
 /**

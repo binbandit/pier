@@ -78,6 +78,11 @@ export function StatusLine() {
           Sending {plural(sending, "write")}
         </span>
       )}
+      {(outbox?.waiting ?? 0) > 0 && (
+        <span className="text-auto">
+          {plural(outbox?.waiting ?? 0, "approval")} waiting their turn
+        </span>
+      )}
       {(outbox?.failed ?? 0) > 0 && (
         <Link to="/log" className="text-bad hover:underline">
           {plural(outbox?.failed ?? 0, "write")} failed

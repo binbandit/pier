@@ -6,6 +6,7 @@ import type { CommandKind, LogEntry, OutboxState, PendingWrite } from "@pier/cor
 
 // Every write to GitHub is a persisted command. Its lifecycle:
 //
+//   waiting ──(the PR before it in the same repo merged)──▶ queued
 //   held ──(undo window passes)──▶ queued ──▶ claimed ──▶ acked
 //     │                              │           │
 //     └──────── cancelled ◀──────────┘           ├──▶ failed   (GitHub said no)
@@ -23,6 +24,8 @@ export type CommandPayload = {
   draftIds?: string[];
   threadId?: string;
   path?: string;
+  /** The bumps an approval decided on, so a waiting one can check a rebase didn't change them. */
+  bumpKeys?: string[];
 };
 
 /** Kinds that create content on GitHub and so count against its 500-per-hour limit. */
@@ -48,6 +51,8 @@ export type Command = {
   state: OutboxState;
   /** 0 = something Brayden did to one PR, 1 = part of a bulk sweep. */
   priority: 0 | 1;
+  /** Held back until this PR (same repo) merges, so automation merges one at a time. */
+  afterPr: string | null;
   sendAt: string;
   claimedAt: string | null;
   attempts: number;
@@ -68,7 +73,7 @@ export type NewCommand = Pick<
   | "expectedHead"
   | "payload"
   | "priority"
->;
+> & { afterPr?: string | null };
 
 /** Pacing per account. GitHub allows 80 content-creating writes/min and 500/hr, shared with the web UI. */
 export const LIMITS = {
@@ -81,6 +86,15 @@ export const LIMITS = {
 export type Preflight = (
   command: Command,
 ) => { ok: true } | { ok: false; state: "failed" | "cancelled"; detail: string };
+
+/** What to do with a waiting command now: keep waiting, send it (maybe at a new head), or stop. */
+export type Release = (
+  command: Command,
+  predecessor: OutboxState | null,
+) =>
+  | { action: "wait" }
+  | { action: "queue"; expectedHead: string; detail: string | null }
+  | { action: "stop"; state: "failed" | "cancelled"; detail: string };
 
 type Row = {
   id: string;
@@ -95,6 +109,7 @@ type Row = {
   payload: string;
   state: OutboxState;
   priority: 0 | 1;
+  after_pr: string | null;
   send_at: string;
   claimed_at: string | null;
   attempts: number;
@@ -115,6 +130,7 @@ export class Outbox {
     private readonly db: Database,
     private readonly ports: () => Map<string, GitHubPort>,
     private readonly preflight: Preflight,
+    private readonly release: Release = () => ({ action: "wait" }),
   ) {}
 
   onChange(listener: (prIds: string[]) => void): () => void {
@@ -138,8 +154,8 @@ export class Outbox {
         this.db
           .query(
             `INSERT INTO outbox (id, plan_id, account, kind, pr_id, repo, number, title, expected_head, payload,
-               state, priority, send_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               state, priority, after_pr, send_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             id,
@@ -152,8 +168,9 @@ export class Outbox {
             command.title,
             command.expectedHead,
             JSON.stringify(command.payload),
-            holdMs > 0 ? "held" : "queued",
+            command.afterPr ? "waiting" : holdMs > 0 ? "held" : "queued",
             command.priority,
+            command.afterPr ?? null,
             new Date(now + holdMs).toISOString(),
             new Date(now).toISOString(),
             new Date(now).toISOString(),
@@ -172,7 +189,7 @@ export class Outbox {
         const row = this.db
           .query<{ pr_id: string }, [string, string]>(
             `UPDATE outbox SET state = 'cancelled', detail = 'Cancelled', updated_at = ?
-             WHERE id = ? AND state IN ('held', 'queued') RETURNING pr_id`,
+             WHERE id = ? AND state IN ('waiting', 'held', 'queued') RETURNING pr_id`,
           )
           .get(new Date().toISOString(), id);
         if (row) affected.push(row.pr_id);
@@ -187,7 +204,7 @@ export class Outbox {
     const row = this.db
       .query<Pick<Row, "id" | "kind" | "state" | "send_at">, [string]>(
         `SELECT id, kind, state, send_at FROM outbox
-         WHERE pr_id = ? AND state IN ('held', 'queued', 'claimed', 'unknown')
+         WHERE pr_id = ? AND state IN ('waiting', 'held', 'queued', 'claimed', 'unknown')
          ORDER BY created_at DESC LIMIT 1`,
       )
       .get(prId);
@@ -203,7 +220,7 @@ export class Outbox {
     return this.db
       .query<{ id: string; kind: CommandKind; state: OutboxState; payload: string }, [string]>(
         `SELECT id, kind, state, payload FROM outbox
-         WHERE pr_id = ? AND state IN ('held', 'queued', 'claimed', 'unknown') ORDER BY created_at`,
+         WHERE pr_id = ? AND state IN ('waiting', 'held', 'queued', 'claimed', 'unknown') ORDER BY created_at`,
       )
       .all(prId)
       .map((row) => ({
@@ -214,15 +231,22 @@ export class Outbox {
       }));
   }
 
-  /** PR ids with an approval that's queued, in flight, or just landed (until the next sync shows it). */
-  approvingPrIds(): Set<string> {
+  /**
+   * Approvals on their way, plus ones that just landed (until the next sync shows them). A landed
+   * approval only counts for the commit it approved: once the bot rebases, the PR needs one again.
+   */
+  approving(): { has(prId: string, headOid: string): boolean } {
     const rows = this.db
-      .query<{ pr_id: string }, [string]>(
-        `SELECT DISTINCT pr_id FROM outbox WHERE kind = 'approve'
-         AND (state IN ('held', 'queued', 'claimed', 'unknown') OR (state = 'acked' AND updated_at > ?))`,
+      .query<{ pr_id: string; state: OutboxState; expected_head: string }, [string]>(
+        `SELECT pr_id, state, expected_head FROM outbox WHERE kind = 'approve'
+         AND (state IN ('waiting', 'held', 'queued', 'claimed', 'unknown') OR (state = 'acked' AND updated_at > ?))`,
       )
       .all(new Date(Date.now() - 10 * 60_000).toISOString());
-    return new Set(rows.map((r) => r.pr_id));
+    const pending = new Set(rows.filter((r) => r.state !== "acked").map((r) => r.pr_id));
+    const landed = new Set(
+      rows.filter((r) => r.state === "acked").map((r) => `${r.pr_id}@${r.expected_head}`),
+    );
+    return { has: (prId, headOid) => pending.has(prId) || landed.has(`${prId}@${headOid}`) };
   }
 
   log(limit = 100): LogEntry[] {
@@ -251,6 +275,7 @@ export class Outbox {
     return {
       queued: (by.queued ?? 0) + (by.claimed ?? 0),
       held: by.held ?? 0,
+      waiting: by.waiting ?? 0,
       failed: by.failed ?? 0,
       unknown: by.unknown ?? 0,
     };
@@ -295,6 +320,7 @@ export class Outbox {
       )
       .all(nowIso, nowIso);
     if (released.length > 0) this.changed(released.map((r) => r.pr_id));
+    this.releaseWaiting();
 
     for (const [account, port] of this.ports()) {
       if (this.busy.has(account)) continue;
@@ -308,6 +334,33 @@ export class Outbox {
       if (command && this.allowed(account, command.priority)) {
         void this.run(account, () => this.dispatch(port, command));
       }
+    }
+  }
+
+  /** Lets waiting approvals go once the PR ahead of them in the same repo has merged. */
+  private releaseWaiting(): void {
+    const waiting = this.db.query<Row, []>("SELECT * FROM outbox WHERE state = 'waiting'").all();
+    for (const row of waiting) {
+      const command = fromRow(row);
+      const before = command.afterPr
+        ? this.db
+            .query<{ state: OutboxState }, [string]>(
+              "SELECT state FROM outbox WHERE pr_id = ? ORDER BY created_at DESC LIMIT 1",
+            )
+            .get(command.afterPr)
+        : null;
+      const decision = this.release(command, before?.state ?? null);
+      if (decision.action === "wait") continue;
+      if (decision.action === "stop") {
+        this.update(command, decision.state, decision.detail);
+        continue;
+      }
+      this.db
+        .query(
+          "UPDATE outbox SET state = 'queued', expected_head = ?, detail = ?, updated_at = ? WHERE id = ?",
+        )
+        .run(decision.expectedHead, decision.detail, new Date().toISOString(), command.id);
+      this.changed([command.prId]);
     }
   }
 
@@ -509,6 +562,7 @@ function fromRow(row: Row): Command {
     payload: JSON.parse(row.payload) as CommandPayload,
     state: row.state,
     priority: row.priority,
+    afterPr: row.after_pr,
     sendAt: row.send_at,
     claimedAt: row.claimed_at,
     attempts: row.attempts,

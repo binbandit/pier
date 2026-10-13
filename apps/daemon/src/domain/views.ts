@@ -164,7 +164,7 @@ export class Views {
     // Linked accounts are all you; in sandbox mode they're separate people reviewing each other.
     const linked = settings.get("identity").linked;
     const all = new Set(this.ctx.accounts());
-    const approving = outbox.approvingPrIds();
+    const approving = outbox.approving();
     const t = now();
 
     const bots = new Map<string, BotEval>();
@@ -195,7 +195,7 @@ export class Views {
           gates,
           placement: place(doc, gates, policy, t),
           approvedAtHead: approvedAtHead(record),
-          approving: approving.has(doc.id),
+          approving: approving.has(doc.id, doc.headRefOid),
         };
         bots.set(doc.id, evaluation);
         for (const bump of record.bot.bumps) {

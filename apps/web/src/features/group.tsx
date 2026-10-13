@@ -345,6 +345,7 @@ function RowState({ row }: { row: GroupRow }) {
   if (row.approvedByYou) return <span className="text-meta text-faint">Approved</span>;
   if (row.pending) {
     const text = {
+      waiting: "Waits for the PR before it",
       held: "Sending in a moment",
       queued: "Queued",
       claimed: "Sending",

@@ -9,6 +9,7 @@ import type { LogEntry, OutboxState } from "@pier/core/wire";
 // where it says what GitHub answered.
 
 const STATE: Record<OutboxState, { text: string; tone: Tone }> = {
+  waiting: { text: "Waiting its turn", tone: "auto" },
   held: { text: "Waiting to send", tone: "auto" },
   queued: { text: "Queued", tone: "auto" },
   claimed: { text: "Sending", tone: "auto" },

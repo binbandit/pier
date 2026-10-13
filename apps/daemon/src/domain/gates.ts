@@ -213,7 +213,12 @@ function transitiveGate({ bumps, files }: GateInput): GateResult {
   return result("transitive", "pass", "No new transitive packages");
 }
 
-function provenanceGate({ doc, bot, policy }: GateInput): GateResult {
+/** Every commit on the branch is the bot's (or a base-only merge). Also re-checked after a rebase. */
+export function provenanceGate({
+  doc,
+  bot,
+  policy,
+}: Pick<GateInput, "doc" | "bot" | "policy">): GateResult {
   if (doc.commitsTotal > doc.commits.length) {
     return result(
       "provenance",

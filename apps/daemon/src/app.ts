@@ -1,8 +1,10 @@
 import { type Account, OPTIONAL_SCOPES, REQUIRED_SCOPES, missingScopes } from "@/accounts/gh";
 import { VERSION } from "@/config";
+import { bumpKey } from "@/domain/bumps";
 import { DoneItems, Verdicts } from "@/domain/decisions";
 import { Details } from "@/domain/details";
 import { Drafts } from "@/domain/drafts";
+import { provenanceGate } from "@/domain/gates";
 import { Model } from "@/domain/model";
 import { type InterdiffSource, ReviewService } from "@/domain/review";
 import { SettingsStore, type Settings, defaultPolicy, defaultScopes } from "@/domain/settings";
@@ -10,7 +12,7 @@ import { Views } from "@/domain/views";
 import type { RateWindow } from "@/github/client";
 import type { GitHubPort } from "@/github/port";
 import { EventHub } from "@/http/events";
-import { Outbox, type Preflight } from "@/outbox/outbox";
+import { Outbox, type Preflight, type Release } from "@/outbox/outbox";
 import { Planner } from "@/outbox/planner";
 import { ReleaseRegistry } from "@/registry/release";
 import type { Stores } from "@/store/db";
@@ -90,7 +92,52 @@ export function createApp(options: AppOptions) {
     return skip ? { ok: false, state: "cancelled", detail: skip } : { ok: true };
   };
 
-  const outbox = new Outbox(stores.state, () => ports, preflight);
+  // A waiting approval goes once the PR ahead of it merged. If Dependabot rebased this one in the
+  // meantime, the earlier decision still holds as long as the bump and the commit authors didn't
+  // change; anything else needs your eyes again.
+  const WAIT_LIMIT_MS = 3 * 60 * 60_000;
+  const release: Release = (command, predecessor) => {
+    const record = model.get(command.prId);
+    if (!record) return { action: "stop", state: "failed", detail: "PR is no longer tracked" };
+    if (record.doc.state !== "OPEN") {
+      return {
+        action: "stop",
+        state: "cancelled",
+        detail: `PR was ${record.doc.state.toLowerCase()}`,
+      };
+    }
+    const ahead = command.afterPr ? model.get(command.afterPr) : undefined;
+    const aheadStuck = predecessor === "failed" || predecessor === "cancelled";
+    const waitingOn = ahead && ahead.doc.state === "OPEN" && !aheadStuck;
+    const notReady = record.doc.mergeable !== "mergeable";
+    if (waitingOn || notReady) {
+      sync.nudge([command.prId, ...(command.afterPr ? [command.afterPr] : [])], 2 * 60_000);
+      if (Date.now() - Date.parse(command.createdAt) < WAIT_LIMIT_MS) return { action: "wait" };
+      const who = ahead ? `#${ahead.doc.number}` : "the PR ahead of it";
+      return { action: "stop", state: "failed", detail: `Gave up waiting for ${who} to merge` };
+    }
+    if (record.doc.headRefOid === command.expectedHead) {
+      return { action: "queue", expectedHead: command.expectedHead, detail: null };
+    }
+    const bot = record.bot;
+    const sameBumps =
+      bot !== null &&
+      JSON.stringify(bot.bumps.map(bumpKey).toSorted()) ===
+        JSON.stringify([...(command.payload.bumpKeys ?? [])].toSorted());
+    const provenance = bot
+      ? provenanceGate({ doc: record.doc, bot: bot.bot, policy: settings.get("policy") })
+      : null;
+    if (sameBumps && provenance?.status === "pass") {
+      return {
+        action: "queue",
+        expectedHead: record.doc.headRefOid,
+        detail: "Approving the rebased commit",
+      };
+    }
+    return { action: "stop", state: "failed", detail: "It changed while waiting; review it again" };
+  };
+
+  const outbox = new Outbox(stores.state, () => ports, preflight, release);
   planner = new Planner({ model, outbox, verdicts, settings, accounts: logins });
   const drafts = new Drafts(stores.state);
   const details = new Details(stores.cache);
