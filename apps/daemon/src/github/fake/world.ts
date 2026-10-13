@@ -1,0 +1,1370 @@
+import { GitHubError } from "@/github/client";
+import type { DraftThreadInput, GitHubPort, ReviewEvent } from "@/github/port";
+import type { CheckContext, PrCommit, PrState } from "@/github/pr-doc";
+import type {
+  Actor,
+  Bump,
+  CheckState,
+  DiffFile,
+  Ecosystem,
+  Mergeable,
+  MergeMethod,
+  ReviewDecision,
+  TimelineEntry,
+} from "@pier/core/wire";
+
+import { countPatch, diffHunkAt, unifiedDiff } from "./diff";
+import { Random } from "./random";
+
+// The whole fake GitHub, in memory: users, orgs, repos, PRs and everything that happens to them.
+// Ports (one per account) read and write it under GitHub's rules; scenarios and tests drive it
+// directly through the helpers below. Time is the world's own clock, so the delays GitHub and
+// the bots add (auto-merge, CI, Dependabot rebases) can be skipped in tests with `advance()`.
+
+export type Permission = "ADMIN" | "MAINTAIN" | "WRITE" | "TRIAGE" | "READ";
+export type ReviewState = "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
+
+export type FakeUser = { login: string; databaseId: number; name: string; isBot: boolean };
+
+export type FakeRepo = {
+  id: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  isPrivate: boolean;
+  archived: boolean;
+  defaultBranch: string;
+  /** Tip of the default branch; moves whenever a PR merges. */
+  headOid: string;
+  collaborators: Map<string, Permission>;
+  /** Users subscribed to every PR in the repo. */
+  watchers: Set<string>;
+  requiredApprovals: number;
+  dismissStaleReviews: boolean;
+  /** Bot PRs open with auto-merge armed, and merge once approved. */
+  automergeOnApproval: boolean;
+  /** CI job names, used when a scenario gives checks as a single state. */
+  checkNames: string[];
+  /** Allowed merge methods; the first is the default. */
+  mergeMethods: MergeMethod[];
+  autoMergeAllowed: boolean;
+};
+
+export type RepoOptions = Partial<
+  Pick<
+    FakeRepo,
+    | "isPrivate"
+    | "archived"
+    | "defaultBranch"
+    | "requiredApprovals"
+    | "dismissStaleReviews"
+    | "automergeOnApproval"
+    | "checkNames"
+    | "mergeMethods"
+    | "autoMergeAllowed"
+  >
+> & { collaborators?: Record<string, Permission>; watchers?: string[] };
+
+export type FakeFile = {
+  path: string;
+  previousPath: string | null;
+  status: DiffFile["status"];
+  patch: string | null;
+  additions: number;
+  deletions: number;
+  /** Bumped by every push that touches the file; viewed marks from before it become DISMISSED. */
+  revision: number;
+};
+
+export type FakeReview = {
+  id: string;
+  author: string;
+  state: ReviewState;
+  commitOid: string;
+  body: string;
+  submittedAt: string | null;
+};
+
+export type FakeComment = { id: string; author: string; body: string; createdAt: string };
+
+export type FakeThread = {
+  id: string;
+  path: string;
+  side: "LEFT" | "RIGHT";
+  /** Null once a push changes the file and the thread is outdated. */
+  line: number | null;
+  startLine: number | null;
+  originalLine: number;
+  resolved: boolean;
+  resolvedBy: string | null;
+  diffHunk: string;
+  comments: (FakeComment & { reviewId: string; commitOid: string })[];
+};
+
+/** One Actions job reporting on a commit; like on GitHub, its check run id is the job id. */
+export type FakeCheckRun = CheckContext & {
+  id: number;
+  runId: number;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+export type FakeEvent = Extract<TimelineEntry, { kind: "force-push" | "event" }>;
+
+export type FakeNotification = {
+  threadId: string;
+  prId: string;
+  reason: string;
+  updatedAt: string;
+  unread: boolean;
+};
+
+export type FakePr = {
+  id: string;
+  number: number;
+  repo: FakeRepo;
+  title: string;
+  body: string;
+  author: string;
+  state: PrState;
+  isDraft: boolean;
+  createdAt: string;
+  updatedAt: string;
+  baseRefName: string;
+  headRefName: string;
+  baseRefOid: string;
+  /** Oldest first; the last one is the head. */
+  commits: PrCommit[];
+  files: FakeFile[];
+  mergeable: Mergeable;
+  labels: { name: string; color: string }[];
+  /** Check runs per commit; a commit with no entry has reported nothing. */
+  checks: Map<string, FakeCheckRun[]>;
+  reviews: FakeReview[];
+  threads: FakeThread[];
+  comments: FakeComment[];
+  events: FakeEvent[];
+  /** Requested reviewers: user logins, or "org/slug" for teams. */
+  requested: Set<string>;
+  /** login -> path -> the file revision they marked viewed. */
+  viewed: Map<string, Map<string, number>>;
+  mentions: Set<string>;
+  autoMerge: { enabledAt: string; method: MergeMethod } | null;
+  /** The merge base of every head this PR has had, so old heads resolve after a force-push. */
+  bases: Map<string, string>;
+  /** What a bot PR carries, as the scenario meant it; tests check parseBotPr against this. */
+  bumps: Bump[];
+};
+
+export type FakeRelease = { publishedAt: string; advisories: string[]; installScript: boolean };
+
+export type FakePackage = {
+  ecosystem: Ecosystem;
+  name: string;
+  sourceUrl: string;
+  releases: Map<string, FakeRelease>;
+};
+
+/** Contents and a patch diffed against the base, or a hand-written patch with no contents. */
+export type FileChange =
+  | { path: string; after: string | null; before?: string | null; previousPath?: string }
+  | { path: string; patch: string; status?: DiffFile["status"] };
+
+export type CommitInput = {
+  message: string;
+  /** Defaults to the PR author. */
+  author?: string;
+  /** Signed and verified; defaults to true for bots and unsigned (null) for people. */
+  signed?: boolean | null;
+  at?: number;
+};
+
+/** A rollup state (expanded over the repo's check names) or explicit contexts. */
+export type ChecksInput = CheckState | CheckContext[];
+
+export type OpenPrInput = {
+  repo: string;
+  author: string;
+  title: string;
+  body?: string;
+  headRefName: string;
+  baseRefName?: string;
+  files: FileChange[];
+  /** Oldest first. Defaults to one commit by the author, titled after the PR. */
+  commits?: CommitInput[];
+  isDraft?: boolean;
+  labels?: { name: string; color: string }[];
+  checks?: ChecksInput;
+  reviewers?: string[];
+  createdAt?: number;
+  mergeable?: Mergeable;
+  bumps?: Bump[];
+};
+
+export type ReviewInput = {
+  event: ReviewEvent | "PENDING";
+  body?: string;
+  /** Defaults to the current head. */
+  commitOid?: string;
+  threads?: DraftThreadInput[];
+};
+
+export type FaultKind = "secondary-limit" | "server" | "network" | "drop-response" | "conflict";
+export type FaultMethod = Exclude<keyof GitHubPort, "login" | "rates">;
+
+/**
+ * One injected failure, consumed in queue order by the first matching call. "drop-response"
+ * applies a write and then fails as if the connection dropped before the answer arrived.
+ */
+export type Fault = {
+  account?: string;
+  method: FaultMethod;
+  kind: FaultKind;
+  times?: number;
+  retryAfterMs?: number;
+};
+
+export type WorldOptions = {
+  seed?: number;
+  /** "real" follows the wall clock (plus any `advance`), "manual" only moves on `advance`. */
+  clock?: "real" | "manual";
+  /** Where a manual clock starts. */
+  start?: number;
+  automergeDelayMs?: number;
+  /** How long the async merge API takes to merge an accepted request. */
+  mergeDelayMs?: number;
+  /** How long Dependabot takes to act on a command or rebase after a sibling merges. */
+  botDelayMs?: number;
+  ciDurationMs?: number;
+  /** Added to every port call, so loading states show up in the UI. */
+  latencyMs?: number;
+  /** Requests per resource per rolling hour before GitHub refuses. */
+  rateLimit?: number;
+  /** How failed jobs end up after "re-run failed jobs". */
+  rerunOutcome?: "success" | "failure";
+};
+
+const BOT_APPS = ["dependabot", "renovate", "github-actions"];
+const BOT_USER_IDS: Record<string, number> = {
+  dependabot: 49699333,
+  renovate: 29139614,
+  "github-actions": 41898282,
+};
+
+export class FakeWorld {
+  readonly random: Random;
+  readonly options: Required<Omit<WorldOptions, "seed" | "clock" | "start">>;
+  /** Logins that have a gh token, in gh's order. */
+  accounts: string[] = [];
+  readonly users = new Map<string, FakeUser>();
+  /** org -> members */
+  readonly orgs = new Map<string, Set<string>>();
+  /** "org/slug" -> members */
+  readonly teams = new Map<string, Set<string>>();
+  readonly repos = new Map<string, FakeRepo>();
+  readonly prs = new Map<string, FakePr>();
+  readonly packages = new Map<string, FakePackage>();
+  faults: Fault[] = [];
+  /** Requests accepted by the async merge API, by uuid. */
+  readonly mergeRequests = new Map<
+    string,
+    { prId: string; status: "pending" | "merged" | "failed"; message: string }
+  >();
+  /** Every "re-run failed jobs" request, for tests to assert on. */
+  readonly reruns: { repo: string; runId: number; by: string; at: string }[] = [];
+
+  private readonly byNumber = new Map<string, FakePr>();
+  private readonly threadPrs = new Map<string, FakePr>();
+  private readonly nextNumber = new Map<string, number>();
+  /** `${repo}@${oid}` -> path -> contents, for the files scenarios gave contents for. */
+  private readonly trees = new Map<string, Map<string, string>>();
+  private readonly notes = new Map<string, Map<string, FakeNotification>>();
+  private readonly noteIds = new Map<string, string>();
+  private readonly noteVersions = new Map<string, number>();
+  private timers: { at: number; seq: number; run: () => void }[] = [];
+  private timerSeq = 0;
+  private readonly clock: "real" | "manual";
+  private readonly start: number;
+  private skew = 0;
+  /** While a scheduled event runs, the clock reads its due time. */
+  private frozen: number | null = null;
+  private nextDatabaseId = 1_000_000;
+  private nextNoteId = 13_000_000_000;
+  private nextRunId = 18_200_000_000;
+  private nextJobId = 51_700_000_000;
+
+  constructor(options: WorldOptions = {}) {
+    this.random = new Random(options.seed ?? 1);
+    this.clock = options.clock ?? "real";
+    this.start = options.start ?? Date.now();
+    this.options = {
+      automergeDelayMs: options.automergeDelayMs ?? 30_000,
+      mergeDelayMs: options.mergeDelayMs ?? 3_000,
+      botDelayMs: options.botDelayMs ?? 45_000,
+      ciDurationMs: options.ciDurationMs ?? 3 * 60_000,
+      latencyMs: options.latencyMs ?? 0,
+      rateLimit: options.rateLimit ?? 5_000,
+      rerunOutcome: options.rerunOutcome ?? "success",
+    };
+    for (const bot of BOT_APPS) this.addUser(bot, { isBot: true });
+  }
+
+  // -------------------------------------------------------------------------
+  // Clock
+
+  now(): number {
+    return this.frozen ?? (this.clock === "real" ? Date.now() : this.start) + this.skew;
+  }
+
+  /** GitHub's timestamp format: UTC, whole seconds. */
+  iso(ms = this.now()): string {
+    return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+  }
+
+  advance(ms: number): void {
+    this.skew += ms;
+    this.tick();
+  }
+
+  /** Runs `fn` as if it happened at `ms`, for building history in the past. */
+  at<T>(ms: number, fn: () => T): T {
+    const previous = this.frozen;
+    this.frozen = ms;
+    try {
+      return fn();
+    } finally {
+      this.frozen = previous;
+    }
+  }
+
+  schedule(delayMs: number, run: () => void): void {
+    this.timers.push({ at: this.now() + delayMs, seq: this.timerSeq++, run });
+  }
+
+  /** Runs everything that has come due, in order, each at its own time. */
+  tick(): void {
+    for (;;) {
+      const now = this.now();
+      const due = this.timers
+        .filter((t) => t.at <= now)
+        .toSorted((a, b) => a.at - b.at || a.seq - b.seq)[0];
+      if (!due) return;
+      this.timers = this.timers.filter((t) => t !== due);
+      this.frozen = due.at;
+      try {
+        due.run();
+      } finally {
+        this.frozen = null;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Ids
+
+  nodeId(prefix: string, length = 16): string {
+    return `${prefix}_kwDO${this.random.idChars(length)}`;
+  }
+
+  oid(): string {
+    return this.random.hex(40);
+  }
+
+  // -------------------------------------------------------------------------
+  // People and repos
+
+  addUser(login: string, options: { name?: string; isBot?: boolean } = {}): FakeUser {
+    const existing = this.users.get(login);
+    if (existing) return existing;
+    const user = {
+      login,
+      databaseId: BOT_USER_IDS[login] ?? this.nextDatabaseId++,
+      name: options.name ?? login,
+      isBot: options.isBot ?? false,
+    };
+    this.users.set(login, user);
+    return user;
+  }
+
+  addOrg(org: string, members: string[]): void {
+    this.orgs.set(org, new Set([...(this.orgs.get(org) ?? []), ...members]));
+  }
+
+  addTeam(org: string, slug: string, members: string[]): void {
+    this.teams.set(`${org}/${slug}`, new Set(members));
+  }
+
+  addRepo(fullName: string, options: RepoOptions = {}): FakeRepo {
+    const [owner = "", name = ""] = fullName.split("/");
+    const repo: FakeRepo = {
+      id: `R_kgDO${this.random.idChars(8)}`,
+      owner,
+      name,
+      fullName,
+      isPrivate: options.isPrivate ?? false,
+      archived: options.archived ?? false,
+      defaultBranch: options.defaultBranch ?? "main",
+      headOid: this.oid(),
+      collaborators: new Map(Object.entries(options.collaborators ?? {})),
+      watchers: new Set(options.watchers ?? []),
+      requiredApprovals: options.requiredApprovals ?? 1,
+      dismissStaleReviews: options.dismissStaleReviews ?? false,
+      automergeOnApproval: options.automergeOnApproval ?? false,
+      checkNames: options.checkNames ?? ["build", "test", "lint"],
+      mergeMethods: options.mergeMethods ?? ["MERGE", "SQUASH", "REBASE"],
+      autoMergeAllowed: options.autoMergeAllowed ?? true,
+    };
+    this.repos.set(fullName, repo);
+    return repo;
+  }
+
+  addRelease(
+    ecosystem: Ecosystem,
+    name: string,
+    version: string,
+    release: FakeRelease,
+    sourceUrl = "",
+  ): void {
+    const key = `${ecosystem}:${name}`;
+    const pkg = this.packages.get(key) ?? { ecosystem, name, sourceUrl, releases: new Map() };
+    pkg.releases.set(version, release);
+    this.packages.set(key, pkg);
+  }
+
+  release(ecosystem: Ecosystem, name: string, version: string): FakeRelease | null {
+    return this.packages.get(`${ecosystem}:${name}`)?.releases.get(version) ?? null;
+  }
+
+  /** Drawn here (a letter on a tint) so a fake run never fetches a real person's picture. */
+  avatarUrl(login: string): string {
+    let hue = 0;
+    for (let i = 0; i < login.length; i++) hue = (hue + login.charCodeAt(i)) % 360;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="hsl(${hue} 30% 32%)"/><text x="32" y="42" font-family="sans-serif" font-size="30" fill="#e6e6e6" text-anchor="middle">${login.charAt(0).toUpperCase()}</text></svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
+
+  actor(login: string): Actor {
+    return {
+      login,
+      avatarUrl: this.avatarUrl(login),
+      isBot: this.users.get(login)?.isBot ?? false,
+    };
+  }
+
+  permission(repo: FakeRepo, login: string): Permission | null {
+    if (repo.owner === login) return "ADMIN";
+    const explicit = repo.collaborators.get(login);
+    if (explicit) return explicit;
+    if (this.orgs.get(repo.owner)?.has(login)) return "WRITE";
+    return repo.isPrivate ? null : "READ";
+  }
+
+  canWrite(repo: FakeRepo, login: string): boolean {
+    const permission = this.permission(repo, login);
+    return permission === "ADMIN" || permission === "MAINTAIN" || permission === "WRITE";
+  }
+
+  // -------------------------------------------------------------------------
+  // Lookups
+
+  pr(id: string): FakePr | undefined {
+    return this.prs.get(id);
+  }
+
+  prByNumber(repo: string, number: number): FakePr | undefined {
+    return this.byNumber.get(`${repo}#${number}`);
+  }
+
+  threadById(id: string): { pr: FakePr; thread: FakeThread } | undefined {
+    const pr = this.threadPrs.get(id);
+    const thread = pr?.threads.find((t) => t.id === id);
+    return pr && thread ? { pr, thread } : undefined;
+  }
+
+  head(pr: FakePr): string {
+    return pr.commits.at(-1)?.oid ?? pr.baseRefOid;
+  }
+
+  fileText(repo: string, oid: string, path: string): string | null {
+    return this.trees.get(`${repo}@${oid}`)?.get(path) ?? null;
+  }
+
+  /** The base a head was cut from, for any head a PR in this repo has ever had. */
+  mergeBase(repo: string, head: string): string | null {
+    if (this.repos.get(repo)?.headOid === head) return head;
+    for (const pr of this.prs.values()) {
+      if (pr.repo.fullName !== repo) continue;
+      const base = pr.bases.get(head);
+      if (base) return base;
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Derived PR state (what GitHub computes)
+
+  rollup(pr: FakePr, oid = this.head(pr)): CheckState {
+    const contexts = pr.checks.get(oid);
+    if (!contexts || contexts.length === 0) return "none";
+    if (contexts.some((c) => c.state === "failure")) return "failure";
+    if (contexts.some((c) => c.state === "pending")) return "pending";
+    return "success";
+  }
+
+  /** Each reviewer's latest approval or change request; comments don't change an opinion. */
+  latestOpinions(pr: FakePr): FakeReview[] {
+    const latest = new Map<string, FakeReview>();
+    for (const review of pr.reviews) {
+      if (review.state === "APPROVED" || review.state === "CHANGES_REQUESTED")
+        latest.set(review.author, review);
+      else if (review.state === "DISMISSED" && latest.get(review.author)?.id === review.id)
+        latest.delete(review.author);
+    }
+    return [...latest.values()];
+  }
+
+  reviewDecision(pr: FakePr): ReviewDecision {
+    if (pr.repo.requiredApprovals === 0) return null;
+    const opinions = this.latestOpinions(pr);
+    if (opinions.some((r) => r.state === "CHANGES_REQUESTED")) return "changes_requested";
+    const approvals = opinions.filter((r) => r.state === "APPROVED").length;
+    return approvals >= pr.repo.requiredApprovals ? "approved" : "review_required";
+  }
+
+  mergeStateStatus(pr: FakePr): string {
+    if (pr.state !== "OPEN") return "UNKNOWN";
+    if (pr.mergeable === "conflicting") return "DIRTY";
+    if (pr.mergeable === "unknown") return "UNKNOWN";
+    if (pr.isDraft) return "DRAFT";
+    const decision = this.reviewDecision(pr);
+    const rollup = this.rollup(pr);
+    if (decision === "review_required" || decision === "changes_requested") return "BLOCKED";
+    if (rollup === "pending") return "BLOCKED";
+    if (rollup === "failure") return "UNSTABLE";
+    return "CLEAN";
+  }
+
+  involves(pr: FakePr, login: string): boolean {
+    return (
+      pr.author === login ||
+      pr.mentions.has(login) ||
+      pr.comments.some((c) => c.author === login) ||
+      pr.reviews.some((r) => r.author === login && r.state !== "PENDING") ||
+      pr.threads.some((t) => t.comments.some((c) => c.author === login))
+    );
+  }
+
+  reviewRequested(pr: FakePr, login: string): boolean {
+    return [...pr.requested].some(
+      (who) => who === login || (this.teams.get(who)?.has(login) ?? false),
+    );
+  }
+
+  reviewedBy(pr: FakePr, login: string): boolean {
+    return pr.reviews.some((r) => r.author === login && r.state !== "PENDING");
+  }
+
+  // -------------------------------------------------------------------------
+  // Scenario helpers: things people and bots do
+
+  openPr(input: OpenPrInput): FakePr {
+    const repo = this.repos.get(input.repo);
+    if (!repo) throw new Error(`no repo ${input.repo}`);
+    this.addUser(input.author);
+    const at = input.createdAt ?? this.now();
+    const number = this.nextNumber.get(repo.fullName) ?? 1;
+    this.nextNumber.set(repo.fullName, number + 1);
+    const pr: FakePr = {
+      id: this.nodeId("PR"),
+      number,
+      repo,
+      title: input.title,
+      body: input.body ?? "",
+      author: input.author,
+      state: "OPEN",
+      isDraft: input.isDraft ?? false,
+      createdAt: this.iso(at),
+      updatedAt: this.iso(at),
+      baseRefName: input.baseRefName ?? repo.defaultBranch,
+      headRefName: input.headRefName,
+      baseRefOid: repo.headOid,
+      commits: [],
+      files: [],
+      mergeable: input.mergeable ?? "mergeable",
+      labels: input.labels ?? [],
+      checks: new Map(),
+      reviews: [],
+      threads: [],
+      comments: [],
+      events: [],
+      requested: new Set(),
+      viewed: new Map(),
+      mentions: new Set(),
+      autoMerge: null,
+      bases: new Map(),
+      bumps: input.bumps ?? [],
+    };
+    this.prs.set(pr.id, pr);
+    this.byNumber.set(`${repo.fullName}#${number}`, pr);
+
+    const baseTree = this.tree(repo.fullName, pr.baseRefOid);
+    for (const change of input.files) {
+      if ("after" in change && change.before !== undefined && change.before !== null)
+        baseTree.set(change.previousPath ?? change.path, change.before);
+    }
+    const commits = input.commits ?? [{ message: input.title }];
+    for (const [i, commit] of commits.entries()) {
+      this.addCommit(pr, commit, at, i === commits.length - 1 ? input.files : []);
+    }
+    if (input.checks !== undefined) this.setChecks(pr.id, input.checks);
+    if (this.users.get(pr.author)?.isBot && repo.automergeOnApproval)
+      pr.autoMerge = { enabledAt: pr.createdAt, method: "SQUASH" };
+    this.touched(pr, pr.author, [pr.body]);
+    pr.updatedAt = pr.createdAt;
+    for (const reviewer of input.reviewers ?? []) this.requestReview(pr.id, reviewer, pr.author);
+    return pr;
+  }
+
+  /** A new commit on top of the head. Returns its oid. */
+  pushCommit(
+    prId: string,
+    input: CommitInput & { files?: FileChange[]; checks?: ChecksInput },
+  ): string {
+    const pr = this.mustPr(prId);
+    const oid = this.addCommit(pr, input, this.now(), input.files ?? []);
+    this.afterPush(pr, input.checks);
+    return oid;
+  }
+
+  /** Rewrites the head commit (amend and force-push). Returns the new head. */
+  forcePush(
+    prId: string,
+    input: Partial<CommitInput> & { actor?: string; files?: FileChange[]; checks?: ChecksInput },
+  ): string {
+    const pr = this.mustPr(prId);
+    const before = this.head(pr);
+    const replaced = pr.commits.pop();
+    const oid = this.addCommit(
+      pr,
+      { ...input, message: input.message ?? replaced?.message ?? pr.title },
+      this.now(),
+      input.files ?? [],
+    );
+    pr.events.push({
+      kind: "force-push",
+      before,
+      after: oid,
+      actor: input.actor ?? input.author ?? pr.author,
+      at: this.iso(),
+    });
+    this.afterPush(pr, input.checks);
+    return oid;
+  }
+
+  /** Reports checks on a commit (the head by default) as one workflow run. */
+  setChecks(prId: string, checks: ChecksInput, oid?: string): void {
+    const pr = this.mustPr(prId);
+    const target = oid ?? this.head(pr);
+    if (checks === "none") {
+      pr.checks.delete(target);
+      return;
+    }
+    const contexts = typeof checks === "string" ? outcomes(pr.repo.checkNames, checks) : checks;
+    const runId = this.nextRunId++;
+    const now = this.now();
+    pr.checks.set(
+      target,
+      contexts.map((context) => ({
+        ...context,
+        id: this.nextJobId++,
+        runId,
+        startedAt: this.iso(context.state === "pending" ? now : now - this.options.ciDurationMs),
+        completedAt: context.state === "pending" ? null : this.iso(now),
+      })),
+    );
+  }
+
+  /** Starts CI on the head: pending now, `outcome` once it finishes (unless the head moved). */
+  runChecks(prId: string, outcome: "success" | "failure", durationMs = this.options.ciDurationMs) {
+    const pr = this.mustPr(prId);
+    const oid = this.head(pr);
+    this.setChecks(
+      prId,
+      pr.repo.checkNames.map((name) => ({ name, state: "pending" })),
+    );
+    const runs = pr.checks.get(oid) ?? [];
+    const final = outcomes(
+      runs.map((r) => r.name),
+      outcome,
+    );
+    this.schedule(durationMs, () => {
+      if (this.head(pr) !== oid || pr.state !== "OPEN") return;
+      for (const [i, run] of runs.entries()) this.finish(run, final[i]?.state ?? outcome);
+    });
+  }
+
+  /** Check runs reported on a commit, whichever PR it is (or was) the head of. */
+  checksAt(repo: string, oid: string): FakeCheckRun[] {
+    for (const pr of this.prs.values()) {
+      const runs = pr.repo.fullName === repo ? pr.checks.get(oid) : undefined;
+      if (runs) return runs;
+    }
+    return [];
+  }
+
+  /** Finds the PR and commit a check run (by its job id, or its workflow run id) belongs to. */
+  checkRun(repo: string, match: (run: FakeCheckRun) => boolean) {
+    for (const pr of this.prs.values()) {
+      if (pr.repo.fullName !== repo) continue;
+      for (const [oid, runs] of pr.checks) {
+        const run = runs.find(match);
+        if (run) return { pr, oid, runs, run };
+      }
+    }
+    return null;
+  }
+
+  /** "Re-run failed jobs": the run's failures go pending, then finish as `rerunOutcome` says. */
+  rerunFailedJobs(repo: string, runId: number, by: string): void {
+    const found = this.checkRun(repo, (run) => run.runId === runId);
+    if (!found || this.permission(found.pr.repo, by) === null)
+      throw new GitHubError("404 Not Found", "not-found", 404);
+    if (!this.canWrite(found.pr.repo, by))
+      throw new GitHubError("403 Must have admin rights to Repository.", "forbidden", 403);
+    const failed = found.runs.filter((run) => run.runId === runId && run.state === "failure");
+    if (failed.length === 0)
+      throw new GitHubError("403 This workflow run cannot be retried", "forbidden", 403);
+    this.reruns.push({ repo, runId, by, at: this.iso() });
+    for (const run of failed) {
+      // A re-run is a new attempt: new jobs, same workflow run.
+      run.id = this.nextJobId++;
+      run.state = "pending";
+      run.startedAt = this.iso();
+      run.completedAt = null;
+    }
+    this.schedule(this.options.ciDurationMs, () => {
+      for (const run of failed)
+        if (run.state === "pending") this.finish(run, this.options.rerunOutcome);
+    });
+  }
+
+  merge(prId: string, actor: string): void {
+    const pr = this.mustPr(prId);
+    if (pr.state !== "OPEN") throw new Error(`${pr.repo.fullName}#${pr.number} is not open`);
+    pr.state = "MERGED";
+    pr.autoMerge = null;
+    pr.requested.clear();
+    pr.updatedAt = this.iso();
+    pr.events.push({ kind: "event", text: "merged this", actor, at: pr.updatedAt });
+    pr.repo.headOid = this.oid();
+    this.notify(pr, actor, this.subscribers(pr, "state_change"));
+    this.rebaseSiblings(pr);
+  }
+
+  /** The async merge API: checks the request now, merges a moment later if the head holds. */
+  requestMerge(
+    prId: string,
+    by: string,
+    input: { sha: string; method: MergeMethod },
+  ): { status: "pending"; message: string; uuid: string } {
+    const pr = this.mustPr(prId);
+    if (!this.canWrite(pr.repo, by))
+      throw new GitHubError("403 Resource not accessible by integration", "forbidden", 403);
+    if (pr.state !== "OPEN")
+      throw new GitHubError("405 Pull Request is not open", "validation", 405);
+    if (this.head(pr) !== input.sha)
+      throw new GitHubError("409 Head branch was modified. Review and try again.", "conflict", 409);
+    if (!pr.repo.mergeMethods.includes(input.method)) {
+      const name = input.method.toLowerCase();
+      throw new GitHubError(
+        `405 ${name} merges are not allowed on this repository.`,
+        "validation",
+        405,
+      );
+    }
+    const blocked = this.mergeBlocker(pr);
+    if (blocked) throw new GitHubError(`405 ${blocked}`, "validation", 405);
+
+    const r = this.random;
+    const uuid = `${r.hex(8)}-${r.hex(4)}-4${r.hex(3)}-a${r.hex(3)}-${r.hex(12)}`;
+    const request = { prId, status: "pending" as const, message: "Merge request accepted" };
+    this.mergeRequests.set(uuid, request);
+    this.schedule(this.options.mergeDelayMs, () => {
+      const landed = pr.state === "OPEN" && this.head(pr) === input.sha;
+      if (landed) this.merge(pr.id, by);
+      this.mergeRequests.set(uuid, {
+        prId,
+        status: landed ? "merged" : "failed",
+        message: landed ? "Pull Request successfully merged" : "Head branch was modified",
+      });
+    });
+    return { ...request, uuid };
+  }
+
+  setAutoMerge(prId: string, by: string, method: MergeMethod | null, headOid: string): void {
+    const pr = this.mustPr(prId);
+    if (!this.canWrite(pr.repo, by))
+      throw graphqlError(`${by} does not have permission to change auto-merge`);
+    if (method === null) {
+      pr.autoMerge = null;
+      return;
+    }
+    if (!pr.repo.autoMergeAllowed)
+      throw graphqlError("Auto merge is not allowed for this repository");
+    if (pr.state !== "OPEN") throw graphqlError("Pull request is not open");
+    if (this.head(pr) !== headOid)
+      throw graphqlError("The expected head OID did not match the head of the pull request");
+    // GitHub only arms auto-merge on PRs that can't merge right now.
+    if (this.mergeStateStatus(pr) === "CLEAN")
+      throw graphqlError("Pull request is in clean status");
+    pr.autoMerge = { enabledAt: this.iso(), method };
+    this.schedule(this.options.automergeDelayMs, () => this.automerge(pr, headOid));
+  }
+
+  /** "Update branch": bring the base in by a merge commit, or rebase onto it. */
+  updateBranch(prId: string, by: string, rebase: boolean, headOid: string): void {
+    const pr = this.mustPr(prId);
+    if (!this.canWrite(pr.repo, by) && pr.author !== by)
+      throw graphqlError(`${by} does not have permission to update this branch`);
+    if (pr.state !== "OPEN") throw graphqlError("Pull request is not open");
+    if (this.head(pr) !== headOid)
+      throw graphqlError("The expected head OID did not match the head of the pull request");
+    if (pr.baseRefOid === pr.repo.headOid)
+      throw graphqlError("There are no new commits on the base branch.");
+    if (pr.mergeable === "conflicting")
+      throw graphqlError("Cannot update this branch: it conflicts with the base branch");
+    const before = this.head(pr);
+    pr.baseRefOid = pr.repo.headOid;
+    if (rebase) {
+      const tree = this.trees.get(`${pr.repo.fullName}@${before}`);
+      pr.commits = pr.commits.map((commit) => {
+        const oid = this.oid();
+        pr.bases.set(oid, pr.baseRefOid);
+        return { ...commit, oid, committedDate: this.iso() };
+      });
+      const after = this.head(pr);
+      if (tree) this.trees.set(`${pr.repo.fullName}@${after}`, new Map(tree));
+      pr.events.push({ kind: "force-push", before, after, actor: by, at: this.iso() });
+      this.afterPush(pr, undefined);
+    } else {
+      this.pushCommit(pr.id, {
+        author: by,
+        message: `Merge branch '${pr.baseRefName}' into ${pr.headRefName}`,
+      });
+    }
+  }
+
+  /** Why the merge API would refuse this PR right now, or null if it would merge. */
+  mergeBlocker(pr: FakePr): string | null {
+    switch (this.mergeStateStatus(pr)) {
+      case "DIRTY":
+        return "Pull Request has merge conflicts.";
+      case "DRAFT":
+        return "Pull Request is still a draft.";
+      case "UNKNOWN":
+        return "Pull Request mergeability is still being computed.";
+      case "BLOCKED": {
+        const decision = this.reviewDecision(pr);
+        if (decision === "changes_requested") return "Changes have been requested.";
+        if (decision === "review_required")
+          return `At least ${pr.repo.requiredApprovals} approving review is required by reviewers with write access.`;
+        return "Required status checks are still pending.";
+      }
+      default:
+        return null;
+    }
+  }
+
+  close(prId: string, actor: string): void {
+    const pr = this.mustPr(prId);
+    if (pr.state !== "OPEN") return;
+    pr.state = "CLOSED";
+    pr.autoMerge = null;
+    pr.updatedAt = this.iso();
+    pr.events.push({ kind: "event", text: "closed this", actor, at: pr.updatedAt });
+    this.notify(pr, actor, this.subscribers(pr, "state_change"));
+  }
+
+  comment(prId: string, author: string, body: string): FakeComment {
+    const pr = this.mustPr(prId);
+    if (this.permission(pr.repo, author) === null)
+      throw graphqlError(`Could not resolve to a node with the global id of '${prId}'`);
+    const comment = { id: this.nodeId("IC"), author, body, createdAt: this.iso() };
+    pr.comments.push(comment);
+    this.touched(pr, author, [body]);
+    this.botCommand(pr, body);
+    return comment;
+  }
+
+  requestReview(prId: string, reviewer: string, by?: string): void {
+    const pr = this.mustPr(prId);
+    pr.requested.add(reviewer);
+    pr.updatedAt = this.iso();
+    pr.events.push({
+      kind: "event",
+      text: `requested review from ${reviewer.split("/").at(-1) ?? reviewer}`,
+      actor: by ?? pr.author,
+      at: pr.updatedAt,
+    });
+    const people = this.teams.get(reviewer) ?? [reviewer];
+    this.notify(
+      pr,
+      by ?? pr.author,
+      new Map([...people].map((login) => [login, "review_requested"])),
+    );
+  }
+
+  /** Submits (or, with "PENDING", starts) a review, with GitHub's validation. */
+  review(prId: string, author: string, input: ReviewInput): FakeReview {
+    const pr = this.mustPr(prId);
+    const commitOid = input.commitOid ?? this.head(pr);
+    this.validateReview(pr, author, input, commitOid);
+    const review = this.addReview(pr, author, REVIEW_STATES[input.event], commitOid, input.body);
+    for (const draft of input.threads ?? []) this.addThread(pr, review, draft);
+    if (review.state === "PENDING") return review;
+
+    pr.requested.delete(author);
+    this.touched(pr, author, [review.body, ...(input.threads ?? []).map((t) => t.body)]);
+    const isBotPr = this.users.get(pr.author)?.isBot ?? false;
+    const armed = pr.autoMerge !== null || (isBotPr && pr.repo.automergeOnApproval);
+    if (review.state === "APPROVED" && armed)
+      this.schedule(this.options.automergeDelayMs, () => this.automerge(pr, commitOid));
+    return review;
+  }
+
+  reply(threadId: string, author: string, body: string): FakeComment {
+    const found = this.threadById(threadId);
+    if (!found || this.permission(found.pr.repo, author) === null)
+      throw graphqlError(`Could not resolve to a node with the global id of '${threadId}'`);
+    const { pr, thread } = found;
+    // GitHub files every reply under an empty "commented" review.
+    const review = this.addReview(pr, author, "COMMENTED", this.head(pr), "");
+    const comment = {
+      id: this.nodeId("PRRC"),
+      author,
+      body,
+      createdAt: this.iso(),
+      reviewId: review.id,
+      commitOid: review.commitOid,
+    };
+    thread.comments.push(comment);
+    this.touched(pr, author, [body]);
+    return comment;
+  }
+
+  setResolved(threadId: string, by: string, resolved: boolean): void {
+    const found = this.threadById(threadId);
+    if (!found)
+      throw graphqlError(`Could not resolve to a node with the global id of '${threadId}'`);
+    if (!this.canResolve(found.pr, by))
+      throw graphqlError(`${by} does not have permission to resolve this thread`);
+    found.thread.resolved = resolved;
+    found.thread.resolvedBy = resolved ? by : null;
+  }
+
+  canResolve(pr: FakePr, login: string): boolean {
+    return pr.author === login || this.canWrite(pr.repo, login);
+  }
+
+  setViewed(prId: string, login: string, path: string, viewed: boolean): void {
+    const pr = this.mustPr(prId);
+    const file = pr.files.find((f) => f.path === path);
+    if (!file) throw graphqlError(`Could not find a file with path '${path}' in this pull request`);
+    const marks = pr.viewed.get(login) ?? new Map<string, number>();
+    if (viewed) marks.set(path, file.revision);
+    else marks.delete(path);
+    pr.viewed.set(login, marks);
+  }
+
+  viewedState(pr: FakePr, login: string, file: FakeFile): "VIEWED" | "UNVIEWED" | "DISMISSED" {
+    const revision = pr.viewed.get(login)?.get(file.path);
+    if (revision === undefined) return "UNVIEWED";
+    return revision === file.revision ? "VIEWED" : "DISMISSED";
+  }
+
+  // -------------------------------------------------------------------------
+  // Notifications
+
+  /** Threads in the inbox, read or not, and a version that moves whenever the inbox does. */
+  notifications(login: string): { version: number; threads: FakeNotification[] } {
+    const threads = [...(this.notes.get(login)?.values() ?? [])].toSorted((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    );
+    return { version: this.noteVersions.get(login) ?? 0, threads };
+  }
+
+  markRead(login: string, threadId: string): void {
+    for (const note of this.notes.get(login)?.values() ?? []) {
+      if (note.threadId !== threadId || !note.unread) continue;
+      note.unread = false;
+      this.noteVersions.set(login, (this.noteVersions.get(login) ?? 0) + 1);
+    }
+  }
+
+  markDone(login: string, threadId: string): void {
+    const notes = this.notes.get(login);
+    for (const [prId, note] of notes ?? []) {
+      if (note.threadId !== threadId) continue;
+      notes?.delete(prId);
+      this.noteVersions.set(login, (this.noteVersions.get(login) ?? 0) + 1);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Faults
+
+  takeFault(account: string, method: FaultMethod): Fault | null {
+    const index = this.faults.findIndex(
+      (f) => f.method === method && (f.account === undefined || f.account === account),
+    );
+    const fault = this.faults[index];
+    if (!fault) return null;
+    const left = (fault.times ?? 1) - 1;
+    if (left <= 0) this.faults.splice(index, 1);
+    else this.faults[index] = { ...fault, times: left };
+    return fault;
+  }
+
+  // -------------------------------------------------------------------------
+
+  private mustPr(id: string): FakePr {
+    const pr = this.prs.get(id);
+    if (!pr) throw graphqlError(`Could not resolve to a node with the global id of '${id}'`);
+    return pr;
+  }
+
+  private tree(repo: string, oid: string): Map<string, string> {
+    const key = `${repo}@${oid}`;
+    const existing = this.trees.get(key);
+    if (existing) return existing;
+    const tree = new Map<string, string>();
+    this.trees.set(key, tree);
+    return tree;
+  }
+
+  private addCommit(pr: FakePr, input: CommitInput, at: number, files: FileChange[]): string {
+    const login = input.author ?? pr.author;
+    const user = this.addUser(login);
+    const oid = this.oid();
+    const previous = this.head(pr);
+    pr.commits.push({
+      oid,
+      message: input.message,
+      committedDate: this.iso(input.at ?? at),
+      authorLogin: user.isBot ? null : login,
+      authorName: user.isBot ? `${login}[bot]` : user.name,
+      authorEmail: user.isBot
+        ? `${user.databaseId}+${login}[bot]@users.noreply.github.com`
+        : `${user.databaseId}+${login}@users.noreply.github.com`,
+      signatureValid: input.signed === undefined ? (user.isBot ? true : null) : input.signed,
+    });
+    pr.bases.set(oid, pr.baseRefOid);
+    const prior = this.trees.get(`${pr.repo.fullName}@${previous}`);
+    if (prior) this.trees.set(`${pr.repo.fullName}@${oid}`, new Map(prior));
+    this.applyFiles(pr, oid, files);
+    return oid;
+  }
+
+  private applyFiles(pr: FakePr, oid: string, changes: FileChange[]): void {
+    if (changes.length === 0) return;
+    const base = this.tree(pr.repo.fullName, pr.baseRefOid);
+    const head = this.tree(pr.repo.fullName, oid);
+    for (const change of changes) {
+      const existing = pr.files.find((f) => f.path === change.path);
+      const file = "patch" in change ? patchFile(change) : textFile(change, base, head);
+      file.revision = (existing?.revision ?? 0) + 1;
+      pr.files = existing
+        ? pr.files.map((f) => (f === existing ? file : f))
+        : [...pr.files, file].toSorted((a, b) => a.path.localeCompare(b.path));
+      // A push that changes a file outdates the threads written against it.
+      if (existing) {
+        for (const thread of pr.threads) if (thread.path === change.path) thread.line = null;
+      }
+    }
+  }
+
+  private afterPush(pr: FakePr, checks: ChecksInput | undefined): void {
+    pr.updatedAt = this.iso();
+    if (pr.repo.dismissStaleReviews) {
+      for (const review of pr.reviews) if (review.state === "APPROVED") review.state = "DISMISSED";
+    }
+    if (checks !== undefined) this.setChecks(pr.id, checks);
+    else if (pr.repo.checkNames.length > 0) this.runChecks(pr.id, "success");
+  }
+
+  private finish(run: FakeCheckRun, state: CheckContext["state"]): void {
+    run.state = state;
+    run.completedAt = this.iso();
+  }
+
+  private validateReview(pr: FakePr, author: string, input: ReviewInput, commitOid: string) {
+    if (this.permission(pr.repo, author) === null)
+      throw graphqlError(`Could not resolve to a node with the global id of '${pr.id}'`);
+    if (input.event === "APPROVE" || input.event === "REQUEST_CHANGES") {
+      if (pr.state !== "OPEN") throw graphqlError(`Pull request is ${pr.state.toLowerCase()}`);
+      if (pr.author === author) {
+        throw graphqlError(
+          input.event === "APPROVE"
+            ? "Can not approve your own pull request"
+            : "Can not request changes on your own pull request",
+        );
+      }
+    }
+    if (input.event === "REQUEST_CHANGES" && !input.body?.trim())
+      throw graphqlError("Review body is required when requesting changes");
+    if (input.event === "COMMENT" && !input.body?.trim() && !input.threads?.length)
+      throw graphqlError("Review body can't be blank");
+    if (!pr.bases.has(commitOid))
+      throw graphqlError(`Commit ${commitOid} is not part of this pull request`);
+    if (pr.reviews.some((r) => r.author === author && r.state === "PENDING"))
+      throw graphqlError("User can only have one pending review per pull request");
+    // GitHub only takes comments on lines that are part of the diff.
+    for (const draft of input.threads ?? []) {
+      const patch = pr.files.find((f) => f.path === draft.path)?.patch ?? null;
+      const end = patch && diffHunkAt(patch, draft.side, draft.line);
+      const start =
+        draft.startLine === undefined ||
+        (patch && diffHunkAt(patch, draft.startSide ?? draft.side, draft.startLine));
+      if (!end || !start)
+        throw graphqlError(`Line could not be resolved: ${draft.path}:${draft.line}`);
+    }
+  }
+
+  private addThread(pr: FakePr, review: FakeReview, draft: DraftThreadInput): void {
+    const patch = pr.files.find((f) => f.path === draft.path)?.patch ?? "";
+    const thread: FakeThread = {
+      id: this.nodeId("PRRT"),
+      path: draft.path,
+      side: draft.side,
+      line: draft.line,
+      startLine: draft.startLine ?? null,
+      originalLine: draft.line,
+      resolved: false,
+      resolvedBy: null,
+      diffHunk: diffHunkAt(patch, draft.side, draft.line) ?? "",
+      comments: [
+        {
+          id: this.nodeId("PRRC"),
+          author: review.author,
+          body: draft.body,
+          createdAt: review.submittedAt ?? this.iso(),
+          reviewId: review.id,
+          commitOid: review.commitOid,
+        },
+      ],
+    };
+    pr.threads.push(thread);
+    this.threadPrs.set(thread.id, pr);
+  }
+
+  private automerge(pr: FakePr, approvedOid: string): void {
+    if (pr.state !== "OPEN" || this.head(pr) !== approvedOid || pr.mergeable === "conflicting")
+      return;
+    const decision = this.reviewDecision(pr);
+    if (decision === "review_required" || decision === "changes_requested") return;
+    const rollup = this.rollup(pr);
+    if (rollup === "failure") return;
+    // Like GitHub's auto-merge: keep waiting while required checks run.
+    if (rollup === "pending") {
+      this.schedule(this.options.automergeDelayMs, () => this.automerge(pr, approvedOid));
+      return;
+    }
+    this.merge(pr.id, "github-actions");
+  }
+
+  /** After a merge, the bot rebases its other PRs that touch the same files. */
+  private rebaseSiblings(merged: FakePr): void {
+    const paths = new Set(merged.files.map((f) => f.path));
+    for (const pr of this.prs.values()) {
+      if (pr === merged || pr.repo !== merged.repo || pr.state !== "OPEN") continue;
+      if (pr.author !== "dependabot" || !pr.files.some((f) => paths.has(f.path))) continue;
+      this.schedule(this.options.botDelayMs, () => this.botRebase(pr, false));
+    }
+  }
+
+  private botCommand(pr: FakePr, body: string): void {
+    const command = /^@dependabot (rebase|recreate)\b/m.exec(body)?.[1];
+    if (pr.author !== "dependabot" || !command) return;
+    this.schedule(this.options.botDelayMs, () => this.botRebase(pr, command === "recreate"));
+  }
+
+  private botRebase(pr: FakePr, recreate: boolean): void {
+    if (pr.state !== "OPEN") return;
+    const edited = pr.commits.some((c) => c.authorName !== `${pr.author}[bot]`);
+    if (edited && !recreate) {
+      this.comment(
+        pr.id,
+        pr.author,
+        "Looks like this PR has been edited by someone other than Dependabot. That means Dependabot can't rebase it - sorry!\n\nIf you're happy for Dependabot to recreate it from scratch, overwriting any edits, you can request `@dependabot recreate`.",
+      );
+      return;
+    }
+    const before = this.head(pr);
+    const message = pr.commits.find((c) => c.authorName === `${pr.author}[bot]`)?.message;
+    pr.commits = [];
+    pr.baseRefOid = pr.repo.headOid;
+    pr.mergeable = "mergeable";
+    const after = this.addCommit(pr, { message: message ?? pr.title }, this.now(), []);
+    pr.events.push({ kind: "force-push", before, after, actor: pr.author, at: this.iso() });
+    this.afterPush(pr, undefined);
+  }
+
+  private addReview(
+    pr: FakePr,
+    author: string,
+    state: ReviewState,
+    commitOid: string,
+    body = "",
+  ): FakeReview {
+    const review: FakeReview = {
+      id: this.nodeId("PRR"),
+      author,
+      state,
+      commitOid,
+      body,
+      submittedAt: state === "PENDING" ? null : this.iso(),
+    };
+    pr.reviews.push(review);
+    return review;
+  }
+
+  /** Someone said something on a PR: it moves, mentions register, and subscribers hear of it. */
+  private touched(pr: FakePr, actor: string, texts: string[]): void {
+    pr.updatedAt = this.iso();
+    for (const text of texts) {
+      for (const match of text.matchAll(/(?:^|\s)@([a-zA-Z0-9-]+)(?![\w/-])/g)) {
+        const login = match[1];
+        if (login && this.users.has(login) && !this.users.get(login)?.isBot) pr.mentions.add(login);
+      }
+    }
+    this.notify(pr, actor, this.subscribers(pr, "comment"));
+  }
+
+  private watchersOf(pr: FakePr): Map<string, string> {
+    return new Map([...pr.repo.watchers].map((login) => [login, "subscribed"]));
+  }
+
+  /** Everyone subscribed to a PR, with the reason GitHub gives them. */
+  private subscribers(pr: FakePr, reason: string): Map<string, string> {
+    const out = this.watchersOf(pr);
+    // A review request subscribes the reviewer (each member, for a team).
+    for (const who of pr.requested) {
+      for (const login of this.teams.get(who) ?? [who]) out.set(login, "review_requested");
+    }
+    const participants = [
+      ...pr.comments.map((c) => c.author),
+      ...pr.reviews.map((r) => r.author),
+      ...pr.threads.flatMap((t) => t.comments.map((c) => c.author)),
+    ];
+    for (const login of participants) out.set(login, reason);
+    for (const login of pr.mentions) out.set(login, "mention");
+    out.set(pr.author, "author");
+    return out;
+  }
+
+  private notify(pr: FakePr, actor: string, recipients: Map<string, string>): void {
+    for (const [login, reason] of recipients) {
+      const user = this.users.get(login);
+      if (login === actor || !user || user.isBot || this.permission(pr.repo, login) === null)
+        continue;
+      const key = `${login}|${pr.id}`;
+      let threadId = this.noteIds.get(key);
+      if (!threadId) {
+        threadId = String(this.nextNoteId++);
+        this.noteIds.set(key, threadId);
+      }
+      const notes = this.notes.get(login) ?? new Map<string, FakeNotification>();
+      notes.set(pr.id, { threadId, prId: pr.id, reason, updatedAt: this.iso(), unread: true });
+      this.notes.set(login, notes);
+      this.noteVersions.set(login, (this.noteVersions.get(login) ?? 0) + 1);
+    }
+  }
+}
+
+/** Job states for a rollup: one job fails (or a few still run) and the rest went green. */
+function outcomes(names: string[], state: CheckState): CheckContext[] {
+  const odd = Math.min(1, names.length - 1);
+  return names.map((name, i) => {
+    if (state === "failure") return { name, state: i === odd ? "failure" : "success" };
+    if (state === "pending") return { name, state: i >= odd ? "pending" : "success" };
+    return { name, state: "success" };
+  });
+}
+
+const REVIEW_STATES: Record<ReviewInput["event"], ReviewState> = {
+  APPROVE: "APPROVED",
+  REQUEST_CHANGES: "CHANGES_REQUESTED",
+  COMMENT: "COMMENTED",
+  PENDING: "PENDING",
+};
+
+/** GraphQL failures arrive as a 200 with an `errors` array, which the client maps to this. */
+export function graphqlError(message: string): GitHubError {
+  return new GitHubError(message, "graphql", 200);
+}
+
+export function faultError(fault: Fault): GitHubError {
+  switch (fault.kind) {
+    case "secondary-limit":
+      return new GitHubError(
+        "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+        "secondary-limit",
+        403,
+        fault.retryAfterMs ?? 60_000,
+      );
+    case "server":
+      return new GitHubError("502 Bad Gateway", "server", 502);
+    case "conflict":
+      return new GitHubError(
+        "409 Head branch was modified. Review and try again.",
+        "conflict",
+        409,
+      );
+    case "network":
+    case "drop-response":
+      return new GitHubError("network error: TypeError: fetch failed", "network", null);
+    default:
+      return new GitHubError(`unknown fault ${String(fault.kind)}`, "server", 500);
+  }
+}
+
+function patchFile(change: { path: string; patch: string; status?: DiffFile["status"] }): FakeFile {
+  const counted = countPatch(change.patch);
+  return {
+    path: change.path,
+    previousPath: null,
+    status: change.status ?? "modified",
+    patch: change.patch,
+    additions: counted.additions,
+    deletions: counted.deletions,
+    revision: 0,
+  };
+}
+
+function textFile(
+  change: { path: string; after: string | null; previousPath?: string },
+  base: Map<string, string>,
+  head: Map<string, string>,
+): FakeFile {
+  const before = base.get(change.previousPath ?? change.path) ?? null;
+  if (change.previousPath) head.delete(change.previousPath);
+  if (change.after === null) head.delete(change.path);
+  else head.set(change.path, change.after);
+  const diff = unifiedDiff(before ?? "", change.after ?? "");
+  const status: DiffFile["status"] = change.previousPath
+    ? "renamed"
+    : before === null
+      ? "added"
+      : change.after === null
+        ? "removed"
+        : "modified";
+  return {
+    path: change.path,
+    previousPath: change.previousPath ?? null,
+    status,
+    patch: diff.patch,
+    additions: diff.additions,
+    deletions: diff.deletions,
+    revision: 0,
+  };
+}

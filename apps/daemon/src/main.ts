@@ -3,16 +3,17 @@ import { join } from "node:path";
 
 import { discoverAccounts, readToken } from "@/accounts/gh";
 import { createHandlers } from "@/api/handlers";
-import { createApp } from "@/app";
+import { type AppOptions, createApp } from "@/app";
 import { doctor } from "@/cli/doctor";
 import { install, uninstall } from "@/cli/install";
 import { ORIGIN, paths } from "@/config";
 import { GitStore, gitVersionOk } from "@/git/store";
 import { GitHubClient } from "@/github/client";
+import type { Preset } from "@/github/fake/scenario";
 import { LiveGitHub } from "@/github/live";
 import type { GitHubPort } from "@/github/port";
 import { serve } from "@/http/server";
-import { openStores } from "@/store/db";
+import { openStores, type Stores } from "@/store/db";
 
 // The `pier` command: the daemon itself, plus the commands that install and check it.
 
@@ -48,7 +49,42 @@ async function main(argv: string[]) {
 }
 
 async function runServe(dev: boolean) {
+  const fake = fakePreset();
   const stores = openStores();
+  const github = fake ? await fakeGitHub(fake) : await liveGitHub(stores);
+  const app = createApp({ stores, ...github });
+  const sandboxOwner = process.env.PIER_SANDBOX;
+  if (sandboxOwner && !fake) applySandbox(app, sandboxOwner);
+  const webDir = process.env.PIER_WEB_DIR ?? join(import.meta.dir, "../../web/dist");
+  const server = serve({
+    handlers: createHandlers(app),
+    events: app.events,
+    webDir: !dev && existsSync(webDir) ? webDir : null,
+    dev,
+  });
+  await app.start();
+
+  console.log(`pier ${dev ? "(dev) " : ""}listening on ${ORIGIN}`);
+  console.log(`  accounts: ${github.accounts.map((a) => a.login).join(", ")}`);
+  if (fake) console.log(`  fake GitHub: ${fake}, nothing leaves this machine`);
+  console.log(`  data: ${paths.home}`);
+
+  const shutdown = (signal: string) => {
+    console.log(`stopping (${signal})`);
+    app.stop();
+    void server.stop();
+    stores.cache.close();
+    stores.state.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGHUP", () => shutdown("SIGHUP"));
+}
+
+type GitHubSetup = Omit<AppOptions, "stores">;
+
+async function liveGitHub(stores: Stores): Promise<GitHubSetup> {
   const accounts = await discoverAccounts();
   if (accounts.length === 0) {
     console.error("No github.com accounts found in gh. Run `gh auth login` first.");
@@ -69,33 +105,37 @@ async function runServe(dev: boolean) {
     console.warn(
       "  git 2.40 or newer not found: diffs come from GitHub, without 'since your last review'",
     );
-  const app = createApp({ stores, accounts, ports, ...(git ? { git } : {}) });
-  const sandboxOwner = process.env.PIER_SANDBOX;
-  if (sandboxOwner) applySandbox(app, sandboxOwner);
-  const webDir = process.env.PIER_WEB_DIR ?? join(import.meta.dir, "../../web/dist");
-  const server = serve({
-    handlers: createHandlers(app),
-    events: app.events,
-    webDir: !dev && existsSync(webDir) ? webDir : null,
-    dev,
-  });
-  await app.start();
+  return { accounts, ports, ...(git ? { git } : {}) };
+}
 
-  console.log(`pier ${dev ? "(dev) " : ""}listening on ${ORIGIN}`);
-  console.log(`  accounts: ${accounts.map((a) => a.login).join(", ")}`);
-  console.log(`  data: ${paths.home}`);
+/**
+ * PIER_FAKE=sandbox|work runs against a generated GitHub held in memory, for E2E and scale runs.
+ * It needs its own PIER_HOME so fake PRs never mix with real data.
+ */
+function fakePreset(): Preset | null {
+  const preset = process.env.PIER_FAKE;
+  if (!preset) return null;
+  if (preset !== "sandbox" && preset !== "work") {
+    console.error(`PIER_FAKE is "sandbox" or "work", not "${preset}".`);
+    process.exit(1);
+  }
+  if (!process.env.PIER_HOME) {
+    console.error("PIER_FAKE needs PIER_HOME, so fake PRs never mix with your real data.");
+    process.exit(1);
+  }
+  return preset;
+}
 
-  const shutdown = (signal: string) => {
-    console.log(`stopping (${signal})`);
-    app.stop();
-    void server.stop();
-    stores.cache.close();
-    stores.state.close();
-    process.exit(0);
+// Diffs come from the world's patches, so there's no git store.
+async function fakeGitHub(preset: Preset): Promise<GitHubSetup> {
+  const fake = await import("@/github/fake/scenario");
+  const world = fake.generateScenario({ preset });
+  return {
+    accounts: fake.createFakeAccounts(world),
+    ports: fake.createFakePorts(world),
+    fetcher: fake.fakeRegistryFetch(world),
+    defaults: fake.fakeDefaults(world, preset),
   };
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGHUP", () => shutdown("SIGHUP"));
 }
 
 /**
