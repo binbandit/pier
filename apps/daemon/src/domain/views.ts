@@ -39,7 +39,7 @@ export type ViewContext = {
   now: () => number;
 };
 
-type BotEval = {
+export type BotEval = {
   record: PrRecord;
   bumps: Bump[];
   releases: (ReleaseInfo | null)[];
@@ -105,10 +105,7 @@ export class Views {
     const evals = group.members.flatMap((id) => snapshot.bots.get(id) ?? []);
     if (evals.length === 0) return null;
 
-    const representative =
-      evals.find((e) => e.placement.cohort === "clear" && e.record.files) ??
-      evals.find((e) => e.record.files) ??
-      evals[0]!;
+    const representative = pickRepresentative(evals);
     const repShape = shape(representative.record);
     const rows = evals
       .map((e) => this.row(e, group, repShape))
@@ -322,7 +319,8 @@ export class Views {
       approvalRequired: doc.reviewDecision === "review_required",
       mergePath: mergePath(e.record),
       otherBumps: others,
-      differs: shape(e.record) !== repShape,
+      // A grouped PR always differs; saying which bumps it carries is the useful part.
+      differs: others.length === 0 && shape(e.record) !== repShape,
       approvedByYou: e.approvedAtHead,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
@@ -462,6 +460,21 @@ function mergePath(record: PrRecord): MergePath {
 }
 
 /** File basenames plus manifest-only line counts; lockfile sizes naturally differ per repo. */
+/**
+ * The PR whose diff stands for the whole group: the most common shape among PRs that carry only
+ * this bump, so the diff shows just this change and "differs" marks the real outliers. Clear PRs
+ * win within that shape.
+ */
+export function pickRepresentative(evals: BotEval[]): BotEval {
+  const loaded = evals.filter((e) => e.record.files);
+  const single = loaded.filter((e) => e.bumps.length === 1);
+  const pool = single.length > 0 ? single : loaded.length > 0 ? loaded : evals;
+  const common = [...Map.groupBy(pool, (e) => shape(e.record)).values()].reduce((best, next) =>
+    next.length > best.length ? next : best,
+  );
+  return common.find((e) => e.placement.cohort === "clear") ?? common[0]!;
+}
+
 function shape(record: PrRecord): string {
   const bot = record.bot;
   const files = record.doc.files;

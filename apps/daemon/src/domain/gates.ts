@@ -97,11 +97,17 @@ export function summarizeGates(rows: GateResult[][]): GateResult[] {
     const results = rows.flatMap((row) => row.filter((g) => g.gate === gate));
     const worst = results.toSorted((a, b) => order.indexOf(a.status) - order.indexOf(b.status))[0];
     if (!worst) return { gate, status: "na", detail: "Not applicable" };
-    const failing = results.filter((g) => g.status === worst.status).length;
+    if (worst.status !== "fail" && worst.status !== "unknown") return worst;
+    // Say how many PRs it hits, and the distinct reasons, most common first.
+    const failing = results.filter((g) => g.status === worst.status);
+    if (failing.length === 1) return worst;
+    const reasons = [...Map.groupBy(failing, (g) => g.detail)]
+      .toSorted(([, a], [, b]) => b.length - a.length)
+      .map(([reason]) => reason);
     const detail =
-      worst.status === "fail" || worst.status === "unknown"
-        ? `${worst.detail}${failing > 1 ? ` (+${failing - 1} more)` : ""}`
-        : worst.detail;
+      reasons.length === 1
+        ? `${reasons[0]} (${failing.length} PRs)`
+        : `${failing.length} PRs: ${reasons.slice(0, 2).join("; ")}${reasons.length > 2 ? "; and more" : ""}`;
     return { gate, status: worst.status, detail };
   });
 }
@@ -128,7 +134,7 @@ function semverGate({ bumps, policy }: GateInput): GateResult {
       blocked.map((b) => `${b.pkg} is a ${b.semver} bump`).join("; "),
     );
   }
-  return result("semver", "pass", bumps.map((b) => b.semver).join(", "));
+  return result("semver", "pass", [...new Set(bumps.map((b) => b.semver))].join(" and "));
 }
 
 function releaseAgeGate({ bumps, releases, policy, now }: GateInput): GateResult {

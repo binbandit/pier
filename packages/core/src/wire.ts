@@ -169,7 +169,7 @@ export type GroupRow = {
   mergePath: MergePath;
   /** Other bumps this PR carries (grouped Dependabot PRs). */
   otherBumps: BumpRef[];
-  /** Changed-file set or +/- stats differ from the representative PR. */
+  /** A single-bump PR whose changed-file set or +/- stats differ from the representative PR. */
   differs: boolean;
   approvedByYou: boolean;
   createdAt: string;
