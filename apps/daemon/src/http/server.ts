@@ -7,6 +7,7 @@ import type { Handlers } from "@/api/handlers";
 import { DEV_ORIGIN, HOST, PORT } from "@/config";
 import { inputs, type ProcedureName } from "@pier/core/contract";
 
+import { embeddedAssets } from "./assets";
 import type { EventHub } from "./events";
 import {
   CONTENT_SECURITY_POLICY,
@@ -63,9 +64,7 @@ export function serve(options: ServerOptions) {
 
       const host = checkHost(req, config);
       if (!host.ok) return deny(host.status, host.reason);
-      return options.webDir
-        ? asset(options.webDir, url.pathname)
-        : new Response("pier daemon (dev): open the Vite server", { status: 200 });
+      return asset(options.webDir, url.pathname);
     },
     error(error) {
       console.error(error);
@@ -110,24 +109,43 @@ const MIME: Record<string, string> = {
   ".wasm": "application/wasm",
 };
 
-async function asset(webDir: string, pathname: string): Promise<Response> {
+function asset(webDir: string | null, pathname: string): Response {
   const relative = normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, "");
-  const candidate = join(webDir, relative);
-  const isFile = candidate.startsWith(webDir) && extname(candidate) !== "" && existsSync(candidate);
-  // Client-side routes (/:owner/:repo/pull/:n, /inbox/deps, …) all get the app shell.
-  const file = isFile ? candidate : join(webDir, "index.html");
+  const found = resolveAsset(webDir, relative);
+  if (!found) return new Response("pier daemon (dev): open the Vite server", { status: 200 });
   const headers: Record<string, string> = {
-    "content-type": MIME[extname(file)] ?? "application/octet-stream",
+    "content-type": MIME[extname(found.name)] ?? "application/octet-stream",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
+    "cache-control": found.name.startsWith("/assets/")
+      ? "public, max-age=31536000, immutable"
+      : "no-cache",
   };
-  if (file.endsWith(".html")) {
-    headers["content-security-policy"] = CONTENT_SECURITY_POLICY;
-    headers["cache-control"] = "no-cache";
-  } else if (relative.startsWith("/assets/")) {
-    headers["cache-control"] = "public, max-age=31536000, immutable";
+  if (found.name.endsWith(".html")) headers["content-security-policy"] = CONTENT_SECURITY_POLICY;
+  return new Response(Bun.file(found.file), { headers });
+}
+
+/**
+ * The file for a URL path: an embedded or on-disk asset, or the app shell for client-side routes
+ * (/:owner/:repo/pull/:n, /inbox/deps, ...).
+ */
+function resolveAsset(
+  webDir: string | null,
+  relative: string,
+): { name: string; file: string } | null {
+  const embedded = embeddedAssets();
+  if (embedded) {
+    const hit = embedded.get(relative);
+    if (hit) return { name: relative, file: hit };
+    const shell = embedded.get("/index.html");
+    return shell ? { name: "/index.html", file: shell } : null;
   }
-  return new Response(Bun.file(file), { headers });
+  if (!webDir) return null;
+  const candidate = join(webDir, relative);
+  if (candidate.startsWith(webDir) && extname(candidate) !== "" && existsSync(candidate)) {
+    return { name: relative, file: candidate };
+  }
+  return { name: "/index.html", file: join(webDir, "index.html") };
 }
 
 function json(data: unknown, status = 200): Response {

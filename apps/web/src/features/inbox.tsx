@@ -32,6 +32,9 @@ export function Inbox({ split }: { split: Split }) {
   const client = useQueryClient();
   const { data: items = [], isPending } = useQuery(q("inbox", { split }));
   const { data: counts } = useQuery(q("counts", {}));
+  const { data: status } = useQuery(q("status", {}));
+  // An empty list during the first sync means "not loaded yet", not "nothing to do".
+  const loading = isPending || (items.length === 0 && status?.sync.state === "syncing");
 
   const open = (item: QueueItem) => {
     if (item.kind === "group") void navigate({ to: "/deps/$", params: { _splat: item.key } });
@@ -110,7 +113,11 @@ export function Inbox({ split }: { split: Split }) {
 
       {!isPending && items.length === 0 ? (
         <div className="px-8 pt-16">
-          <p className="text-prose text-muted">{EMPTY[split]}</p>
+          <p className="text-prose text-muted">
+            {loading
+              ? "Reading your PRs from GitHub. They appear here as they load."
+              : EMPTY[split]}
+          </p>
           {counts && counts[NEXT[split]] > 0 && (
             <p className="mt-3 flex items-center gap-2 text-ui text-faint">
               <Keys sequence="tab" /> {TITLES[NEXT[split]]} has {counts[NEXT[split]]}

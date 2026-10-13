@@ -67,8 +67,12 @@ export class LiveGitHub implements GitHubPort {
   async sweep(ids: string[]): Promise<ReturnType<typeof toVolatile>[]> {
     const out = [];
     for (const batch of chunks(ids, SWEEP_BATCH)) {
-      const data = await this.client.graphql(SweepQuery, { ids: batch });
-      out.push(...data.nodes.filter(isSwept).map(toVolatile));
+      out.push(
+        ...(await splitOnTimeout(batch, async (part) => {
+          const data = await this.client.graphql(SweepQuery, { ids: part });
+          return data.nodes.filter(isSwept).map(toVolatile);
+        })),
+      );
     }
     return out;
   }
@@ -76,8 +80,12 @@ export class LiveGitHub implements GitHubPort {
   async hydrate(ids: string[]) {
     const out = [];
     for (const batch of chunks(ids, HYDRATE_BATCH)) {
-      const data = await this.client.graphql(HydrateQuery, { ids: batch });
-      out.push(...data.nodes.filter(isHydrated).map(toPrDoc));
+      out.push(
+        ...(await splitOnTimeout(batch, async (part) => {
+          const data = await this.client.graphql(HydrateQuery, { ids: part });
+          return data.nodes.filter(isHydrated).map(toPrDoc);
+        })),
+      );
     }
     return out;
   }
@@ -354,6 +362,25 @@ function nextLink(link: string | null): string | null {
 
 function day(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * GitHub kills GraphQL requests that take over ten seconds (502/504), which a batch of PRs with
+ * large release notes can. Halve the batch and try again, down to single PRs, before giving up.
+ */
+async function splitOnTimeout<I, O>(items: I[], run: (part: I[]) => Promise<O[]>): Promise<O[]> {
+  try {
+    return await run(items);
+  } catch (error) {
+    const timedOut =
+      error instanceof GitHubError && (error.kind === "server" || error.kind === "network");
+    if (!timedOut || items.length <= 1) throw error;
+    const middle = Math.ceil(items.length / 2);
+    return [
+      ...(await splitOnTimeout(items.slice(0, middle), run)),
+      ...(await splitOnTimeout(items.slice(middle), run)),
+    ];
+  }
 }
 
 function chunks<T>(items: T[], size: number): T[][] {

@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { discoverAccounts, readToken } from "@/accounts/gh";
 import { createHandlers } from "@/api/handlers";
 import { createApp } from "@/app";
+import { doctor } from "@/cli/doctor";
+import { install, uninstall } from "@/cli/install";
 import { ORIGIN, paths } from "@/config";
 import { GitStore, gitVersionOk } from "@/git/store";
 import { GitHubClient } from "@/github/client";
@@ -12,16 +14,35 @@ import type { GitHubPort } from "@/github/port";
 import { serve } from "@/http/server";
 import { openStores } from "@/store/db";
 
-// `pier serve [--dev]` runs the daemon. Other commands (install, doctor, status) arrive with
-// the launchd packaging.
+// The `pier` command: the daemon itself, plus the commands that install and check it.
+
+const HELP = `pier: pull request review, one decision at a time
+
+  pier serve        run the daemon in the foreground
+  pier install      start pier at login (launchd) and keep it running
+  pier uninstall    stop starting at login (your data stays)
+  pier doctor       check gh, git, accounts and the daemon
+`;
 
 async function main(argv: string[]) {
   const [command = "serve", ...flags] = argv;
   switch (command) {
     case "serve":
       return runServe(flags.includes("--dev"));
+    case "install":
+      return install();
+    case "uninstall":
+      return uninstall();
+    case "doctor":
+      process.exit((await doctor()) ? 0 : 1);
+      return;
+    case "help":
+    case "--help":
+    case "-h":
+      console.log(HELP);
+      return;
     default:
-      console.error(`unknown command: ${command}`);
+      console.error(`unknown command: ${command}\n\n${HELP}`);
       process.exit(1);
   }
 }
@@ -40,7 +61,10 @@ async function runServe(dev: boolean) {
     ]),
   );
 
-  const git = (await gitVersionOk()) ? new GitStore(paths.git, readToken) : null;
+  const gitBinary = process.env.PIER_GIT ?? "git";
+  const git = (await gitVersionOk(gitBinary))
+    ? new GitStore(paths.git, readToken, { gitBinary })
+    : null;
   if (!git)
     console.warn(
       "  git 2.40 or newer not found: diffs come from GitHub, without 'since your last review'",

@@ -15,7 +15,9 @@ page.on("console", (msg) => {
 });
 page.on("pageerror", (error) => console.log(`[pageerror] ${error.message}`));
 
-await page.goto(`http://127.0.0.1:4478${path}`, { waitUntil: "networkidle" });
+await page.goto(`${process.env.PIER_URL ?? "http://127.0.0.1:4478"}${path}`, {
+  waitUntil: "networkidle",
+});
 await page.waitForTimeout(800);
 
 for (const step of steps) {
