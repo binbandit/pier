@@ -473,7 +473,7 @@ export class Outbox {
       else this.update(command, "queued", "Not found on GitHub; sending again");
       return;
     }
-    // Resolving and marking viewed are idempotent: just send again.
+    // Resolving, marking viewed and clearing notifications are idempotent: just send again.
     this.update(command, "queued", "Sending again");
   }
 
@@ -537,6 +537,8 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
     case "viewed":
     case "unviewed":
       return port.setViewed(command.prId, payload.path ?? "", command.kind === "viewed");
+    case "notification-done":
+      return port.markNotificationDone(payload.threadId ?? "");
     default:
       return Promise.reject(new Error(`unknown command kind ${String(command.kind)}`));
   }

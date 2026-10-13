@@ -81,7 +81,7 @@ export type Outputs = {
   planAction: PlanPreview;
   commitPlan: { commandIds: string[] };
   cancelCommands: { cancelled: number };
-  markDone: { ok: true };
+  markDone: { commandIds: string[] };
   undoDone: { ok: true };
   logEscape: { ok: true };
 };

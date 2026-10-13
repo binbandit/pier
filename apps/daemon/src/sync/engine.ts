@@ -4,7 +4,7 @@ import { bumpKey } from "@/domain/bumps";
 import type { Model } from "@/domain/model";
 import type { Scope, SettingsStore } from "@/domain/settings";
 import { GitHubError } from "@/github/client";
-import type { GitHubPort } from "@/github/port";
+import type { GitHubPort, NotificationThread } from "@/github/port";
 import type { ReleaseRegistry } from "@/registry/release";
 
 // Keeps the model in step with GitHub on a fixed point budget. Loops, per account:
@@ -37,6 +37,7 @@ export class SyncEngine {
   /** Scopes for PRs found before their first hydration, attached once the doc exists. */
   private pendingScopes: [string, string, string][] = [];
   private statusListeners = new Set<() => void>();
+  private notificationsSeen = new Set<string>();
   private lastStatusKey = "";
 
   constructor(
@@ -207,7 +208,11 @@ export class SyncEngine {
   private async pollNotifications(account: string): Promise<number> {
     const port = this.ports().get(account);
     if (!port) return 60_000;
-    const poll = await port.notifications();
+    // The first poll after a start fetches everything; after that, unchanged is a free 304.
+    const fresh = !this.notificationsSeen.has(account);
+    const poll = await port.notifications(fresh);
+    this.notificationsSeen.add(account);
+    if (poll.changed) this.rememberThreads(account, poll.threads);
     if (poll.changed) {
       const byRef = new Map<string, string>();
       for (const record of this.model.all())
@@ -305,6 +310,38 @@ export class SyncEngine {
     await Promise.all(
       wanted.slice(0, 12).map((bump) => this.registry.lookup(bump).catch(() => null)),
     );
+  }
+
+  private rememberThreads(account: string, threads: NotificationThread[]): void {
+    const upsert = this.cache.query(
+      `INSERT INTO notif_thread (account, thread_id, repo, number, reason, unread, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (account, thread_id) DO UPDATE SET reason = excluded.reason,
+         unread = excluded.unread, updated_at = excluded.updated_at`,
+    );
+    this.cache.transaction(() => {
+      for (const t of threads) {
+        if (t.type !== "PullRequest" || t.number === null) continue;
+        upsert.run(account, t.id, t.repo, t.number, t.reason, t.unread ? 1 : 0, t.updatedAt);
+      }
+    })();
+  }
+
+  /** Notification threads (any account) about this PR, for clearing them when it's done. */
+  threadsFor(repo: string, number: number): { account: string; threadId: string }[] {
+    return this.cache
+      .query<{ account: string; thread_id: string }, [string, number]>(
+        "SELECT account, thread_id FROM notif_thread WHERE repo = ? AND number = ?",
+      )
+      .all(repo, number)
+      .map((row) => ({ account: row.account, threadId: row.thread_id }));
+  }
+
+  /** Forgets a thread once it's been marked done on GitHub. */
+  forgetThread(account: string, threadId: string): void {
+    this.cache
+      .query("DELETE FROM notif_thread WHERE account = ? AND thread_id = ?")
+      .run(account, threadId);
   }
 
   private cursor(key: string): string | null {

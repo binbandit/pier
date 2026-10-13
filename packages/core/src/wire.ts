@@ -95,7 +95,8 @@ export type CommandKind =
   | "resolve"
   | "unresolve"
   | "viewed"
-  | "unviewed";
+  | "unviewed"
+  | "notification-done";
 
 // ---------------------------------------------------------------------------
 // Inbox

@@ -29,12 +29,14 @@ export async function propose(
 }
 
 export async function markDone(client: QueryClient, keys: string[], label: string): Promise<void> {
-  await rpc("markDone", { keys });
+  const { commandIds } = await rpc("markDone", { keys });
   void client.invalidateQueries({ queryKey: ["inbox"] });
   useUi.getState().toast({
     text: label,
     tone: "neutral",
     undo: () => {
+      // Undo also stops the GitHub notifications being cleared (they're held until the toast goes).
+      if (commandIds.length > 0) void rpc("cancelCommands", { commandIds });
       void rpc("undoDone", { keys }).then(() => client.invalidateQueries({ queryKey: ["inbox"] }));
     },
   });

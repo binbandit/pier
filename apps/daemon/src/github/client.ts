@@ -49,6 +49,8 @@ export type RestRequest = {
   cache?: boolean;
   /** Send `If-Modified-Since` with this value instead of the cached one (notifications). */
   ifModifiedSince?: string;
+  /** Ask without validators (to get the full body) but still cache the answer. */
+  unconditional?: boolean;
   priority?: Priority;
 };
 
@@ -156,7 +158,7 @@ export class GitHubClient implements GitHubTransport {
         });
       };
 
-      let response = await send(true);
+      let response = await send(!request.unconditional);
       if (response.status === 304) {
         if (cached) {
           return {

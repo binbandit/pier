@@ -58,7 +58,8 @@ export interface GitHubPort {
   sweep(ids: string[]): Promise<VolatileState[]>;
   hydrate(ids: string[]): Promise<{ doc: PrDoc; viewer: PrViewer }[]>;
   files(repo: string, number: number): Promise<DiffFile[]>;
-  notifications(): Promise<NotificationPoll>;
+  /** `fresh` skips the 304 shortcut, to learn every thread after a restart. */
+  notifications(fresh?: boolean): Promise<NotificationPoll>;
   markNotificationDone(threadId: string): Promise<void>;
   approve(prId: string, commitOid: string, body?: string): Promise<ReviewSummary>;
   comment(subjectId: string, body: string): Promise<{ id: string }>;

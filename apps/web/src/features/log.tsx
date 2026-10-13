@@ -29,6 +29,7 @@ const KIND: Record<LogEntry["kind"], string> = {
   unresolve: "Reopen thread",
   viewed: "Mark viewed",
   unviewed: "Mark unviewed",
+  "notification-done": "Clear notification",
 };
 
 export function Log() {

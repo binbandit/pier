@@ -113,10 +113,12 @@ export class LiveGitHub implements GitHubPort {
     return files;
   }
 
-  async notifications(): Promise<NotificationPoll> {
+  async notifications(fresh = false): Promise<NotificationPoll> {
+    // Read threads count too: they stay in GitHub's inbox until marked done.
     const first = await this.client.rest<RestThread[]>({
-      path: "/notifications?per_page=50",
+      path: "/notifications?all=true&per_page=50",
       cache: true,
+      unconditional: fresh,
     });
     const pollIntervalSec = Number(first.headers.get("x-poll-interval") ?? 60);
     if (first.notModified) return { changed: false, pollIntervalSec };

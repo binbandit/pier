@@ -75,6 +75,14 @@ export class Views {
     return this.snapshot().flight;
   }
 
+  /** The open PRs behind a done key: a bump group's members, or the PR itself. */
+  prIdsFor(key: string): string[] {
+    if (key.startsWith("group:"))
+      return this.snapshot().groups.get(key.slice("group:".length))?.members ?? [];
+    if (key.startsWith("pr:")) return [key.slice("pr:".length)];
+    return [];
+  }
+
   /** The current cursor for a done key, so marking done hides exactly what's on screen now. */
   cursorFor(key: string): string | null {
     const snapshot = this.snapshot();

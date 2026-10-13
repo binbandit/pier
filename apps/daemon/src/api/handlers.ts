@@ -65,7 +65,7 @@ export function createHandlers(app: App): Handlers {
         if (cursor !== null) app.done.mark(key, cursor);
       }
       app.events.emit(["inbox", "counts", "flight"]);
-      return { ok: true };
+      return { commandIds: app.clearNotifications(keys.flatMap((key) => app.views.prIdsFor(key))) };
     },
 
     undoDone({ keys }) {

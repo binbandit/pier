@@ -67,6 +67,12 @@ export function createApp(options: AppOptions) {
   const preflight: Preflight = (command) => {
     const record = model.get(command.prId);
     if (!record) return { ok: false, state: "failed", detail: "PR is no longer tracked" };
+    // In sandbox mode nothing outside the sandbox owners is ever written, whatever the kind.
+    const sandboxOwners = settings.get("sandbox").writeOwners;
+    const owner = record.doc.repo.split("/")[0] ?? "";
+    if (sandboxOwners && !sandboxOwners.includes(owner)) {
+      return { ok: false, state: "cancelled", detail: `Outside the sandbox (${owner})` };
+    }
     // Replies, resolves and viewed marks don't depend on the head; verdicts on the code do.
     if (command.kind !== "approve" && command.kind !== "review" && command.kind !== "bot-command") {
       return { ok: true };
@@ -195,6 +201,11 @@ export function createApp(options: AppOptions) {
     events.emit([...VIEW_TOPICS, "log", "pr"]);
   });
   sync.onStatus(() => events.emit(["status"]));
+  outbox.onAcked((command) => {
+    if (command.kind === "notification-done" && command.payload.threadId) {
+      sync.forgetThread(command.account, command.payload.threadId);
+    }
+  });
   let lastRegistryVersion = registry.version;
   const registryWatch = setInterval(() => {
     if (registry.version === lastRegistryVersion) return;
@@ -252,6 +263,30 @@ export function createApp(options: AppOptions) {
       clearInterval(registryWatch);
     },
     review,
+    /**
+     * Clears GitHub's notifications about these PRs on every account that has one, so they aren't
+     * triaged twice. Held as long as the undo toast, because GitHub can't un-clear a notification.
+     */
+    clearNotifications(prIds: string[]): string[] {
+      const commands = prIds.flatMap((prId) => {
+        const record = model.get(prId);
+        if (!record) return [];
+        const { doc } = record;
+        return sync.threadsFor(doc.repo, doc.number).map((thread) => ({
+          planId: null,
+          account: thread.account,
+          kind: "notification-done" as const,
+          prId,
+          repo: doc.repo,
+          number: doc.number,
+          title: doc.title,
+          expectedHead: doc.headRefOid,
+          payload: { threadId: thread.threadId },
+          priority: 1 as const,
+        }));
+      });
+      return commands.length > 0 ? outbox.enqueue(commands, 6_000) : [];
+    },
     status() {
       const s = sync.getStatus();
       return {
