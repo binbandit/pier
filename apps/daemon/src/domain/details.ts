@@ -7,6 +7,8 @@ import type { PrDetail } from "@/github/pr-detail";
 // review, mark a file viewed, react) don't move the timestamp. Only PRs you open are fetched.
 
 const MAX_AGE_MS = 2 * 60_000;
+/** Details kept in memory, the most recently read; older ones are read back from the cache db. */
+const IN_MEMORY = 200;
 
 type Entry = { detail: PrDetail; updatedAt: string; fetchedAt: number };
 
@@ -19,7 +21,10 @@ export class Details {
   get(prId: string, account: string): Entry | null {
     const key = `${prId}:${account}`;
     const memory = this.entries.get(key);
-    if (memory) return memory;
+    if (memory) {
+      this.remember(key, memory);
+      return memory;
+    }
     const row = this.cache
       .query<{ json: string; updated_at: string; fetched_at: string }, [string, string]>(
         "SELECT json, updated_at, fetched_at FROM pr_detail WHERE pr_id = ? AND account = ?",
@@ -31,14 +36,14 @@ export class Details {
       updatedAt: row.updated_at,
       fetchedAt: Date.parse(row.fetched_at),
     };
-    this.entries.set(key, entry);
+    this.remember(key, entry);
     return entry;
   }
 
   set(prId: string, account: string, detail: PrDetail, updatedAt: string): void {
     const key = `${prId}:${account}`;
     const fetchedAt = Date.now();
-    this.entries.set(key, { detail, updatedAt, fetchedAt });
+    this.remember(key, { detail, updatedAt, fetchedAt });
     this.dirty.delete(key);
     this.cache
       .query(
@@ -47,6 +52,16 @@ export class Details {
            fetched_at = excluded.fetched_at, json = excluded.json`,
       )
       .run(prId, account, updatedAt, new Date(fetchedAt).toISOString(), JSON.stringify(detail));
+  }
+
+  /** Keeps `key` as the most recently used, dropping the least recently used past the limit. */
+  private remember(key: string, entry: Entry): void {
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    if (this.entries.size > IN_MEMORY) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest !== undefined) this.entries.delete(oldest);
+    }
   }
 
   /** Something we sent changed this PR; the next read refetches. */
