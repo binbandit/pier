@@ -114,6 +114,7 @@ function Loaded({ pr }: { pr: PrView }) {
   const toast = useUi((s) => s.toast);
   const subscribe = useSubscription(pr);
   const streamRef = useRef<HTMLDivElement>(null);
+  const jumping = useRef<string | null>(null);
   const overviewRef = useRef<HTMLElement>(null);
   const descriptionRef = useRef<HTMLElement>(null);
   const changesRef = useRef<HTMLElement>(null);
@@ -212,6 +213,14 @@ function Loaded({ pr }: { pr: PrView }) {
     const el = streamRef.current;
     if (!el) return undefined;
     const onScroll = () => {
+      // Lazy diffs can adjust the scroll position after a jump, especially near the end.
+      if (jumping.current) {
+        const target = el.querySelector(`[data-file="${CSS.escape(jumping.current)}"]`);
+        const bounds = el.getBoundingClientRect();
+        const top = target?.getBoundingClientRect().top;
+        if (top !== undefined && top >= bounds.top - 1 && top < bounds.bottom) return;
+        jumping.current = null;
+      }
       const top = el.getBoundingClientRect().top + 48;
       let found: string | null = null;
       for (const section of el.querySelectorAll<HTMLElement>("[data-file]")) {
@@ -219,12 +228,22 @@ function Loaded({ pr }: { pr: PrView }) {
       }
       setCurrent(found);
     };
+    const resumeTracking = () => {
+      jumping.current = null;
+    };
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+    for (const event of ["wheel", "touchstart", "pointerdown", "keydown"])
+      el.addEventListener(event, resumeTracking, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      for (const event of ["wheel", "touchstart", "pointerdown", "keydown"])
+        el.removeEventListener(event, resumeTracking);
+    };
   }, []);
 
   const jump = (path: string) => {
     setCurrent(path);
+    jumping.current = path;
     streamRef.current
       ?.querySelector(`[data-file="${CSS.escape(path)}"]`)
       ?.scrollIntoView({ block: "start" });

@@ -164,6 +164,29 @@
 
 /* Rendered markdown from PR bodies and release notes, after sanitising. */
 @layer components {
+  .pr-file-tree {
+    color-scheme: dark;
+    --trees-bg-override: var(--color-canvas);
+    --trees-fg-override: var(--color-fg);
+    --trees-fg-muted-override: var(--color-faint);
+    --trees-bg-muted-override: var(--color-hover);
+    --trees-selected-bg-override: var(--color-cursor);
+    --trees-selected-fg-override: var(--color-strong);
+    --trees-selected-focused-border-color-override: var(--color-accent);
+    --trees-focus-ring-color-override: var(--color-accent);
+    --trees-border-color-override: var(--color-line);
+    --trees-font-family-override: var(--font-code);
+    --trees-font-size-override: var(--text-meta);
+    --trees-input-bg-override: var(--color-canvas);
+    --trees-search-bg-override: var(--color-hover);
+    --trees-search-fg-override: var(--color-fg);
+    --trees-scrollbar-thumb-override: var(--color-line-strong);
+    --trees-git-added-color-override: var(--color-ok);
+    --trees-git-deleted-color-override: var(--color-bad);
+    --trees-git-modified-color-override: var(--color-info);
+    --trees-git-renamed-color-override: var(--color-info);
+  }
+
   .prose-pier {
     font-size: var(--text-prose);
     line-height: var(--text-prose--line-height);

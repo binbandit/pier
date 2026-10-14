@@ -13,6 +13,7 @@
     "@base-ui/react": "1.9.0",
     "@pier/core": "workspace:*",
     "@pierre/diffs": "1.5.2",
+    "@pierre/trees": "1.0.0-beta.6",
     "@tanstack/react-query": "5.104.2",
     "@tanstack/react-router": "1.170.42",
     "@tanstack/react-virtual": "3.14.15",

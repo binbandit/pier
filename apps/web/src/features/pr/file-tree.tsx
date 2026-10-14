@@ -1,9 +1,9 @@
-import { clsx } from "clsx";
-import { useEffect, useRef } from "react";
+import type { GitStatusEntry } from "@pierre/trees";
+import { FileTree as PierreFileTree, useFileTree } from "@pierre/trees/react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
+import { formatNumber } from "@/lib/format";
 import type { DiffFile, ViewedState } from "@pier/core/wire";
-
-// A quiet list of the files in review order. Viewed files fade; files with conversation say so.
 
 export function FileTree({
   files,
@@ -18,61 +18,110 @@ export function FileTree({
   current: string | null;
   onJump: (path: string) => void;
 }) {
-  const done = files.filter((f) => viewed[f.path] === "viewed").length;
-  // The file you're on stays in sight as the stream moves past hundreds of others.
-  const list = useRef<HTMLUListElement>(null);
+  // Pierre creates its model once. Its callbacks read current review data without rebuilding it.
+  const latest = useRef({ viewed, threadCounts, onJump });
+  const syncing = useRef(false);
+  useLayoutEffect(() => {
+    latest.current = { viewed, threadCounts, onJump };
+  });
+  const { model } = useFileTree({
+    paths: files.map((file) => file.path),
+    initialExpansion: "open",
+    flattenEmptyDirectories: true,
+    itemHeight: 28,
+    search: true,
+    fileTreeSearchMode: "hide-non-matches",
+    onSelectionChange: (paths) => {
+      const path = paths.at(-1);
+      if (!syncing.current && path && !path.endsWith("/")) latest.current.onJump(path);
+    },
+    renderRowDecoration: ({ row }) => {
+      if (row.kind !== "file") return null;
+      const state = latest.current.viewed[row.path];
+      const threads = latest.current.threadCounts.get(row.path) ?? 0;
+      const parts = [];
+      const labels = [];
+      if (state === "viewed") {
+        parts.push({ text: "✓", color: "var(--color-off)" });
+        labels.push("Viewed");
+      } else if (state === "changed") {
+        parts.push({ text: "changed", color: "var(--color-warn)" });
+        labels.push("Changed since viewed");
+      }
+      if (threads > 0) {
+        parts.push({
+          text: `${parts.length ? " " : ""}${formatNumber(threads)}`,
+          color: "var(--color-faint)",
+        });
+        labels.push(`${threads} ${threads === 1 ? "thread" : "threads"}`);
+      }
+      return parts.length > 0
+        ? { text: parts.map((part) => part.text).join(" "), parts, title: labels.join(" · ") }
+        : null;
+    },
+  });
+  const pathsKey = JSON.stringify(files.map((file) => file.path));
+  const previousPaths = useRef(pathsKey);
   useEffect(() => {
-    if (!current) return;
-    list.current
-      ?.querySelector(`[data-path="${CSS.escape(current)}"]`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [current]);
+    if (pathsKey === previousPaths.current) return;
+    syncing.current = true;
+    model.resetPaths(files.map((file) => file.path));
+    previousPaths.current = pathsKey;
+    syncing.current = false;
+  }, [files, model, pathsKey]);
+
+  useEffect(() => {
+    const status: GitStatusEntry[] = files.flatMap((file) =>
+      file.status === "unchanged"
+        ? []
+        : [
+            {
+              path: file.path,
+              status:
+                file.status === "removed"
+                  ? "deleted"
+                  : file.status === "copied"
+                    ? "added"
+                    : file.status === "changed"
+                      ? "modified"
+                      : file.status,
+            },
+          ],
+    );
+    model.setGitStatus(status);
+    // Decorations can change even when the file paths and Git statuses stay the same.
+    if (model.getFileTreeContainer()) model.render({});
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- refresh decorations read through latest
+  }, [files, model, viewed, threadCounts]);
+
+  useEffect(() => {
+    syncing.current = true;
+    for (const selected of model.getSelectedPaths())
+      if (selected !== current) model.getItem(selected)?.deselect();
+    if (current && model.getItem(current)) {
+      const segments = current.split("/");
+      for (let depth = 1; depth < segments.length; depth++) {
+        const parent = model.getItem(`${segments.slice(0, depth).join("/")}/`);
+        if (parent && "expand" in parent) parent.expand();
+      }
+      model.getItem(current)?.select();
+      model.scrollToPath(current, { focus: false, offset: "nearest" });
+    }
+    syncing.current = false;
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- resetPaths above can replace the selected item
+  }, [current, model, pathsKey]);
+
+  const done = files.filter((file) => viewed[file.path] === "viewed").length;
   return (
     <nav aria-label="Files" className="flex w-[260px] shrink-0 flex-col border-r border-line">
       <p className="flex h-11 shrink-0 items-center border-b border-line px-4 text-meta text-faint">
-        {done} of {files.length} viewed
+        {formatNumber(done)} of {formatNumber(files.length)} viewed
       </p>
-      <ul ref={list} className="min-h-0 flex-1 overflow-y-auto py-2">
-        {files.map((file) => {
-          const slash = file.path.lastIndexOf("/");
-          const dir = slash === -1 ? "" : file.path.slice(0, slash + 1);
-          const name = file.path.slice(slash + 1);
-          const state = viewed[file.path] ?? "unviewed";
-          const threads = threadCounts.get(file.path) ?? 0;
-          return (
-            <li key={file.path}>
-              <button
-                type="button"
-                onClick={() => onJump(file.path)}
-                title={file.path}
-                data-path={file.path}
-                className={clsx(
-                  "relative flex h-7 w-full items-center gap-2 px-4 text-left text-meta",
-                  file.path === current ? "bg-cursor" : "hover:bg-hover",
-                )}
-              >
-                {file.path === current && (
-                  <span
-                    aria-hidden
-                    className="absolute top-1.5 bottom-1.5 left-1 w-0.5 rounded-full bg-accent"
-                  />
-                )}
-                <span
-                  className={clsx(
-                    "min-w-0 flex-1 truncate font-code",
-                    state === "viewed" ? "text-off" : "text-fg",
-                  )}
-                >
-                  <span className={state === "viewed" ? "" : "text-faint"}>{dir}</span>
-                  {name}
-                </span>
-                {state === "changed" && <span className="text-warn">changed</span>}
-                {threads > 0 && <span className="text-faint">{threads}</span>}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      <PierreFileTree
+        model={model}
+        className="pr-file-tree min-h-0 flex-1"
+        onKeyDown={(event) => event.stopPropagation()}
+      />
     </nav>
   );
 }

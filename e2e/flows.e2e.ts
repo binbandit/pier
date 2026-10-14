@@ -87,10 +87,9 @@ test("an inline draft goes out with the review", async ({ page }) => {
   await expect(toast(page, "Commenting in 5s")).toBeVisible();
 
   await page.goto("/log");
-  await expect(page.getByRole("listitem").filter({ hasText: "sandbox-web#7" })).toContainText(
-    "Sent",
-    { timeout: 15_000 },
-  );
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "sandbox-web#7" }).filter({ hasText: "Review" }),
+  ).toContainText("Sent", { timeout: 15_000 });
 });
 
 test("the merge runway names what's missing, then merges once it's there", async ({ page }) => {
@@ -373,11 +372,13 @@ test("a 400-file PR lists every file but draws only the diffs within reach", asy
   expect(await page.locator("diffs-container").count()).toBeLessThan(60);
 
   // The last file is drawn once you get there, and the tree keeps it in sight.
-  await tree.getByRole("button", { name: "services/svc-399/start.ts" }).click();
+  await tree.getByRole("textbox").fill("services/svc-399/start.ts");
+  const last = tree.locator('[role="treeitem"][data-item-path="services/svc-399/start.ts"]');
+  await last.click();
   await expect(
     page.locator('[data-file="services/svc-399/start.ts"] diffs-container'),
   ).toBeAttached();
-  await expect(tree.locator('[data-path="services/svc-399/start.ts"]')).toBeInViewport();
+  await expect(last).toBeInViewport();
 });
 
 test("a stacked PR shows its stack, and the palette moves through it", async ({ page }) => {
