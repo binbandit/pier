@@ -75,7 +75,7 @@ export function createFakePorts(
 export function createFakeAccounts(world: FakeWorld): Account[] {
   return world.accounts.map((login, i) => ({
     login,
-    scopes: ["gist", "read:org", "read:project", "read:user", "repo", "workflow"],
+    scopes: ["gist", "project", "read:org", "read:user", "repo", "workflow"],
     active: i === 0,
   }));
 }

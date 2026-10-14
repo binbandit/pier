@@ -11,7 +11,7 @@ export type Account = {
 
 /** Scopes pier needs on every account. Missing ones degrade features rather than block startup. */
 export const REQUIRED_SCOPES = ["repo", "read:org"] as const;
-export const OPTIONAL_SCOPES = ["read:project", "read:user", "notifications"] as const;
+export const OPTIONAL_SCOPES = ["project", "read:user", "notifications"] as const;
 
 const ghBinary = () => process.env.PIER_GH ?? Bun.which("gh") ?? "gh";
 

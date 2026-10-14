@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import { Ledger, countTicks } from "@/components/ledger";
 import { PrLine } from "@/components/pr-line";
@@ -137,6 +137,7 @@ export function Inbox({ split }: { split: Split }) {
               ? "Reading your PRs from GitHub. They appear here as they load."
               : EMPTY[split]}
           </p>
+          {split === "deps" && !loading && <NoBotSearches />}
           {counts && counts[NEXT[split]] > 0 && (
             <p className="mt-3 flex items-center gap-2 text-ui text-faint">
               <Keys sequence="tab" /> {TITLES[NEXT[split]]} has {counts[NEXT[split]]}
@@ -251,4 +252,21 @@ async function githubUrl(item: QueueItem): Promise<string | null> {
   if (item.kind === "pr") return item.url;
   const view = await rpc("group", { key: item.key });
   return view?.rows[0]?.url ?? null;
+}
+
+/** An empty Deps on a new setup usually means no organisation's bot PRs are watched yet. */
+function NoBotSearches() {
+  const { data: settings } = useQuery(q("settings", {}));
+  const finding = settings?.scopes.some((s) => s.kind === "bots" && (s.found ?? 0) > 0);
+  if (!settings || finding) return null;
+  return (
+    <p className="mt-3 max-w-[72ch] text-ui text-faint">
+      pier isn't finding bot PRs anywhere yet. Add the organisations whose Dependabot and Renovate
+      PRs you approve in{" "}
+      <Link to="/settings" className="text-fg hover:text-strong">
+        Settings
+      </Link>
+      .
+    </p>
+  );
 }

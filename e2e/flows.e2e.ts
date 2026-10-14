@@ -461,6 +461,9 @@ test("an owner's bot PRs can be dropped, then watched again from a suggestion", 
 
   await page.goto("/inbox/deps");
   await expect(page.getByText("No dependency bumps need you.")).toBeVisible();
+  await expect(
+    page.getByText("pier isn't finding bot PRs anywhere yet.", { exact: false }),
+  ).toBeVisible();
 
   // pier still sees your reviews there, so it suggests the owner back.
   await page.goto("/settings");

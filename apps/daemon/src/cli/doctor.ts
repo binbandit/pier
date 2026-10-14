@@ -39,7 +39,7 @@ export async function doctor(): Promise<boolean> {
       } else if (optional.length > 0) {
         checks.push({
           ok: "warn",
-          label: `${account.login}: projects and saved replies need ${optional.join(", ")}`,
+          label: `${account.login}: projects, saved replies and watching PRs need ${optional.join(", ")}`,
           fix: scopeFix(account.login, optional),
         });
       } else {
