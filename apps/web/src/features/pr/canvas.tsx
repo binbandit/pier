@@ -637,7 +637,7 @@ function Loaded({ pr }: { pr: PrView }) {
       : []),
     {
       id: "pr.copy-link",
-      title: selection ? "Copy a link to these lines" : "Copy a link to this PR",
+      title: selection ? "Copy the GitHub link to these lines" : "Copy the GitHub PR link",
       keys: ["y"],
       scope: "surface",
       group: "Go to",
