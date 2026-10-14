@@ -1013,7 +1013,7 @@ export type MergeInfoQueryVariables = Exact<{
 
 
 export type MergeInfoQuery = { node:
-    | { id: string, isDraft: boolean, mergeable: MergeableState, mergeStateStatus: MergeStateStatus, reviewDecision: PullRequestReviewDecision | null, viewerCanUpdateBranch: boolean, viewerCanEnableAutoMerge: boolean, viewerCanMergeAsAdmin: boolean, isMergeQueueEnabled: boolean, mergeHeadline: string, mergeBody: string, squashHeadline: string, squashBody: string, autoMergeRequest: { enabledAt: string | null, mergeMethod: PullRequestMergeMethod } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, repository: { mergeCommitAllowed: boolean, squashMergeAllowed: boolean, rebaseMergeAllowed: boolean, autoMergeAllowed: boolean, viewerDefaultMergeMethod: PullRequestMergeMethod } }
+    | { id: string, isDraft: boolean, mergeable: MergeableState, mergeStateStatus: MergeStateStatus, reviewDecision: PullRequestReviewDecision | null, viewerCanUpdateBranch: boolean, viewerCanEnableAutoMerge: boolean, viewerCanDisableAutoMerge: boolean, viewerCanMergeAsAdmin: boolean, isMergeQueueEnabled: boolean, mergeHeadline: string, mergeBody: string, squashHeadline: string, squashBody: string, autoMergeRequest: { enabledAt: string | null, mergeMethod: PullRequestMergeMethod, commitHeadline: string | null, commitBody: string | null } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, repository: { mergeCommitAllowed: boolean, squashMergeAllowed: boolean, rebaseMergeAllowed: boolean, autoMergeAllowed: boolean, viewerDefaultMergeMethod: PullRequestMergeMethod } }
     | Record<PropertyKey, never>
    | null };
 
@@ -1021,6 +1021,8 @@ export type EnableAutoMergeMutationVariables = Exact<{
   prId: string | number;
   method: PullRequestMergeMethod;
   head: string;
+  headline?: string | null | undefined;
+  body?: string | null | undefined;
 }>;
 
 
@@ -2436,11 +2438,14 @@ export const MergeInfoDocument = new TypedDocumentString(`
       reviewDecision
       viewerCanUpdateBranch
       viewerCanEnableAutoMerge
+      viewerCanDisableAutoMerge
       viewerCanMergeAsAdmin
       isMergeQueueEnabled
       autoMergeRequest {
         enabledAt
         mergeMethod
+        commitHeadline
+        commitBody
       }
       mergeQueueEntry {
         position
@@ -2462,9 +2467,15 @@ export const MergeInfoDocument = new TypedDocumentString(`
 }
     `) as unknown as TypedDocumentString<MergeInfoQuery, MergeInfoQueryVariables>;
 export const EnableAutoMergeDocument = new TypedDocumentString(`
-    mutation EnableAutoMerge($prId: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
+    mutation EnableAutoMerge($prId: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!, $headline: String, $body: String) {
   enablePullRequestAutoMerge(
-    input: { pullRequestId: $prId, mergeMethod: $method, expectedHeadOid: $head }
+    input: {
+      pullRequestId: $prId
+      mergeMethod: $method
+      expectedHeadOid: $head
+      commitHeadline: $headline
+      commitBody: $body
+    }
   ) {
     pullRequest {
       id

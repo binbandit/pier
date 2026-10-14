@@ -1,5 +1,11 @@
 // Small text helpers shared by every surface.
 
+const NUMBER = new Intl.NumberFormat("en-US");
+
+export function formatNumber(value: number): string {
+  return NUMBER.format(value);
+}
+
 export function ago(iso: string, now = Date.now()): string {
   const ms = now - Date.parse(iso);
   if (!Number.isFinite(ms)) return "";

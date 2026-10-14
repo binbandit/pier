@@ -113,10 +113,24 @@ export class GitHubClient implements GitHubTransport {
         body: JSON.stringify({ query, variables }),
         timeoutMs: 30_000,
       });
-      const payload = (await response.json()) as {
+      let payload: {
         data?: R | null;
         errors?: { message: string; type?: string }[];
       };
+      try {
+        payload = (await response.json()) as typeof payload;
+      } catch (error) {
+        // Headers can succeed before a large response is cut off. Keep body failures in the
+        // transport error path so read batches can be split and retried by LiveGitHub.
+        const invalidJson = error instanceof SyntaxError;
+        throw new GitHubError(
+          invalidJson
+            ? "GitHub returned incomplete or invalid JSON"
+            : `GitHub response interrupted: ${String(error)}`,
+          invalidJson ? "server" : "network",
+          response.status,
+        );
+      }
       if (payload.errors?.length) {
         const rateLimited = payload.errors.some((e) => e.type === "RATE_LIMITED");
         if (rateLimited)

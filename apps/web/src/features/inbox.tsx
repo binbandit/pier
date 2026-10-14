@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { Ledger, countTicks } from "@/components/ledger";
-import { PrLine } from "@/components/pr-line";
+import { PrLine, prStatCharacters } from "@/components/pr-line";
 import { VirtualRows } from "@/components/rows";
 import { markDone, openOnGitHub, propose } from "@/features/actions";
 import { RevocationNotice } from "@/features/revocations";
@@ -33,6 +33,7 @@ export function Inbox({ split }: { split: Split }) {
   const navigate = useNavigate();
   const client = useQueryClient();
   const { data: items = [], isPending } = useQuery(q("inbox", { split }));
+  const statCharacters = prStatCharacters(items);
   const { data: counts } = useQuery(q("counts", {}));
   const { data: status } = useQuery(q("status", {}));
   const { data: revocations = [] } = useQuery({
@@ -157,7 +158,11 @@ export function Inbox({ split }: { split: Split }) {
           onSelect={list.move}
           onOpen={open}
           render={(item) =>
-            item.kind === "group" ? <GroupLine item={item} /> : <PrLine item={item} />
+            item.kind === "group" ? (
+              <GroupLine item={item} />
+            ) : (
+              <PrLine item={item} statCharacters={statCharacters} />
+            )
           }
         />
       )}

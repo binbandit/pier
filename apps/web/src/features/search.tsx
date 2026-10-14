@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
-import { PrLine } from "@/components/pr-line";
+import { PrLine, prStatCharacters } from "@/components/pr-line";
 import { VirtualRows } from "@/components/rows";
 import { errorText, openOnGitHub } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
@@ -86,6 +86,7 @@ export function Search({
   const shown = new Set(local.map((item) => item.id));
   const extra = asked === applied ? (remote.data?.items ?? []).filter((i) => !shown.has(i.id)) : [];
   const items = [...local, ...extra];
+  const statCharacters = prStatCharacters(items);
 
   const open = (item: PrItem) => {
     const [owner = "", repo = ""] = item.repo.split("/");
@@ -283,7 +284,7 @@ export function Search({
           selectedKeys={list.selectedKeys}
           onSelect={list.move}
           onOpen={open}
-          render={(item) => <PrLine item={item} />}
+          render={(item) => <PrLine item={item} statCharacters={statCharacters} />}
         />
       )}
     </div>

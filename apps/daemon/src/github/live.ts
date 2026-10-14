@@ -876,7 +876,18 @@ export class LiveGitHub implements GitHubPort {
       reviewDecision: node.reviewDecision ?? null,
       canUpdateBranch: node.viewerCanUpdateBranch,
       canEnableAutoMerge: node.viewerCanEnableAutoMerge,
-      autoMerge: node.autoMergeRequest ? { method: node.autoMergeRequest.mergeMethod } : null,
+      canDisableAutoMerge: node.viewerCanDisableAutoMerge,
+      autoMerge: node.autoMergeRequest
+        ? {
+            method: node.autoMergeRequest.mergeMethod,
+            ...(node.autoMergeRequest.commitHeadline !== null
+              ? { headline: node.autoMergeRequest.commitHeadline }
+              : {}),
+            ...(node.autoMergeRequest.commitBody !== null
+              ? { body: node.autoMergeRequest.commitBody }
+              : {}),
+          }
+        : null,
       mergeQueue: node.mergeQueueEntry,
       messages: {
         MERGE: { headline: node.mergeHeadline, body: node.mergeBody },
@@ -957,11 +968,22 @@ export class LiveGitHub implements GitHubPort {
     return toMergeResult(response.data);
   }
 
-  async setAutoMerge(prId: string, method: MergeMethod | null, headOid: string): Promise<void> {
+  async setAutoMerge(
+    prId: string,
+    method: MergeMethod | null,
+    headOid: string,
+    message: { headline?: string; body?: string } = {},
+  ): Promise<void> {
     if (method)
       await this.client.graphql(
         EnableAutoMergeMutation,
-        { prId, method, head: headOid },
+        {
+          prId,
+          method,
+          head: headOid,
+          headline: method === "REBASE" ? null : (message.headline ?? null),
+          body: method === "REBASE" ? null : (message.body ?? null),
+        },
         "interactive",
       );
     else await this.client.graphql(DisableAutoMergeMutation, { prId }, "interactive");

@@ -1019,11 +1019,14 @@ export const MergeInfoQuery = graphql(`
         reviewDecision
         viewerCanUpdateBranch
         viewerCanEnableAutoMerge
+        viewerCanDisableAutoMerge
         viewerCanMergeAsAdmin
         isMergeQueueEnabled
         autoMergeRequest {
           enabledAt
           mergeMethod
+          commitHeadline
+          commitBody
         }
         mergeQueueEntry {
           position
@@ -1046,9 +1049,21 @@ export const MergeInfoQuery = graphql(`
 `);
 
 export const EnableAutoMergeMutation = graphql(`
-  mutation EnableAutoMerge($prId: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
+  mutation EnableAutoMerge(
+    $prId: ID!
+    $method: PullRequestMergeMethod!
+    $head: GitObjectID!
+    $headline: String
+    $body: String
+  ) {
     enablePullRequestAutoMerge(
-      input: { pullRequestId: $prId, mergeMethod: $method, expectedHeadOid: $head }
+      input: {
+        pullRequestId: $prId
+        mergeMethod: $method
+        expectedHeadOid: $head
+        commitHeadline: $headline
+        commitBody: $body
+      }
     ) {
       pullRequest {
         id

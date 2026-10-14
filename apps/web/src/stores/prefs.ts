@@ -9,6 +9,9 @@ type Prefs = {
   /** Side by side instead of one column. */
   split: boolean;
   toggleSplit: () => void;
+  /** Include commits, pushes and metadata updates in the PR conversation. */
+  showHistoryUpdates: boolean;
+  toggleHistoryUpdates: () => void;
   /** Night contrast by the clock, or pinned to one. */
   contrast: ContrastChoice;
   setContrast: (contrast: ContrastChoice) => void;
@@ -22,6 +25,8 @@ export const usePrefs = create<Prefs>()(
     (set) => ({
       split: false,
       toggleSplit: () => set((s) => ({ split: !s.split })),
+      showHistoryUpdates: true,
+      toggleHistoryUpdates: () => set((s) => ({ showHistoryUpdates: !s.showHistoryUpdates })),
       contrast: "auto",
       setContrast: (contrast) => set({ contrast }),
       notify: false,

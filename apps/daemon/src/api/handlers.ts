@@ -15,6 +15,7 @@ export function createHandlers(app: App): Handlers {
     status: () => app.status(),
     inbox: ({ split }) => app.views.inbox(split),
     counts: () => app.views.counts(),
+    mergeQueue: () => app.views.mergeQueue(),
     group: ({ key }) => app.views.group(key),
     revocations: () => app.views.revocations(),
     dismissRevocation({ key }) {
@@ -73,8 +74,8 @@ export function createHandlers(app: App): Handlers {
     branch: ({ prId, action }) => ({ commandIds: app.review.branch(prId, action) }),
     revert: ({ prId, title, body }) => ({ commandIds: app.review.revert(prId, title, body) }),
     commandResult: ({ commandId }) => app.outbox.result(commandId),
-    setAutoMerge: ({ prId, enabled, method }) => ({
-      commandIds: app.review.setAutoMerge(prId, enabled, method),
+    setAutoMerge: ({ prId, enabled, method, headline, body }) => ({
+      commandIds: app.review.setAutoMerge(prId, enabled, method, headline, body),
     }),
     updateBranch: ({ prId, rebase }) => ({ commandIds: app.review.updateBranch(prId, rebase) }),
     editMetadata: ({ prId, field, add, remove }) => ({

@@ -2,19 +2,12 @@ import type { SelectedLineRange } from "@pierre/diffs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { clsx } from "clsx";
-import {
-  Bell,
-  BellOff,
-  CircleDot,
-  Lock,
-  Milestone,
-  ShieldCheck,
-  UserRound,
-  Users,
-} from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Bell, BellOff, CircleDot, Lock, Milestone, UserRound } from "lucide-react";
+import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 
 import { errorText, markDone, openOnGitHub, takeBack } from "@/features/actions";
+import { MentionScope } from "@/features/pr/mentions";
+import { Reviewers } from "@/features/pr/reviewers";
 import { type Command, useCommands } from "@/keys/registry";
 import { plural } from "@/lib/format";
 import { fileAnchor, lineLink, parseLink } from "@/lib/permalink";
@@ -22,7 +15,7 @@ import { q, qLive, rpc } from "@/lib/rpc";
 import { usePrefs } from "@/stores/prefs";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
-import { Dot, type Tone } from "@/ui/dot";
+import { DiffStat } from "@/ui/diff-stat";
 import { Keys } from "@/ui/kbd";
 import { When } from "@/ui/when";
 import type { DiffView, PrView, QueueItem } from "@pier/core/wire";
@@ -83,7 +76,11 @@ export function PrCanvas({ repo, number }: { repo: string; number: number }) {
   const { data: pr, isPending } = useQuery(q("pr", { repo, number }));
   if (isPending) return <div className="px-8 pt-10 text-faint">Loading</div>;
   if (!pr) return <Untracked repo={repo} number={number} />;
-  return <Loaded key={pr.id} pr={pr} />;
+  return (
+    <MentionScope pr={pr}>
+      <Loaded key={pr.id} pr={pr} />
+    </MentionScope>
+  );
 }
 
 function Untracked({ repo, number }: { repo: string; number: number }) {
@@ -117,6 +114,14 @@ function Loaded({ pr }: { pr: PrView }) {
   const toast = useUi((s) => s.toast);
   const subscribe = useSubscription(pr);
   const streamRef = useRef<HTMLDivElement>(null);
+  const overviewRef = useRef<HTMLElement>(null);
+  const descriptionRef = useRef<HTMLElement>(null);
+  const changesRef = useRef<HTMLElement>(null);
+  const sections = [
+    { label: "Overview", ref: overviewRef },
+    { label: "Description", ref: descriptionRef },
+    { label: "Changes", ref: changesRef },
+  ];
 
   const reReview = pr.lastReviewedOid !== null && pr.lastReviewedOid !== pr.headRefOid;
   // A link to lines points into the whole diff, as github.com's /files links do.
@@ -810,103 +815,145 @@ function Loaded({ pr }: { pr: PrView }) {
             onJump={jump}
           />
         )}
-        <div ref={streamRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-          <div className="px-8 pt-8 pb-24">
-            <Header pr={pr} />
-            <Checks pr={pr} />
-            <TurnLine pr={pr} view={shown} fallback={diff?.fallback ?? null} />
-            <section className="mt-6 border-t border-line pt-6">
-              <Writing
-                prId={pr.id}
-                id={pr.id}
-                writing={{
-                  subject: "pull-request",
-                  body: pr.body,
-                  edited: false,
-                  canEdit: pr.canEdit,
-                  canDelete: false,
-                  canMinimize: false,
-                  minimized: null,
-                  reactions: pr.reactions,
-                  unsent: false,
-                }}
-                html={pr.bodyHTML}
-                quoteInto={rail ? "conversation" : null}
-                bodyClassName="prose-pier"
-              />
-              {!pr.body.trim() && <p className="text-meta text-faint">No description.</p>}
-            </section>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <nav
+            aria-label="Pull request sections"
+            className="flex h-11 shrink-0 items-center gap-1 border-b border-line px-6 text-meta"
+          >
+            {sections.map((section) => (
+              <button
+                key={section.label}
+                type="button"
+                onClick={() => jumpToSection(section.ref.current)}
+                className="rounded-sm px-2 py-1 text-muted hover:bg-hover hover:text-strong"
+              >
+                {section.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-pressed={rail}
+              onClick={() => setRail(!rail)}
+              title="Toggle activity (i)"
+              className="ml-auto flex items-center gap-2 rounded-sm px-2 py-1 text-muted hover:bg-hover hover:text-strong aria-pressed:text-strong"
+            >
+              Activity <Keys sequence="i" />
+            </button>
+            {pr.state === "OPEN" && (
+              <button
+                type="button"
+                aria-label="Merge"
+                onClick={() => setRaised({ kind: "runway" })}
+                title="Merge options (m)"
+                className="ml-2 flex items-center gap-2 rounded-sm border border-line-strong px-2 py-1 text-strong hover:bg-hover"
+              >
+                Merge <Keys sequence="m" />
+              </button>
+            )}
+          </nav>
+          <div ref={streamRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <div className="px-8 pt-8 pb-24">
+              <Header pr={pr} ref={overviewRef} />
+              <Checks pr={pr} />
+              <TurnLine pr={pr} view={shown} fallback={diff?.fallback ?? null} />
+              <section
+                ref={descriptionRef}
+                tabIndex={-1}
+                aria-label="Description"
+                className="mt-6 border-t border-line pt-6"
+              >
+                <Writing
+                  prId={pr.id}
+                  id={pr.id}
+                  writing={{
+                    subject: "pull-request",
+                    body: pr.body,
+                    edited: false,
+                    canEdit: pr.canEdit,
+                    canDelete: false,
+                    canMinimize: false,
+                    minimized: null,
+                    reactions: pr.reactions,
+                    unsent: false,
+                  }}
+                  html={pr.bodyHTML}
+                  quoteInto={rail ? "conversation" : null}
+                  bodyClassName="prose-pier"
+                />
+                {!pr.body.trim() && <p className="text-meta text-faint">No description.</p>}
+              </section>
 
-            <section className="mt-10">
-              <h2 className="mb-3 flex items-baseline gap-3">
-                <span className="text-section font-semibold text-strong">
-                  {describeView(shown, pr)}
-                </span>
-                {shown.range === "commits" && shown.from === shown.to && (
-                  <span className="min-w-0 truncate text-ui text-muted">
-                    {pr.commits.find((c) => c.oid === shown.to)?.headline}
+              <section ref={changesRef} tabIndex={-1} aria-label="Changes" className="mt-10">
+                <h2 className="mb-3 flex items-baseline gap-3">
+                  <span className="text-section font-semibold text-strong">
+                    {describeView(shown, pr)}
                   </span>
+                  {shown.range === "commits" && shown.from === shown.to && (
+                    <span className="min-w-0 truncate text-ui text-muted">
+                      {pr.commits.find((c) => c.oid === shown.to)?.headline}
+                    </span>
+                  )}
+                  <span className="shrink-0 text-ui text-faint">
+                    {filtered
+                      ? `${ordered.length} of ${plural(listed.length, "file")}`
+                      : plural(listed.length, "file")}
+                    {viewedCount > 0 && `, ${viewedCount} viewed`}
+                  </span>
+                  {filtered && (
+                    <button
+                      type="button"
+                      onClick={() => setRaised({ kind: "filter" })}
+                      className="flex shrink-0 items-center gap-1.5 text-meta text-faint hover:text-fg"
+                    >
+                      filtered <Keys sequence="d f" />
+                    </button>
+                  )}
+                  {ignoreWhitespace && (
+                    <span className="text-meta text-faint">whitespace hidden</span>
+                  )}
+                </h2>
+                {filtered && ordered.length === 0 && (
+                  <p className="text-ui text-muted">
+                    No files match the filter. <Keys sequence="d f" /> changes it.
+                  </p>
                 )}
-                <span className="shrink-0 text-ui text-faint">
-                  {filtered
-                    ? `${ordered.length} of ${plural(listed.length, "file")}`
-                    : plural(listed.length, "file")}
-                  {viewedCount > 0 && `, ${viewedCount} viewed`}
-                </span>
-                {filtered && (
-                  <button
-                    type="button"
-                    onClick={() => setRaised({ kind: "filter" })}
-                    className="flex shrink-0 items-center gap-1.5 text-meta text-faint hover:text-fg"
-                  >
-                    filtered <Keys sequence="d f" />
-                  </button>
+                {view.range === "since-review" && diff && listed.length === 0 && (
+                  <p className="text-ui text-muted">
+                    Nothing has changed since you reviewed {pr.lastReviewedOid?.slice(0, 7)}.
+                  </p>
                 )}
-                {ignoreWhitespace && (
-                  <span className="text-meta text-faint">whitespace hidden</span>
-                )}
-              </h2>
-              {filtered && ordered.length === 0 && (
-                <p className="text-ui text-muted">
-                  No files match the filter. <Keys sequence="d f" /> changes it.
-                </p>
-              )}
-              {view.range === "since-review" && diff && listed.length === 0 && (
-                <p className="text-ui text-muted">
-                  Nothing has changed since you reviewed {pr.lastReviewedOid?.slice(0, 7)}.
-                </p>
-              )}
-              <div className="space-y-8">
-                {ordered.map((file) => (
-                  <ReviewFile
-                    key={`${viewKey(view)}:${ignoreWhitespace}:${split}:${file.path}`}
-                    prId={pr.id}
-                    headOid={pr.headRefOid}
-                    file={file}
-                    threads={threadsByPath.get(file.path) ?? []}
-                    drafts={draftsByPath.get(file.path) ?? []}
-                    pending={pendingByPath.get(file.path) ?? []}
-                    annotations={annotationsByPath.get(file.path) ?? []}
-                    viewed={pr.viewed[file.path] ?? "unviewed"}
-                    current={file.path === ordered[currentIndex]?.path && current !== null}
-                    focusedThread={focusedThread}
-                    composing={composing}
-                    selection={selection?.path === file.path ? selection.range : null}
-                    onSelect={(path, r) => setSelection(r ? { path, range: r } : null)}
-                    anchors={anchors}
-                    ownership={ownership?.(file.path) ?? null}
-                    applicable={applicable}
-                    split={split}
-                    range={range}
-                    rendered={isRendered(file)}
-                    scrollRoot={streamRef}
-                    onToggleRendered={() => toggleRendered(file)}
-                    onApply={applySuggestion}
-                    onCompose={compose}
-                  />
-                ))}
-              </div>
-            </section>
+                <div className="space-y-8">
+                  {ordered.map((file) => (
+                    <ReviewFile
+                      key={`${viewKey(view)}:${ignoreWhitespace}:${split}:${file.path}`}
+                      prId={pr.id}
+                      headOid={pr.headRefOid}
+                      file={file}
+                      threads={threadsByPath.get(file.path) ?? []}
+                      drafts={draftsByPath.get(file.path) ?? []}
+                      pending={pendingByPath.get(file.path) ?? []}
+                      annotations={annotationsByPath.get(file.path) ?? []}
+                      viewed={pr.viewed[file.path] ?? "unviewed"}
+                      current={file.path === ordered[currentIndex]?.path && current !== null}
+                      focusedThread={focusedThread}
+                      composing={composing}
+                      selection={selection?.path === file.path ? selection.range : null}
+                      onSelect={(path, r) => setSelection(r ? { path, range: r } : null)}
+                      anchors={anchors}
+                      ownership={ownership?.(file.path) ?? null}
+                      applicable={applicable}
+                      split={split}
+                      range={range}
+                      rendered={isRendered(file)}
+                      scrollRoot={streamRef}
+                      onToggleRendered={() => toggleRendered(file)}
+                      onApply={applySuggestion}
+                      onCompose={compose}
+                    />
+                  ))}
+                </div>
+              </section>
+            </div>
           </div>
         </div>
         {rail && <ActivityRail pr={pr} />}
@@ -952,12 +999,17 @@ function Loaded({ pr }: { pr: PrView }) {
   );
 }
 
-function Header({ pr }: { pr: PrView }) {
+function jumpToSection(section: HTMLElement | null) {
+  section?.scrollIntoView({ block: "start" });
+  section?.focus({ preventScroll: true });
+}
+
+function Header({ pr, ref }: { pr: PrView; ref: Ref<HTMLElement> }) {
   const triage =
     pr.reviewers.length + pr.assignees.length + pr.labels.length + pr.linkedIssues.length > 0 ||
     pr.milestone !== null;
   return (
-    <header>
+    <header ref={ref} tabIndex={-1}>
       <p className="font-code text-meta text-faint">
         {pr.repo}#{pr.number}
       </p>
@@ -977,10 +1029,7 @@ function Header({ pr }: { pr: PrView }) {
         <span className="font-code text-faint">
           {pr.baseRefName} <span className="text-off">←</span> {pr.headRefName}
         </span>
-        <span className="font-code">
-          <span className="text-ok">+{pr.additions}</span>{" "}
-          <span className="text-bad">−{pr.deletions}</span>
-        </span>
+        <DiffStat additions={pr.additions} deletions={pr.deletions} />
         {pr.state !== "OPEN" ? (
           <span className="flex items-center gap-3 text-faint">
             {pr.state === "MERGED" ? "Merged" : "Closed"}
@@ -1024,24 +1073,7 @@ function Header({ pr }: { pr: PrView }) {
       {pr.stack && <StackStrip pr={pr} stack={pr.stack} />}
       {triage && (
         <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 text-meta text-muted">
-          {pr.reviewers.length > 0 && (
-            <span aria-label="Reviewers" className="flex items-center gap-3">
-              <Users aria-hidden size={14} className="text-off" />
-              {pr.reviewers.map((r) => (
-                <span
-                  key={`${r.kind}:${r.login}`}
-                  className="flex items-center gap-1.5"
-                  title={r.codeOwner ? `${r.state}, code owner` : r.state}
-                >
-                  <Dot tone={REVIEWER_TONE[r.state] ?? "faint"} />
-                  {r.login}
-                  {r.codeOwner && (
-                    <ShieldCheck aria-label="Code owner" size={12} className="text-off" />
-                  )}
-                </span>
-              ))}
-            </span>
-          )}
+          {pr.reviewers.length > 0 && <Reviewers pr={pr} />}
           {pr.assignees.length > 0 && (
             <span aria-label="Assignees" className="flex items-center gap-3">
               <UserRound aria-hidden size={14} className="text-off" />
@@ -1101,12 +1133,6 @@ function Header({ pr }: { pr: PrView }) {
     </header>
   );
 }
-
-const REVIEWER_TONE: Record<string, Tone> = {
-  APPROVED: "ok",
-  CHANGES_REQUESTED: "bad",
-  requested: "warn",
-};
 
 /** One sentence on whose move it is and what you're looking at. */
 function TurnLine({ pr, view, fallback }: { pr: PrView; view: DiffView; fallback: string | null }) {

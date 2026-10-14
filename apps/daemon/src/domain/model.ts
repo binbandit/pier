@@ -120,7 +120,8 @@ export class Model {
       doc.mergeStateStatus === v.mergeStateStatus &&
       doc.reviewDecision === v.reviewDecision &&
       Boolean(doc.autoMerge) === Boolean(v.autoMerge) &&
-      doc.mergeQueue?.state === v.mergeQueue?.state;
+      doc.mergeQueue?.state === v.mergeQueue?.state &&
+      doc.mergeQueue?.position === v.mergeQueue?.position;
     if (same) return "unchanged";
 
     const next: PrDoc = {

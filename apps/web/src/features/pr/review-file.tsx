@@ -15,6 +15,7 @@ import { codeBetween, hunkRows, patchLines } from "@/diff/lines";
 import { errorText } from "@/features/actions";
 import { rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
+import { DiffStat } from "@/ui/diff-stat";
 import type {
   Annotation,
   DiffFile,
@@ -290,10 +291,7 @@ export function ReviewFile(props: Props) {
         {file.patch === null && file.additions + file.deletions === 0 ? (
           <span className="shrink-0 text-meta text-faint">{moved ? "moved" : "binary"}</span>
         ) : (
-          <span className="shrink-0 font-code text-meta">
-            <span className="text-ok">+{file.additions}</span>{" "}
-            <span className="text-bad">−{file.deletions}</span>
-          </span>
+          <DiffStat additions={file.additions} deletions={file.deletions} className="text-meta" />
         )}
         {ownership?.yours && (
           <span

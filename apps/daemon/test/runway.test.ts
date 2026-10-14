@@ -11,6 +11,7 @@ const info = (overrides: Partial<MergeInfo> = {}): MergeInfo => ({
   reviewDecision: null,
   canUpdateBranch: true,
   canEnableAutoMerge: true,
+  canDisableAutoMerge: false,
   autoMerge: null,
   mergeQueue: null,
   messages: {},
@@ -42,12 +43,7 @@ describe("merge runway", () => {
       info({ isDraft: true, mergeStateStatus: "BEHIND", reviewDecision: "REVIEW_REQUIRED" }),
     );
     expect(runway.ready).toBe(false);
-    expect(runway.blockers.map((b) => b.fix)).toEqual([
-      "ready",
-      "update-branch",
-      "rerun",
-      "auto-merge",
-    ]);
+    expect(runway.blockers.map((b) => b.fix)).toEqual(["ready", "update-branch", "rerun", null]);
   });
 
   test("running checks can be handed to auto-merge only where the repo allows it", () => {
@@ -55,6 +51,30 @@ describe("merge runway", () => {
     expect(
       buildRunway(doc("pending", 0, 1), info({ autoMergeAllowed: false })).blockers[0]?.fix,
     ).toBeNull();
+  });
+
+  test("an armed auto-merge can be cancelled without permission to enable it again", () => {
+    const runway = buildRunway(
+      doc("pending", 0, 1),
+      info({
+        canEnableAutoMerge: false,
+        canDisableAutoMerge: true,
+        autoMerge: { method: "SQUASH" },
+      }),
+    );
+    expect(runway.canAutoMerge).toBe(false);
+    expect(runway.canCancelAutoMerge).toBe(true);
+    expect(runway.autoMerge).toEqual({ method: "SQUASH" });
+  });
+
+  test("draft and read-only PRs cannot arm auto-merge", () => {
+    expect(buildRunway(doc("pending"), info({ isDraft: true })).canAutoMerge).toBe(false);
+    const runway = buildRunway(
+      doc("pending"),
+      info({ canEnableAutoMerge: false, canDisableAutoMerge: false }),
+    );
+    expect(runway.canAutoMerge).toBe(false);
+    expect(runway.canCancelAutoMerge).toBe(false);
   });
 
   test("conflicts can't be fixed from here, and an unexplained block is said plainly", () => {

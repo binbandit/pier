@@ -3,6 +3,7 @@ import { clsx } from "clsx";
 import { useMemo, useState } from "react";
 
 import { useContrast } from "@/stores/contrast";
+import { DiffStat } from "@/ui/diff-stat";
 import type { DiffFile } from "@pier/core/wire";
 
 import { THEMES, registerTheme } from "./theme";
@@ -96,10 +97,7 @@ function DiffFileView({ file }: { file: DiffFile }) {
     return (
       <div className="flex h-10 items-center gap-3 border-y border-line px-1 text-meta">
         <span className="font-code text-fg">{file.path}</span>
-        <span className="font-code">
-          <span className="text-ok">+{file.additions}</span>{" "}
-          <span className="text-bad">−{file.deletions}</span>
-        </span>
+        <DiffStat additions={file.additions} deletions={file.deletions} />
         <span className="ml-auto text-faint">
           {file.patch === null ? (
             "Too large for GitHub to send as a diff"

@@ -720,6 +720,10 @@ function send(port: GitHubPort, command: Command): Promise<unknown> {
         command.prId,
         payload.enabled ? (payload.method ?? "MERGE") : null,
         command.expectedHead,
+        {
+          ...(payload.headline !== undefined ? { headline: payload.headline } : {}),
+          ...(payload.body !== undefined ? { body: payload.body } : {}),
+        },
       );
     case "update-branch":
       return port.updateBranch(command.prId, payload.rebase ?? false, command.expectedHead);

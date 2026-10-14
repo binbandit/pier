@@ -213,7 +213,16 @@ export function createApp(options: AppOptions) {
     git: () => options.git ?? null,
   });
 
-  const VIEW_TOPICS: Topic[] = ["inbox", "counts", "group", "flight", "status", "search", "views"];
+  const VIEW_TOPICS: Topic[] = [
+    "inbox",
+    "counts",
+    "group",
+    "flight",
+    "mergeQueue",
+    "status",
+    "search",
+    "views",
+  ];
   model.onChange((ids) => {
     events.emit([...VIEW_TOPICS, "pr"]);
     fetchHumanHeads(ids);

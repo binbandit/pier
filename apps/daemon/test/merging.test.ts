@@ -17,6 +17,36 @@ const setup = () => {
 };
 
 describe("merging, past the basics", () => {
+  test("auto-merge retains the chosen commit message and exposes cancellation separately", async () => {
+    const { world, pr, you } = setup();
+    const message = { headline: "Land the dependency update", body: "Reviewed and tested." };
+    await you.setAutoMerge(pr.id, "SQUASH", world.head(pr), message);
+    expect(await you.mergeInfo(pr.id)).toMatchObject({
+      canEnableAutoMerge: false,
+      canDisableAutoMerge: true,
+      autoMerge: { method: "SQUASH", ...message },
+    });
+    await you.setAutoMerge(pr.id, null, world.head(pr));
+    expect(await you.mergeInfo(pr.id)).toMatchObject({
+      canEnableAutoMerge: true,
+      canDisableAutoMerge: false,
+      autoMerge: null,
+    });
+  });
+
+  test("cancelling auto-merge prevents an already scheduled merge", async () => {
+    const world = generateScenario({ preset: "sandbox", clock: "manual" });
+    const you = createFakePorts(world).get("binbandit")!;
+    const pr = world.prByNumber("WastedHippie/sandbox-api", 6)!;
+    const head = world.head(pr);
+    await you.setAutoMerge(pr.id, "SQUASH", head);
+    await you.approve(pr.id, head);
+    await you.setAutoMerge(pr.id, null, head);
+    world.advance(world.options.automergeDelayMs);
+    expect(pr.state).toBe("OPEN");
+    expect(pr.autoMerge).toBeNull();
+  });
+
   test("a queue takes PRs in turn, and jumping puts one at the front", async () => {
     const { world, pr, you } = setup();
     pr.repo.mergeQueue = true;

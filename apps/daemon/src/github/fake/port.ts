@@ -611,9 +611,14 @@ export class FakeGitHub implements GitHubPort {
     });
   }
 
-  setAutoMerge(prId: string, method: MergeMethod | null, headOid: string): Promise<void> {
+  setAutoMerge(
+    prId: string,
+    method: MergeMethod | null,
+    headOid: string,
+    message: { headline?: string; body?: string } = {},
+  ): Promise<void> {
     return this.call("setAutoMerge", "graphql", () =>
-      this.world.setAutoMerge(this.visiblePr(prId).id, this.login, method, headOid),
+      this.world.setAutoMerge(this.visiblePr(prId).id, this.login, method, headOid, message),
     );
   }
 
@@ -909,7 +914,8 @@ export class FakeGitHub implements GitHubPort {
       mergeStateStatus: this.world.mergeStateStatus(pr),
       reviewDecision: this.world.reviewDecision(pr),
       autoMerge: pr.autoMerge ? { enabledAt: pr.autoMerge.enabledAt } : null,
-      mergeQueue: null,
+      mergeQueue:
+        pr.queuePosition === null ? null : { position: pr.queuePosition, state: "QUEUED" },
       rollup: this.world.rollup(pr),
     };
   }
@@ -943,7 +949,8 @@ export class FakeGitHub implements GitHubPort {
       reviewDecision: world.reviewDecision(pr),
       author: world.actor(pr.author),
       autoMerge: pr.autoMerge,
-      mergeQueue: null,
+      mergeQueue:
+        pr.queuePosition === null ? null : { position: pr.queuePosition, state: "QUEUED" },
       labels: pr.labels.slice(0, 20),
       assignees: pr.assignees.map((login) => ({ login, avatarUrl: world.avatarUrl(login) })),
       milestone: pr.repo.milestones.find((m) => m.number === pr.milestone) ?? null,
@@ -1003,8 +1010,21 @@ export class FakeGitHub implements GitHubPort {
       // Only offered while the base has moved on since the branch was cut.
       canUpdateBranch:
         open && (canWrite || pr.author === this.login) && pr.baseRefOid !== pr.repo.headOid,
-      canEnableAutoMerge: open && canWrite && pr.repo.autoMergeAllowed,
-      autoMerge: pr.autoMerge ? { method: pr.autoMerge.method } : null,
+      canEnableAutoMerge:
+        open &&
+        canWrite &&
+        pr.repo.autoMergeAllowed &&
+        !pr.isDraft &&
+        pr.autoMerge === null &&
+        world.mergeStateStatus(pr) !== "CLEAN",
+      canDisableAutoMerge: open && canWrite && pr.autoMerge !== null,
+      autoMerge: pr.autoMerge
+        ? {
+            method: pr.autoMerge.method,
+            ...(pr.autoMerge.headline !== undefined ? { headline: pr.autoMerge.headline } : {}),
+            ...(pr.autoMerge.body !== undefined ? { body: pr.autoMerge.body } : {}),
+          }
+        : null,
       mergeQueue:
         pr.queuePosition === null ? null : { position: pr.queuePosition, state: "QUEUED" },
       messages: {

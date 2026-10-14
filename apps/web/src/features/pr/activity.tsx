@@ -3,11 +3,14 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { errorText } from "@/features/actions";
+import { useCommands } from "@/keys/registry";
 import { githubPath } from "@/lib/permalink";
 import { rpc } from "@/lib/rpc";
+import { usePrefs } from "@/stores/prefs";
 import { useUi } from "@/stores/ui";
 import { Avatar } from "@/ui/avatar";
 import { Dot, type Tone } from "@/ui/dot";
+import { Keys } from "@/ui/kbd";
 import { When } from "@/ui/when";
 import type { PrView, TimelineEntry } from "@pier/core/wire";
 
@@ -27,10 +30,26 @@ const REVIEW_STATE: Record<string, { text: string; tone: Tone }> = {
 export function ActivityRail({ pr }: { pr: PrView }) {
   const client = useQueryClient();
   const toast = useUi((s) => s.toast);
+  const showUpdates = usePrefs((s) => s.showHistoryUpdates);
+  const toggleUpdates = usePrefs((s) => s.toggleHistoryUpdates);
+  const timeline = showUpdates
+    ? pr.timeline
+    : pr.timeline.filter((entry) => entry.kind === "comment" || entry.kind === "review");
+  const toggleLabel = showUpdates ? "Hide history updates" : "Show history updates";
+  useCommands([
+    {
+      id: "pr.history-updates",
+      title: toggleLabel,
+      keys: ["h"],
+      scope: "surface",
+      group: "View",
+      run: toggleUpdates,
+    },
+  ]);
   // Like a chat: open at the newest, and follow new entries while you're reading the end.
   const list = useRef<HTMLOListElement>(null);
   const atEnd = useRef(true);
-  const entries = pr.timeline.length;
+  const entries = timeline.length;
   useEffect(() => {
     const el = list.current;
     if (el && entries > 0 && atEnd.current) el.scrollTop = el.scrollHeight;
@@ -38,9 +57,19 @@ export function ActivityRail({ pr }: { pr: PrView }) {
 
   return (
     <aside aria-label="Activity" className="flex w-[380px] shrink-0 flex-col border-l border-line">
-      <h2 className="flex h-11 shrink-0 items-center border-b border-line px-5 text-ui font-medium text-strong">
-        Activity
-      </h2>
+      <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line px-5">
+        <h2 className="text-ui font-medium text-strong">Activity</h2>
+        <button
+          type="button"
+          aria-label={toggleLabel}
+          aria-keyshortcuts="h"
+          onClick={toggleUpdates}
+          title={`${toggleLabel} (H): commits, pushes and other updates`}
+          className="flex h-7 items-center gap-2 rounded-sm px-1 text-meta text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          {showUpdates ? "Hide updates" : "Show updates"} <Keys sequence="h" />
+        </button>
+      </div>
       <ol
         ref={list}
         onScroll={(e) => {
@@ -49,10 +78,16 @@ export function ActivityRail({ pr }: { pr: PrView }) {
         }}
         className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4"
       >
-        {pr.timeline.length === 0 && (
-          <li className="text-meta text-faint">{pr.detailLoaded ? "Nothing yet." : "Loading"}</li>
+        {timeline.length === 0 && (
+          <li className="text-meta text-faint">
+            {!pr.detailLoaded
+              ? "Loading"
+              : !showUpdates && pr.timeline.length > 0
+                ? "No comments or reviews yet. History updates are hidden."
+                : "Nothing yet."}
+          </li>
         )}
-        {pr.timeline.map((entry) => (
+        {timeline.map((entry) => (
           <li key={entryKey(entry)}>
             <Entry prId={pr.id} entry={entry} />
           </li>

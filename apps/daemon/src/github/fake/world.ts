@@ -196,7 +196,7 @@ export type FakePr = {
   /** login -> path -> the file revision they marked viewed. */
   viewed: Map<string, Map<string, number>>;
   mentions: Set<string>;
-  autoMerge: { enabledAt: string; method: MergeMethod } | null;
+  autoMerge: { enabledAt: string; method: MergeMethod; headline?: string; body?: string } | null;
   /** The merge base of every head this PR has had, so old heads resolve after a force-push. */
   bases: Map<string, string>;
   /** What a bot PR carries, as the scenario meant it; tests check parseBotPr against this. */
@@ -1056,7 +1056,13 @@ export class FakeWorld {
     });
   }
 
-  setAutoMerge(prId: string, by: string, method: MergeMethod | null, headOid: string): void {
+  setAutoMerge(
+    prId: string,
+    by: string,
+    method: MergeMethod | null,
+    headOid: string,
+    message: { headline?: string; body?: string } = {},
+  ): void {
     const pr = this.mustPr(prId);
     if (!this.canWrite(pr.repo, by))
       throw graphqlError(`${by} does not have permission to change auto-merge`);
@@ -1067,12 +1073,13 @@ export class FakeWorld {
     if (!pr.repo.autoMergeAllowed)
       throw graphqlError("Auto merge is not allowed for this repository");
     if (pr.state !== "OPEN") throw graphqlError("Pull request is not open");
+    if (pr.isDraft) throw graphqlError("Pull request is still a draft");
     if (this.head(pr) !== headOid)
       throw graphqlError("The expected head OID did not match the head of the pull request");
     // GitHub only arms auto-merge on PRs that can't merge right now.
     if (this.mergeStateStatus(pr) === "CLEAN")
       throw graphqlError("Pull request is in clean status");
-    pr.autoMerge = { enabledAt: this.iso(), method };
+    pr.autoMerge = { enabledAt: this.iso(), method, ...(method !== "REBASE" ? message : {}) };
     this.schedule(this.options.automergeDelayMs, () => this.automerge(pr, headOid));
   }
 
@@ -1859,6 +1866,9 @@ export class FakeWorld {
   }
 
   private automerge(pr: FakePr, approvedOid: string): void {
+    const isBotPr = this.users.get(pr.author)?.isBot ?? false;
+    if (!pr.autoMerge && !(isBotPr && pr.repo.automergeOnApproval)) return;
+    if (pr.isDraft) return;
     if (pr.state !== "OPEN" || this.head(pr) !== approvedOid || pr.mergeable === "conflicting")
       return;
     const decision = this.reviewDecision(pr);

@@ -11,7 +11,8 @@ export function buildRunway(
   conflicts: string[] = [],
 ): Runway {
   const blockers: Blocker[] = [];
-  const canAutoMerge = info.autoMergeAllowed && info.canEnableAutoMerge;
+  const canAutoMerge =
+    info.autoMergeAllowed && info.canEnableAutoMerge && !info.isDraft && info.autoMerge === null;
 
   if (info.isDraft) blockers.push({ text: "It's still a draft", fix: "ready" });
   if (info.mergeable === "CONFLICTING") {
@@ -64,6 +65,7 @@ export function buildRunway(
     defaultMethod: info.defaultMethod,
     messages: info.messages,
     canAutoMerge,
+    canCancelAutoMerge: info.canDisableAutoMerge && info.autoMerge !== null,
     autoMerge: info.autoMerge,
     mergeQueue: info.mergeQueue,
     canUpdateBranch: info.canUpdateBranch,

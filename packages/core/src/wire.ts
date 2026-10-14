@@ -190,6 +190,14 @@ export type PrItem = {
 
 export type QueueItem = GroupItem | PrItem;
 
+/** Tracked PRs in GitHub's merge queue or armed to merge when ready. */
+export type MergeQueueItem = PrItem & {
+  baseRefName: string;
+  position: number | null;
+  queueState: string | null;
+  autoMerge: string | null;
+};
+
 /** What a search found: the first matches, how many there were, and what didn't parse. */
 export type SearchResult = { items: PrItem[]; total: number; errors: string[] };
 
@@ -649,7 +657,8 @@ export type Runway = {
   /** GitHub's default commit title and body for each method (rebase has none). */
   messages: Partial<Record<MergeMethod, { headline: string; body: string }>>;
   canAutoMerge: boolean;
-  autoMerge: { method: MergeMethod } | null;
+  canCancelAutoMerge: boolean;
+  autoMerge: { method: MergeMethod; headline?: string; body?: string } | null;
   mergeQueue: { position: number; state: string } | null;
   canUpdateBranch: boolean;
   /** The base branch merges through a queue, so "merge" means "add to the queue". */

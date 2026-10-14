@@ -32,7 +32,17 @@ If the machine won't run an unsigned binary, run pier from the checkout instead:
 
 `g r` / `g d` / `g m` go to Review, Deps and Mine; `Tab` moves between them. `j`/`k` move, `Enter` opens, `e` marks done, `a` approves (a whole Clear bump group at once), `r` writes a review, `z` takes back anything still in its few seconds. `⌘K` finds any command or opens a pasted GitHub link, and `?` lists every key on the screen you're on.
 
+In a PR, use the section bar to jump past the description to Changes. `h` toggles history
+updates in Activity and remembers your choice. Type `@` in a comment to find PR participants
+and repository collaborators. Right-click a saved view in the sidebar to rename or delete it.
+The Merge queue (`g q`) shows tracked PRs queued in GitHub or set to merge when ready. Open a PR's
+Merge panel to enable or cancel merge when ready.
+Use `s c` to close or reopen a PR, with five seconds to undo closing using `z`.
+
 ## Develop
+
+With [just](https://just.systems) installed, `just run` starts both development servers and
+`just build` builds the standalone binary at `apps/daemon/dist/pier`.
 
 ```sh
 bun run --filter @pier/daemon dev       # daemon on :4477, restarts on change

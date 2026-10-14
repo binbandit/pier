@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FlightRouteImport } from './routes/flight'
 import { Route as LogRouteImport } from './routes/log'
+import { Route as MergeQueueRouteImport } from './routes/merge-queue'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TokensRouteImport } from './routes/tokens'
@@ -35,6 +36,11 @@ const FlightRoute = FlightRouteImport.update({
 const LogRoute = LogRouteImport.update({
   id: '/log',
   path: '/log',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MergeQueueRoute = MergeQueueRouteImport.update({
+  id: '/merge-queue',
+  path: '/merge-queue',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SearchRoute = SearchRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
+  '/merge-queue': typeof MergeQueueRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/tokens': typeof TokensRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
+  '/merge-queue': typeof MergeQueueRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/tokens': typeof TokensRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
+  '/merge-queue': typeof MergeQueueRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/tokens': typeof TokensRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/'
     | '/flight'
     | '/log'
+    | '/merge-queue'
     | '/search'
     | '/settings'
     | '/tokens'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/'
     | '/flight'
     | '/log'
+    | '/merge-queue'
     | '/search'
     | '/settings'
     | '/tokens'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/'
     | '/flight'
     | '/log'
+    | '/merge-queue'
     | '/search'
     | '/settings'
     | '/tokens'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FlightRoute: typeof FlightRoute
   LogRoute: typeof LogRoute
+  MergeQueueRoute: typeof MergeQueueRoute
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
   TokensRoute: typeof TokensRoute
@@ -208,6 +221,13 @@ declare module '@tanstack/react-router' {
       path: '/log'
       fullPath: '/log'
       preLoaderRoute: typeof LogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/merge-queue': {
+      id: '/merge-queue'
+      path: '/merge-queue'
+      fullPath: '/merge-queue'
+      preLoaderRoute: typeof MergeQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/search': {
@@ -280,6 +300,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FlightRoute: FlightRoute,
   LogRoute: LogRoute,
+  MergeQueueRoute: MergeQueueRoute,
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
   TokensRoute: TokensRoute,

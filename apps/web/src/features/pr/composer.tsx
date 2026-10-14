@@ -5,6 +5,7 @@ import { useCommands } from "@/keys/registry";
 import { useUi } from "@/stores/ui";
 import { Keys } from "@/ui/kbd";
 
+import { useMentions } from "./mentions";
 import { SavedReplies } from "./replies";
 
 // The one text box pier writes comments in: inline drafts, thread replies, review bodies and the
@@ -82,6 +83,7 @@ export function Composer({
   };
 
   const openReplies = () => {
+    mentions.close();
     const el = ref.current;
     setReplying({ start: el?.selectionStart ?? body.length, end: el?.selectionEnd ?? body.length });
   };
@@ -100,6 +102,8 @@ export function Composer({
     setReplying(null);
     placeCaret(replying.start + text.length);
   };
+
+  const mentions = useMentions({ input: ref, focused, onChange: setBody, placeCaret });
 
   const insertSuggestion = () => {
     const el = ref.current;
@@ -174,11 +178,21 @@ export function Composer({
         onChange={(e) => {
           setBody(e.target.value);
           grow(e.target);
+          mentions.update(e.target);
         }}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onSelect={(e) => mentions.update(e.currentTarget)}
+        onFocus={(e) => {
+          setFocused(true);
+          mentions.update(e.currentTarget);
+        }}
+        onBlur={() => {
+          setFocused(false);
+          mentions.close();
+        }}
+        {...mentions.inputProps}
         className="block w-full resize-none bg-transparent px-3 py-2.5 font-ui text-ui leading-6 text-strong outline-none placeholder:text-faint"
       />
+      {mentions.popup}
       <div className="flex items-center gap-4 border-t border-line px-3 py-1.5 text-meta text-faint">
         <span>Markdown</span>
         <button

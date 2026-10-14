@@ -89,7 +89,8 @@ export type MergeInfo = {
   reviewDecision: string | null;
   canUpdateBranch: boolean;
   canEnableAutoMerge: boolean;
-  autoMerge: { method: MergeMethod } | null;
+  canDisableAutoMerge: boolean;
+  autoMerge: { method: MergeMethod; headline?: string; body?: string } | null;
   mergeQueue: { position: number; state: string } | null;
   messages: Partial<Record<MergeMethod, { headline: string; body: string }>>;
   methods: MergeMethod[];
@@ -213,7 +214,12 @@ export interface GitHubPort {
   /** Opens a PR that reverts this merged one. */
   revert(prId: string, title?: string, body?: string): Promise<{ number: number; url: string }>;
   mergeStatus(repo: string, number: number, uuid: string): Promise<MergeResult>;
-  setAutoMerge(prId: string, method: MergeMethod | null, headOid: string): Promise<void>;
+  setAutoMerge(
+    prId: string,
+    method: MergeMethod | null,
+    headOid: string,
+    message?: { headline?: string; body?: string },
+  ): Promise<void>;
   updateBranch(prId: string, rebase: boolean, headOid: string): Promise<void>;
   /**
    * Adds and removes by name: label names, or logins for assignees and reviewers. Reviewers

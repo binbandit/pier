@@ -80,12 +80,22 @@ function Loaded({
   const toast = useUi((s) => s.toast);
   // GitHub merges a stack from the bottom, so merging this takes the open PRs below with it.
   const along = mergedAlong(pr);
-  const [method, setMethod] = useState<MergeMethod>(runway.defaultMethod);
+  const [method, setMethod] = useState<MergeMethod>(
+    runway.autoMerge?.method ?? runway.defaultMethod,
+  );
   const message = runway.messages[method];
-  const [headline, setHeadline] = useState(message?.headline ?? "");
-  const [body, setBody] = useState(message?.body ?? "");
+  const [headline, setHeadline] = useState(runway.autoMerge?.headline ?? message?.headline ?? "");
+  const [body, setBody] = useState(runway.autoMerge?.body ?? message?.body ?? "");
+  const [saving, setSaving] = useState<"auto" | "jump" | "remove" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const changeLock = useRef(false);
+  const autoSaving = saving === "auto";
+  const canToggleAutoMerge =
+    pr.state === "OPEN" &&
+    (runway.autoMerge ? runway.canCancelAutoMerge : !runway.ready && runway.canAutoMerge);
 
   const pick = (next: MergeMethod) => {
+    if (saving || runway.autoMerge || runway.queued) return;
     setMethod(next);
     setHeadline(runway.messages[next]?.headline ?? "");
     setBody(runway.messages[next]?.body ?? "");
@@ -114,6 +124,43 @@ function Loaded({
     }
   };
 
+  const confirmChange = async (
+    action: "auto" | "jump" | "remove",
+    work: () => Promise<{ commandIds: string[] }>,
+    done: string,
+  ) => {
+    if (changeLock.current) return;
+    changeLock.current = true;
+    setSaving(action);
+    setActionError(null);
+    try {
+      const { commandIds } = await work();
+      if (commandIds.length === 0) throw new Error("No change was queued");
+      // Enqueuing the write isn't confirmation. Keep the controls busy until GitHub accepts it.
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const outcomes = await Promise.all(
+          commandIds.map((commandId) => rpc("commandResult", { commandId })),
+        );
+        const failed = outcomes.find(
+          (outcome) => outcome?.state === "failed" || outcome?.state === "cancelled",
+        );
+        if (failed) throw new Error(failed.detail ?? "GitHub didn't accept this change");
+        if (outcomes.every((outcome) => outcome?.state === "acked")) {
+          await client.invalidateQueries();
+          toast({ text: done, tone: "ok" });
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      throw new Error("The change is still pending. Check the activity log before trying again.");
+    } catch (error) {
+      setActionError(errorText(error));
+    } finally {
+      changeLock.current = false;
+      setSaving(null);
+    }
+  };
+
   // Merging past the rules is offered to admins, and only goes once they've typed the repo's name.
   const [bypassing, setBypassing] = useState(false);
   const [confirmation, setConfirmation] = useState("");
@@ -123,6 +170,7 @@ function Loaded({
   }, [bypassing]);
 
   const merge = async (bypass = false) => {
+    if (changeLock.current || pr.state !== "OPEN") return;
     if (!runway.ready && !bypass) return;
     const sent = await act(
       () =>
@@ -140,18 +188,35 @@ function Loaded({
       onMerged();
     }
   };
-  const queue = (action: "jump" | "remove") =>
-    void act(
+  const queue = (action: "jump" | "remove") => {
+    if (pr.state !== "OPEN") return;
+    if (
+      action === "remove"
+        ? !runway.mergeQueue
+        : !runway.queued || runway.mergeQueue || !runway.ready
+    )
+      return;
+    void confirmChange(
+      action,
       () => rpc("queue", { prId: pr.id, action }),
       action === "jump" ? "Jumped to the front of the merge queue" : "Taken out of the merge queue",
     );
-  const toggleAutoMerge = () =>
-    void act(
-      () => rpc("setAutoMerge", { prId: pr.id, enabled: !runway.autoMerge, method }),
-      runway.autoMerge
-        ? "Auto-merge turned off"
-        : `Auto-merge on: ${LABELS[method].toLowerCase()} when ready`,
+  };
+  const toggleAutoMerge = () => {
+    if (!canToggleAutoMerge) return;
+    const enabled = !runway.autoMerge;
+    void confirmChange(
+      "auto",
+      () =>
+        rpc("setAutoMerge", {
+          prId: pr.id,
+          enabled,
+          method,
+          ...(enabled && method !== "REBASE" && !runway.queued ? { headline, body } : {}),
+        }),
+      enabled ? "This PR will merge when ready" : "Auto-merge cancelled",
     );
+  };
   const update = (rebase: boolean) =>
     void act(
       () => rpc("updateBranch", { prId: pr.id, rebase }),
@@ -227,11 +292,11 @@ function Loaded({
       scope: "panel" as const,
       run: () => pick(m),
     })),
-    ...(runway.canAutoMerge
+    ...(canToggleAutoMerge
       ? [
           {
             id: "runway.auto",
-            title: "Toggle auto-merge",
+            title: runway.autoMerge ? "Cancel auto-merge" : "Merge when ready",
             keys: ["a"],
             scope: "panel" as const,
             run: toggleAutoMerge,
@@ -269,7 +334,7 @@ function Loaded({
   return (
     <Dock label="Merge">
       <div className="max-w-[900px]">
-        <div className="mb-3 flex items-baseline gap-4">
+        <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
           <h2 className="text-ui font-medium text-strong">
             {runway.ready ? "Ready to merge" : "Not ready to merge"}
           </h2>
@@ -281,9 +346,14 @@ function Loaded({
           {runway.mergeQueue && (
             <span className="flex items-center gap-3 text-meta text-auto">
               In the merge queue, position {runway.mergeQueue.position}
-              <span className="flex items-center gap-1.5 text-faint">
-                <Keys sequence="x" /> take it out
-              </span>
+              <button
+                type="button"
+                disabled={saving !== null}
+                onClick={() => queue("remove")}
+                className="flex items-center gap-1.5 text-faint enabled:hover:text-fg disabled:opacity-50"
+              >
+                <Keys sequence="x" /> {saving === "remove" ? "Removing…" : "Leave queue"}
+              </button>
             </span>
           )}
         </div>
@@ -324,6 +394,7 @@ function Loaded({
             <button
               key={m}
               type="button"
+              disabled={saving !== null || runway.autoMerge !== null || runway.queued}
               onClick={() => pick(m)}
               className={clsx(
                 "flex h-8 items-center gap-2 rounded-sm border px-3 text-meta",
@@ -343,24 +414,21 @@ function Loaded({
                 <Keys sequence="u" /> update branch
               </span>
             )}
-            {runway.canAutoMerge && (
-              <span className="flex items-center gap-1.5">
-                <Keys sequence="a" /> {runway.autoMerge ? "turn off auto-merge" : "auto-merge"}
-              </span>
-            )}
             {runway.canBypass && (
               <span className="flex items-center gap-1.5">
                 <Keys sequence="b" /> merge as admin
               </span>
             )}
             {runway.queued && !runway.mergeQueue && runway.ready && (
-              <span className="flex items-center gap-1.5">
-                <Keys sequence="j" /> jump the queue
-              </span>
+              <button
+                type="button"
+                disabled={saving !== null}
+                onClick={() => queue("jump")}
+                className="flex items-center gap-1.5 enabled:hover:text-fg disabled:opacity-50"
+              >
+                <Keys sequence="j" /> {saving === "jump" ? "Moving…" : "Jump the queue"}
+              </button>
             )}
-            <span className={clsx("flex items-center gap-1.5", !runway.ready && "opacity-40")}>
-              <Keys sequence="enter" /> {runway.queued ? "Add to the queue" : LABELS[method]}
-            </span>
           </span>
         </div>
 
@@ -383,22 +451,76 @@ function Loaded({
           </div>
         )}
 
-        {method !== "REBASE" && (
+        {runway.queued && (
+          <p className="text-meta text-faint">
+            The merge queue uses the repository's merge method and commit message.
+          </p>
+        )}
+        {method !== "REBASE" && !runway.queued && (
           <div className="rounded-md border border-line-strong bg-canvas">
             <input
               value={headline}
+              disabled={saving !== null || runway.autoMerge !== null}
               onChange={(e) => setHeadline(e.target.value)}
               aria-label="Commit title"
               className="block h-10 w-full border-b border-line bg-transparent px-3 text-ui text-strong outline-none"
             />
             <textarea
               value={body}
+              disabled={saving !== null || runway.autoMerge !== null}
               onChange={(e) => setBody(e.target.value)}
               aria-label="Commit message"
               rows={3}
               className="block w-full resize-none bg-transparent px-3 py-2 font-code text-meta text-fg outline-none"
             />
           </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {(!runway.ready || runway.autoMerge) && (
+            <button
+              type="button"
+              disabled={saving !== null || !canToggleAutoMerge}
+              title={
+                canToggleAutoMerge
+                  ? undefined
+                  : runway.autoMerge
+                    ? "You don't have permission to cancel auto-merge"
+                    : pr.isDraft
+                      ? "Mark this PR ready before enabling auto-merge"
+                      : "GitHub hasn't made auto-merge available for this PR"
+              }
+              onClick={toggleAutoMerge}
+              className="flex h-9 items-center gap-2 rounded-sm border border-accent bg-selected px-3 text-ui text-strong enabled:hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Keys sequence="a" />
+              {autoSaving
+                ? runway.autoMerge
+                  ? "Cancelling auto-merge…"
+                  : "Scheduling merge…"
+                : runway.autoMerge
+                  ? "Cancel auto-merge"
+                  : "Merge when ready"}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!runway.ready || saving !== null || pr.state !== "OPEN"}
+            onClick={() => void merge()}
+            className="flex h-9 items-center gap-2 rounded-sm border border-line-strong px-3 text-ui text-strong enabled:hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Keys sequence="enter" /> {runway.queued ? "Add to the queue" : "Merge now"}
+          </button>
+          {!runway.ready && !runway.autoMerge && runway.canAutoMerge && (
+            <p className="text-meta text-faint">
+              GitHub will merge this PR once its required checks and reviews pass.
+            </p>
+          )}
+        </div>
+        {actionError && (
+          <p role="alert" className="mt-2 text-meta text-bad">
+            {actionError}
+          </p>
         )}
       </div>
     </Dock>

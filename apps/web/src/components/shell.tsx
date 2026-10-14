@@ -10,6 +10,7 @@ import { q } from "@/lib/rpc";
 import { useContrastSchedule } from "@/stores/contrast";
 import { usePrefs } from "@/stores/prefs";
 import { useUi } from "@/stores/ui";
+import type { SavedView } from "@pier/core/wire";
 
 import { Cheatsheet } from "./cheatsheet";
 import { EscapeHatch } from "./escape";
@@ -17,6 +18,7 @@ import { Palette } from "./palette";
 import { PlanStrip } from "./plan-strip";
 import { StatusLine } from "./status-line";
 import { Toasts } from "./toasts";
+import { ViewActions } from "./view-actions";
 
 // The frame around every screen: a quiet rail on the left, the surface in the middle, and the
 // status line along the bottom. Confirmations rise out of the status line rather than floating
@@ -65,6 +67,14 @@ export function Shell({ children }: { children: ReactNode }) {
       scope: "global",
       group: "Go to",
       run: () => void navigate({ to: "/flight" }),
+    },
+    {
+      id: "go.merge-queue",
+      title: "Go to Merge queue",
+      keys: ["g q"],
+      scope: "global",
+      group: "Go to",
+      run: () => void navigate({ to: "/merge-queue" }),
     },
     {
       id: "go.search",
@@ -194,12 +204,14 @@ function Rail() {
               label={view.name}
               count={view.count}
               active={pathname === `/v/${view.id}`}
+              view={view}
             />
           ))}
         </ul>
       )}
       <ul className="mt-6 space-y-0.5">
         <RailItem to="/flight" label="In flight" active={pathname === "/flight"} />
+        <RailItem to="/merge-queue" label="Merge queue" active={pathname === "/merge-queue"} />
         <RailItem to="/log" label="Log" active={pathname === "/log"} />
         <RailItem to="/search" label="Search" active={pathname === "/search"} />
       </ul>
@@ -215,32 +227,47 @@ function RailItem({
   label,
   count,
   active,
+  view,
 }: {
   to: string;
   label: string;
   count?: number | undefined;
   active: boolean;
+  view?: SavedView;
 }) {
+  const link = (
+    <Link
+      to={to}
+      className={clsx(
+        "relative flex h-8 items-center rounded-sm px-3 transition-colors",
+        active ? "bg-cursor text-strong" : "text-muted hover:bg-hover hover:text-fg",
+      )}
+    >
+      {active && (
+        <span
+          aria-hidden
+          className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent"
+        />
+      )}
+      <span className="min-w-0 flex-1 truncate" title={label}>
+        {label}
+      </span>
+      {count !== undefined && count > 0 && (
+        <span className={clsx("ml-2 shrink-0 text-meta", active ? "text-muted" : "text-faint")}>
+          {count}
+        </span>
+      )}
+    </Link>
+  );
   return (
     <li>
-      <Link
-        to={to}
-        className={clsx(
-          "relative flex h-8 items-center rounded-sm px-3 transition-colors",
-          active ? "bg-cursor text-strong" : "text-muted hover:bg-hover hover:text-fg",
-        )}
-      >
-        {active && (
-          <span
-            aria-hidden
-            className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent"
-          />
-        )}
-        <span className="flex-1">{label}</span>
-        {count !== undefined && count > 0 && (
-          <span className={clsx("text-meta", active ? "text-muted" : "text-faint")}>{count}</span>
-        )}
-      </Link>
+      {view ? (
+        <ViewActions view={view} active={active}>
+          {link}
+        </ViewActions>
+      ) : (
+        link
+      )}
     </li>
   );
 }

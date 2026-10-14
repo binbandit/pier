@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import { RotateCw } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { ChevronDown, RotateCw } from "lucide-react";
+import { type ReactNode, useId, useState } from "react";
 
 import { errorText, rerun } from "@/features/actions";
 import { type Command, useCommands } from "@/keys/registry";
+import { formatNumber } from "@/lib/format";
 import { q, qLive, rpc } from "@/lib/rpc";
 import { useUi } from "@/stores/ui";
 import { Dot, type Tone } from "@/ui/dot";
@@ -30,6 +31,8 @@ type RunTarget = { runId?: number; jobId?: number; environmentIds?: number[]; de
 const EMPTY: ChecksView = { runs: [], workflows: [], deployments: [] };
 
 export function Checks({ pr }: { pr: PrView }) {
+  const detailsId = useId();
+  const [expanded, setExpanded] = useState<boolean>();
   const client = useQueryClient();
   const toast = useUi((s) => s.toast);
   const { data: view = EMPTY } = useQuery(
@@ -43,6 +46,7 @@ export function Checks({ pr }: { pr: PrView }) {
     ),
   );
   const { runs, workflows, deployments } = view;
+  const showDetails = expanded ?? runs.length <= 8;
   // Annotations on files in the diff show on their lines; the rest (runner messages, files the PR
   // doesn't touch) show under their check. Same query as the canvas's, so it's one fetch.
   const { data: annotations = [] } = useQuery(
@@ -159,13 +163,48 @@ export function Checks({ pr }: { pr: PrView }) {
       a.name.localeCompare(b.name),
   );
   return (
-    <section className="mt-6">
-      <h2 className="mb-2 flex items-baseline gap-4 text-meta">
-        <span className="text-muted">Checks</span>
+    <section aria-label="Checks" className="mt-6">
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-meta">
+        <h2>
+          <button
+            type="button"
+            aria-label={showDetails ? "Hide checks" : "Show checks"}
+            aria-expanded={showDetails}
+            aria-controls={detailsId}
+            onClick={() => setExpanded(!showDetails)}
+            className="flex items-center gap-2 rounded-sm py-1 text-muted hover:text-strong"
+          >
+            <ChevronDown aria-hidden size={14} className={clsx(!showDetails && "-rotate-90")} />
+            <span>Checks</span>
+            <span className="text-faint">{formatNumber(runs.length)}</span>
+          </button>
+        </h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {(["failure", "pending", "success", "skipped", "neutral"] as const).map((state) => {
+            const total = runs.filter((run) => run.state === state).length;
+            if (total === 0) return null;
+            return (
+              <span key={state} className="flex items-center gap-1.5 whitespace-nowrap text-faint">
+                <Dot tone={TONE[state]} />
+                {formatNumber(total)}{" "}
+                {state === "failure"
+                  ? "failed"
+                  : state === "pending"
+                    ? "running"
+                    : state === "success"
+                      ? "passed"
+                      : state}
+              </span>
+            );
+          })}
+          {deployments.length > 0 && (
+            <span className="text-faint">{count(deployments.length, "deployment")}</span>
+          )}
+        </div>
         {failing.length > 0 && <Hint keys="f r">re-run failed</Hint>}
         {failing.length > 0 && <Hint keys="f d">with debug logs</Hint>}
         {running.length > 0 && <Hint keys="f x">cancel</Hint>}
-      </h2>
+      </div>
 
       {held.length > 0 && (
         <Banner keys="f p" action="approve">
@@ -180,132 +219,136 @@ export function Checks({ pr }: { pr: PrView }) {
         </Banner>
       ))}
 
-      <ul className="max-w-[900px] space-y-0.5">
-        {ordered.map((run) => {
-          const hasLog = run.jobId !== null && run.state !== "pending";
-          return (
-            <li key={`${run.kind}-${run.id}`} className="group/check">
-              <div className="flex h-7 items-center gap-3 rounded-sm px-2 text-meta hover:bg-hover">
-                <Dot tone={TONE[run.state]} />
-                <span
-                  className={clsx(
-                    "min-w-0 shrink-0 truncate",
-                    run.state === "failure" ? "text-bad" : "text-muted",
+      <div id={detailsId} hidden={!showDetails}>
+        <ul className="max-w-[900px] space-y-0.5">
+          {ordered.map((run) => {
+            const hasLog = run.jobId !== null && run.state !== "pending";
+            return (
+              <li key={`${run.kind}-${run.id}`} className="group/check">
+                <div className="flex h-7 items-center gap-3 rounded-sm px-2 text-meta hover:bg-hover">
+                  <Dot tone={TONE[run.state]} />
+                  <span
+                    className={clsx(
+                      "min-w-0 truncate",
+                      run.state === "failure" ? "text-bad" : "text-muted",
+                    )}
+                    title={[run.workflow, run.name].filter(Boolean).join(" / ")}
+                  >
+                    {run.workflow && <span className="text-faint">{run.workflow} / </span>}
+                    {run.name}
+                    {run.event && <span className="text-faint"> ({run.event})</span>}
+                  </span>
+                  {required.has(run.name) && <span className="shrink-0 text-faint">required</span>}
+                  <span className="min-w-0 flex-1 truncate text-faint">{run.summary}</span>
+                  {(run.state === "pending" ||
+                    run.state === "skipped" ||
+                    run.state === "neutral") && (
+                    <span className="shrink-0 text-faint">
+                      {run.state === "pending" ? "running" : run.state}
+                    </span>
                   )}
-                >
-                  {run.workflow && <span className="text-faint">{run.workflow} / </span>}
-                  {run.name}
-                  {run.event && <span className="text-faint"> ({run.event})</span>}
-                </span>
-                {required.has(run.name) && <span className="shrink-0 text-faint">required</span>}
-                <span className="min-w-0 flex-1 truncate text-faint">{run.summary}</span>
-                {(run.state === "pending" ||
-                  run.state === "skipped" ||
-                  run.state === "neutral") && (
-                  <span className="shrink-0 text-faint">
-                    {run.state === "pending" ? "running" : run.state}
-                  </span>
-                )}
-                {run.completedAt && (
-                  <span className="shrink-0 text-faint">
-                    <When at={run.completedAt} suffix />
-                  </span>
-                )}
-                {hasLog && (
-                  <button
-                    type="button"
-                    aria-label={`Re-run ${run.name}`}
-                    title="Re-run this job"
-                    onClick={() =>
-                      void act("rerun-job", [{ jobId: run.jobId ?? 0 }], `Re-running ${run.name}`)
-                    }
-                    className="flex size-6 shrink-0 items-center justify-center rounded-sm text-faint opacity-0 group-hover/check:opacity-100 hover:bg-press hover:text-fg focus-visible:opacity-100"
-                  >
-                    <RotateCw aria-hidden size={14} />
-                  </button>
-                )}
-                {hasLog ? (
-                  <button
-                    type="button"
-                    onClick={() => setOpen(open === run.jobId ? null : run.jobId)}
-                    className="shrink-0 text-faint hover:text-fg"
-                  >
-                    {open === run.jobId ? "Hide log" : "Log"}
-                  </button>
-                ) : (
-                  run.url && (
-                    <a
-                      href={run.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
+                  {run.completedAt && (
+                    <span className="shrink-0 text-faint">
+                      <When at={run.completedAt} suffix />
+                    </span>
+                  )}
+                  {hasLog && (
+                    <button
+                      type="button"
+                      aria-label={`Re-run ${run.name}`}
+                      title="Re-run this job"
+                      onClick={() =>
+                        void act("rerun-job", [{ jobId: run.jobId ?? 0 }], `Re-running ${run.name}`)
+                      }
+                      className="flex size-6 shrink-0 items-center justify-center rounded-sm text-faint opacity-0 group-hover/check:opacity-100 hover:bg-press hover:text-fg focus-visible:opacity-100"
+                    >
+                      <RotateCw aria-hidden size={14} />
+                    </button>
+                  )}
+                  {hasLog ? (
+                    <button
+                      type="button"
+                      aria-expanded={open === run.jobId}
+                      onClick={() => setOpen(open === run.jobId ? null : run.jobId)}
                       className="shrink-0 text-faint hover:text-fg"
                     >
-                      Details
-                    </a>
-                  )
+                      {open === run.jobId ? "Hide log" : "Log"}
+                    </button>
+                  ) : (
+                    run.url && (
+                      <a
+                        href={run.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="shrink-0 text-faint hover:text-fg"
+                      >
+                        Details
+                      </a>
+                    )
+                  )}
+                </div>
+                {(offDiff.get(run.name) ?? []).length > 0 && (
+                  <ul className="mb-1 ml-7 space-y-0.5">
+                    {(offDiff.get(run.name) ?? []).slice(0, 5).map((a) => (
+                      <li
+                        key={`${a.path}:${a.startLine}:${a.message}`}
+                        className="flex items-baseline gap-2 text-meta"
+                      >
+                        <Dot
+                          tone={
+                            a.level === "failure" ? "bad" : a.level === "warning" ? "warn" : "info"
+                          }
+                        />
+                        <span className="min-w-0 truncate text-muted" title={a.message}>
+                          {a.title ? `${a.title}: ` : ""}
+                          {a.message.split("\n")[0]}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-              </div>
-              {(offDiff.get(run.name) ?? []).length > 0 && (
-                <ul className="mb-1 ml-7 space-y-0.5">
-                  {(offDiff.get(run.name) ?? []).slice(0, 5).map((a) => (
-                    <li
-                      key={`${a.path}:${a.startLine}:${a.message}`}
-                      className="flex items-baseline gap-2 text-meta"
-                    >
-                      <Dot
-                        tone={
-                          a.level === "failure" ? "bad" : a.level === "warning" ? "warn" : "info"
-                        }
-                      />
-                      <span className="min-w-0 truncate text-muted" title={a.message}>
-                        {a.title ? `${a.title}: ` : ""}
-                        {a.message.split("\n")[0]}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {open !== null && open === run.jobId && <Log repo={pr.repo} jobId={open} />}
-            </li>
-          );
-        })}
-      </ul>
-
-      {deployments.length > 0 && (
-        <>
-          <h3 className="mt-4 mb-1 text-meta text-muted">Deployments</h3>
-          <ul className="max-w-[900px] space-y-0.5">
-            {deployments.map((d) => (
-              <li key={d.id} className="flex h-7 items-center gap-3 px-2 text-meta">
-                <Dot tone={deploymentTone(d.state)} />
-                <span className="text-muted">{d.environment}</span>
-                <span className="text-faint">{d.state.replaceAll("_", " ")}</span>
-                <span className="flex-1" />
-                <span className="text-faint">
-                  <When at={d.at} suffix />
-                </span>
-                {d.url && (
-                  <a
-                    href={d.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="text-faint hover:text-fg"
-                  >
-                    Open
-                  </a>
-                )}
+                {open !== null && open === run.jobId && <Log repo={pr.repo} jobId={open} />}
               </li>
-            ))}
-          </ul>
-        </>
-      )}
+            );
+          })}
+        </ul>
+
+        {deployments.length > 0 && (
+          <>
+            <h3 className="mt-4 mb-1 text-meta text-muted">Deployments</h3>
+            <ul className="max-w-[900px] space-y-0.5">
+              {deployments.map((d) => (
+                <li key={d.id} className="flex h-7 items-center gap-3 px-2 text-meta">
+                  <Dot tone={deploymentTone(d.state)} />
+                  <span className="text-muted">{d.environment}</span>
+                  <span className="text-faint">{d.state.replaceAll("_", " ")}</span>
+                  <span className="flex-1" />
+                  <span className="text-faint">
+                    <When at={d.at} suffix />
+                  </span>
+                  {d.url && (
+                    <a
+                      href={d.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-faint hover:text-fg"
+                    >
+                      Open
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </section>
   );
 }
 
 function Hint({ keys, children }: { keys: string; children: string }) {
   return (
-    <span className="flex items-center gap-1.5 text-faint">
+    <span className="flex items-center gap-1.5 whitespace-nowrap text-faint">
       <Keys sequence={keys} /> {children}
     </span>
   );

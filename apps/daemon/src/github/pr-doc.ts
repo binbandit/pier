@@ -250,6 +250,7 @@ export function volatileHash(v: VolatileState): string {
     v.reviewDecision,
     Boolean(v.autoMerge),
     v.mergeQueue?.state ?? "",
+    v.mergeQueue?.position ?? "",
     v.rollup,
   ].join("|");
 }

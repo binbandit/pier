@@ -12,6 +12,7 @@ import type {
   GroupRow,
   GroupView,
   MergePath,
+  MergeQueueItem,
   PrItem,
   PrRef,
   QueueItem,
@@ -152,6 +153,27 @@ export class Views {
 
   flight(): FlightItem[] {
     return this.snapshot().flight;
+  }
+
+  mergeQueue(): MergeQueueItem[] {
+    return [...this.ctx.model.all()]
+      .filter(({ doc }) => doc.state === "OPEN" && Boolean(doc.mergeQueue || doc.autoMerge))
+      .map(({ doc, reader }) => ({
+        ...prItemBase(doc, reader),
+        baseRefName: doc.baseRefName,
+        position: doc.mergeQueue?.position ?? null,
+        queueState: doc.mergeQueue?.state ?? null,
+        autoMerge: doc.autoMerge?.method ?? null,
+        reason: doc.mergeQueue ? "In merge queue" : "Merge when ready",
+      }))
+      .toSorted(
+        (a, b) =>
+          a.repo.localeCompare(b.repo) ||
+          a.baseRefName.localeCompare(b.baseRefName) ||
+          (a.position ?? Infinity) - (b.position ?? Infinity) ||
+          a.updatedAt.localeCompare(b.updatedAt) ||
+          a.number - b.number,
+      );
   }
 
   /** Saved searches, each with how many PRs it finds right now. */

@@ -706,11 +706,22 @@ export class ReviewService {
     );
   }
 
-  setAutoMerge(prId: string, enabled: boolean, method: MergeMethod | undefined): string[] {
+  setAutoMerge(
+    prId: string,
+    enabled: boolean,
+    method: MergeMethod | undefined,
+    headline?: string,
+    body?: string,
+  ): string[] {
     return this.enqueue(
       this.require(prId),
       "auto-merge",
-      { enabled, ...(method ? { method } : {}) },
+      {
+        enabled,
+        ...(method ? { method } : {}),
+        ...(enabled && method !== "REBASE" && headline !== undefined ? { headline } : {}),
+        ...(enabled && method !== "REBASE" && body !== undefined ? { body } : {}),
+      },
       0,
     );
   }

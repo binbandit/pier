@@ -8,6 +8,7 @@ import type {
   DiffFile,
   ChecksView,
   FlightItem,
+  MergeQueueItem,
   GroupView,
   Label,
   LogEntry,
@@ -40,6 +41,7 @@ export const inputs = {
   status: type({}),
   inbox: type({ split }),
   counts: type({}),
+  mergeQueue: type({}),
   group: type({ key: "string" }),
   pr: type({ repo: "string", number: "number.integer > 0" }),
   prDiff: type({
@@ -102,6 +104,8 @@ export const inputs = {
     prId: "string",
     enabled: "boolean",
     "method?": "'MERGE' | 'SQUASH' | 'REBASE'",
+    "headline?": "string",
+    "body?": "string",
   }),
   updateBranch: type({ prId: "string", rebase: "boolean" }),
   editMetadata: type({
@@ -232,6 +236,7 @@ export type Outputs = {
   status: AppStatus;
   inbox: QueueItem[];
   counts: SplitCounts;
+  mergeQueue: MergeQueueItem[];
   group: GroupView | null;
   settings: SettingsView;
   saveScopes: { ok: true };
