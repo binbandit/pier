@@ -177,6 +177,25 @@ export function createHandlers(app: App): Handlers {
       return { commandIds };
     },
     searchGitHub: ({ q }) => searchGitHub(q, app.ports, app.model),
+    settings: () => app.views.settings(),
+    saveScopes({ scopes }) {
+      const logins = new Set(app.accounts.map((a) => a.login));
+      const unknown = scopes.find((scope) => !logins.has(scope.account));
+      if (unknown) throw new Refusal(`${unknown.account} isn't one of your gh accounts`);
+      if (scopes.some((scope) => !scope.query.trim())) throw new Refusal("A search can't be empty");
+      if (new Set(scopes.map((s) => `${s.account}:${s.id}`)).size !== scopes.length)
+        throw new Refusal("Two searches share a name");
+      app.settings.set("scopes", scopes);
+      // What's on screen follows at once; a new search runs now rather than on the next pass.
+      app.events.emit(["settings", "inbox", "counts", "group", "flight", "status"]);
+      app.sync.searchNow();
+      return { ok: true as const };
+    },
+    savePolicy({ policy }) {
+      app.settings.set("policy", policy);
+      app.events.emit(["settings", "inbox", "counts", "group", "status"]);
+      return { ok: true as const };
+    },
     saveView({ id, name, query }) {
       const views = app.settings.get("views");
       const existing = views.find((v) => v.id === id);

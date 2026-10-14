@@ -195,6 +195,7 @@ export function createApp(options: AppOptions) {
     settings,
     accounts: logins,
     teams: () => codeOwners.knownTeams(),
+    found: (scope) => sync.foundBy(scope),
     now: Date.now,
   });
   const sync = new SyncEngine(model, () => ports, settings, registry, stores.cache);

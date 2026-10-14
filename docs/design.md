@@ -243,7 +243,7 @@ How done and snooze behave:
 Settings (`Cmd+,`): accounts and scope health, watched orgs and repos, deps policy and gates, keymap, contrast schedule.
 
 ### First run
-1. **Accounts**: one dot per scope for each detected account. Where a scope is missing, show the exact `gh auth refresh -u X -s …` command; `y` copies it.
+1. **Accounts**: one dot per scope for each detected account. Where a scope is missing, show the exact `gh auth switch -u X && gh auth refresh -s …` commands (refresh only works on the active account); `y` copies them.
 2. **Orgs**: discovered from recent notifications and review requests, with counts. On by default; you exclude repos rather than picking them. Each org has one toggle: "all bot PRs" or "only where I or my team is requested".
 3. **Deps policy**: pre-filled with the safety gates.
 4. **Initial sync**: the inbox fills in while it runs, and the status line shows "syncing 1,284 PRs · ~2 min". No blocking spinner.

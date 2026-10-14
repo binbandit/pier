@@ -350,10 +350,13 @@ function Loaded({ pr }: { pr: PrView }) {
       ?.scrollIntoView({ block: "center" });
   };
 
+  const commentsOff = () =>
+    toast({ text: "Comments go on the latest code; p shows it", tone: "neutral" });
+
   /** Opens a new comment, where this view's lines are ones a comment can go on. */
   const compose = (comment: NewComment | null) => {
     if (comment && anchors === "none") {
-      toast({ text: "Comments go on the latest code; p shows it", tone: "neutral" });
+      commentsOff();
       return;
     }
     if (comment?.kind === "lines" && comment.side === "LEFT" && anchors === "right") {
@@ -510,6 +513,8 @@ function Loaded({ pr }: { pr: PrView }) {
       hint: selection ? "comment" : undefined,
       group: "Review",
       run: () => {
+        // Earlier code takes no comments, even before its files have loaded.
+        if (anchors === "none") return commentsOff();
         const file = ordered[currentIndex];
         if (selection) compose(fromRange(selection.path, selection.range));
         else if (file) compose({ kind: "file", path: file.path });

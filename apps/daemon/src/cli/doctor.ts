@@ -3,6 +3,7 @@ import { accessSync, constants, mkdirSync } from "node:fs";
 import { OPTIONAL_SCOPES, REQUIRED_SCOPES, discoverAccounts, missingScopes } from "@/accounts/gh";
 import { ORIGIN, PORT, paths } from "@/config";
 import { gitVersionOk } from "@/git/store";
+import { scopeFix } from "@pier/core/accounts";
 
 import { agentLoaded } from "./install";
 
@@ -33,13 +34,13 @@ export async function doctor(): Promise<boolean> {
         checks.push({
           ok: false,
           label: `${account.login} is missing ${required.join(", ")}`,
-          fix: `gh auth refresh -h github.com -u ${account.login} -s ${required.join(",")}`,
+          fix: scopeFix(account.login, required),
         });
       } else if (optional.length > 0) {
         checks.push({
           ok: "warn",
           label: `${account.login}: projects and saved replies need ${optional.join(", ")}`,
-          fix: `gh auth switch -u ${account.login} && gh auth refresh -s ${optional.join(",")}`,
+          fix: scopeFix(account.login, optional),
         });
       } else {
         checks.push({ ok: true, label: `${account.login} has every scope pier uses` });

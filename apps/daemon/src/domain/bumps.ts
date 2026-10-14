@@ -33,8 +33,22 @@ export function detectBot(pr: Pick<BotPrInput, "authorLogin" | "headRefName">): 
 export function parseBotPr(pr: BotPrInput): ParsedBotPr | null {
   const bot = detectBot(pr);
   if (!bot) return null;
-  const bumps = bot === "dependabot" ? parseDependabot(pr) : parseRenovate(pr);
+  const bumps = (bot === "dependabot" ? parseDependabot(pr) : parseRenovate(pr)).map(withoutV);
   return bumps.length > 0 ? { bot, bumps } : null;
+}
+
+/**
+ * Actions and Go versions without their leading "v": Dependabot's titles drop it and Renovate
+ * keeps it, and one decision shouldn't split into two groups over that. (Docker tags are taken
+ * as written: "v1" and "1" can be different images.)
+ */
+function withoutV(bump: Bump): Bump {
+  if (bump.ecosystem !== "github-actions" && bump.ecosystem !== "gomod") return bump;
+  return { ...bump, from: bump.from && stripV(bump.from), to: stripV(bump.to) };
+}
+
+function stripV(version: string): string {
+  return version.replace(/^v(?=\d)/, "");
 }
 
 // ---------------------------------------------------------------------------

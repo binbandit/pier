@@ -240,6 +240,35 @@ describe("renovate", () => {
   });
 });
 
+test('Dependabot\'s "5 to 6" and Renovate\'s "v5 -> v6" are the same bump', () => {
+  const dependabot = parseBotPr(
+    pr({
+      title: "Bump actions/setup-go from 5 to 6",
+      headRefName: "dependabot/github_actions/actions/setup-go-6",
+      authorLogin: "dependabot",
+      files: [".github/workflows/ci.yml"],
+    }),
+  );
+  const renovate = parseBotPr(
+    pr({
+      title: "Update actions/setup-go action to v6",
+      headRefName: "renovate/actions-setup-go-6.x",
+      authorLogin: "renovate[bot]",
+      files: [".github/workflows/ci.yml"],
+      body: [
+        "| Package | Type | Update | Change |",
+        "|---|---|---|---|",
+        "| [actions/setup-go](https://github.com/actions/setup-go) | action | major | `v5` -> `v6` |",
+      ].join("\n"),
+    }),
+  );
+  const [a] = dependabot?.bumps ?? [];
+  const [b] = renovate?.bumps ?? [];
+  expect(a && bumpKey(a)).toBe("github-actions:actions/setup-go@6");
+  expect(b && bumpKey(b)).toBe("github-actions:actions/setup-go@6");
+  expect(b?.from).toBe("5");
+});
+
 describe("helpers", () => {
   test("human PRs are not bot PRs", () => {
     expect(detectBot({ authorLogin: "alice", headRefName: "feature/x" })).toBeNull();

@@ -109,9 +109,17 @@ describe("bot PR formats", () => {
           commitMessages: doc.commits.map((c) => c.message),
           files: doc.files.map((f) => f.path),
         });
+        // pier drops the "v" Renovate writes on Actions and Go versions; Dependabot doesn't.
+        const expected = world
+          .pr(doc.id)
+          ?.bumps.map((b) =>
+            b.ecosystem === "github-actions" || b.ecosystem === "gomod"
+              ? { ...b, from: b.from && unv(b.from), to: unv(b.to) }
+              : b,
+          );
         expect({ title: doc.title, bumps: parsed?.bumps }).toEqual({
           title: doc.title,
-          bumps: world.pr(doc.id)?.bumps,
+          bumps: expected,
         });
       }
     },
@@ -543,3 +551,7 @@ describe("scenarios", () => {
     expect(prs.filter((pr) => pr.author === "binbandit")).toHaveLength(15);
   });
 });
+
+function unv(version: string): string {
+  return version.replace(/^v(?=\d)/, "");
+}

@@ -1,7 +1,7 @@
+import type { CodeOwnerRule } from "./codeowners";
 // Everything the daemon sends to the web app. Plain types only: the daemon is trusted,
 // so outputs are typed rather than validated. Inputs live in `contract.ts` as ArkType schemas.
-
-import type { CodeOwnerRule } from "./codeowners";
+import type { DepsPolicy, Scope } from "./settings";
 
 export type Ecosystem =
   | "npm"
@@ -785,4 +785,13 @@ export type AppStatus = {
   };
   outbox: { queued: number; held: number; waiting: number; failed: number; unknown: number };
   counts: SplitCounts;
+};
+
+/** The settings screen: what pier watches, how many PRs each search finds, and the deps policy. */
+export type SettingsView = {
+  /** `found`: open PRs on the scope's last full search; null before it has run. */
+  scopes: (Scope & { found: number | null })[];
+  /** Owners whose repos you work in, where pier doesn't watch bot PRs yet. */
+  suggestions: { owner: string; repos: number; account: string }[];
+  policy: DepsPolicy;
 };

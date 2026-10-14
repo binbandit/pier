@@ -18,7 +18,7 @@ export function PrLine({ item }: { item: PrItem }) {
         {item.isDraft && <span className="mr-2 text-faint">Draft</span>}
         {item.title}
       </span>
-      <span className="truncate font-code text-meta text-faint">
+      <span title={item.repo} className="truncate font-code text-meta text-faint">
         {shortRepo(item.repo)}#{item.number}
       </span>
       <span className={clsx("truncate text-meta", finished ? "text-faint" : "text-muted")}>

@@ -49,7 +49,7 @@ export function Flight() {
             <div className="grid w-full max-w-[1320px] grid-cols-[16px_minmax(0,2fr)_minmax(120px,0.8fr)_minmax(0,1.4fr)_48px_20px] items-center gap-x-4">
               <Dot tone={CHECK_TONE[item.checks.state]} />
               <span className="truncate text-fg">{item.title}</span>
-              <span className="truncate font-code text-meta text-faint">
+              <span title={item.repo} className="truncate font-code text-meta text-faint">
                 {shortRepo(item.repo)}#{item.number}
               </span>
               <span className="truncate text-meta text-muted">{item.waitingOn}</span>

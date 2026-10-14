@@ -19,6 +19,7 @@ import type {
   Revocation,
   SavedView,
   SearchResult,
+  SettingsView,
   SemverClass,
   Split,
 } from "@pier/core/wire";
@@ -29,7 +30,7 @@ import { evaluateGates, type Placement, place, summarizeGates } from "./gates";
 import type { Model, PrRecord } from "./model";
 import { checksFailing } from "./runway";
 import { searchRecords } from "./search";
-import type { SettingsStore } from "./settings";
+import type { Scope, SettingsStore } from "./settings";
 
 // Everything the web app shows is derived here from the model plus Brayden's decisions.
 // One snapshot is computed per change and reused by every request until something moves.
@@ -46,6 +47,8 @@ export type ViewContext = {
   accounts: () => string[];
   /** Teams those accounts are in ("org/slug"), as far as they've been read. */
   teams: () => string[];
+  /** Open PRs a scope found on its last full search. */
+  found: (scope: Scope) => number | null;
   now: () => number;
 };
 
@@ -87,6 +90,42 @@ export class Views {
       review: inbox.review.length,
       deps: inbox.deps.length + revoked,
       mine: inbox.mine.length,
+    };
+  }
+
+  /** What pier watches, how much each search finds, and owners worth watching bot PRs in. */
+  settings(): SettingsView {
+    const scopes = this.ctx.settings.get("scopes");
+    // Owners already searched for bot PRs, by the `user:`/`org:` in a bots scope's query.
+    const covered = new Set(
+      scopes
+        .filter((scope) => scope.kind === "bots")
+        .flatMap((scope) => [...scope.query.matchAll(/\b(?:user|org):([\w.-]+)/gi)])
+        .map((match) => (match[1] ?? "").toLowerCase()),
+    );
+    const owners = new Map<string, { repos: Set<string>; readers: Map<string, number> }>();
+    for (const record of this.ctx.model.all()) {
+      const owner = record.doc.repo.split("/")[0] ?? "";
+      const yours = [...record.scopes].some((s) => s.endsWith(":involved"));
+      if (!yours || covered.has(owner.toLowerCase())) continue;
+      const seen = owners.get(owner) ?? { repos: new Set(), readers: new Map() };
+      seen.repos.add(record.doc.repo);
+      seen.readers.set(record.reader, (seen.readers.get(record.reader) ?? 0) + 1);
+      owners.set(owner, seen);
+    }
+    const suggestions = [...owners]
+      .map(([owner, seen]) => ({
+        owner,
+        repos: seen.repos.size,
+        // The account that reads the most of them can see the rest.
+        account: [...seen.readers].toSorted((a, b) => b[1] - a[1])[0]?.[0] ?? "",
+      }))
+      .toSorted((a, b) => b.repos - a.repos || a.owner.localeCompare(b.owner))
+      .slice(0, 8);
+    return {
+      scopes: scopes.map((scope) => ({ ...scope, found: this.ctx.found(scope) })),
+      suggestions,
+      policy: this.ctx.settings.get("policy"),
     };
   }
 
@@ -222,7 +261,7 @@ export class Views {
   // -------------------------------------------------------------------------
 
   private snapshot(): Snapshot {
-    const { model, outbox, verdicts, done, registry, now } = this.ctx;
+    const { model, outbox, verdicts, done, registry, settings, now } = this.ctx;
     // Release ages and staleness drift with time, so the snapshot also expires each minute.
     const stamp = [
       model.version,
@@ -230,6 +269,7 @@ export class Views {
       verdicts.version,
       done.version,
       registry.version,
+      settings.version,
       Math.floor(now() / 60_000),
     ].join(":");
     if (this.cached?.stamp === stamp) return this.cached.snapshot;
@@ -253,9 +293,10 @@ export class Views {
     const mine: PrItem[] = [];
     const flight: FlightItem[] = [];
 
+    const watched = new Set(settings.get("scopes").map((s) => `${s.account}:${s.id}`));
     for (const record of model.all()) {
       const doc = record.doc;
-      if (doc.state !== "OPEN") continue;
+      if (doc.state !== "OPEN" || unwatched(record, watched)) continue;
 
       if (record.bot) {
         const releases = record.bot.bumps.map((bump) => registry.cached(bump));
@@ -599,4 +640,10 @@ function ref(record: PrRecord): PrRef {
     number: record.doc.number,
     title: record.doc.title,
   };
+}
+
+/** A PR found only by searches you've since stopped watching (one opened directly still counts). */
+function unwatched(record: PrRecord, watched: Set<string>): boolean {
+  const tags = [...record.scopes];
+  return tags.length > 0 && tags.every((tag) => !watched.has(tag) && !tag.endsWith(":opened"));
 }

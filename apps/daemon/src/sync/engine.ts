@@ -38,6 +38,9 @@ export class SyncEngine {
   private pendingScopes: [string, string, string][] = [];
   private statusListeners = new Set<() => void>();
   private notificationsSeen = new Set<string>();
+  private searching = new Set<string>();
+  /** How many open PRs each scope ("account:id") found on its last full search. */
+  private found = new Map<string, number>();
   private lastStatusKey = "";
 
   constructor(
@@ -93,6 +96,11 @@ export class SyncEngine {
       trackedPrs: this.model.size,
       pending: this.dirty.size,
     };
+  }
+
+  /** Open PRs a scope found on its last full search, or null before it has run. */
+  foundBy(scope: Scope): number | null {
+    return this.found.get(`${scope.account}:${scope.id}`) ?? null;
   }
 
   /** Something changed on our side (a write landed, the PR is on screen): look again soon. */
@@ -165,12 +173,27 @@ export class SyncEngine {
     return this.settings.get("scopes").filter((scope) => scope.account === account);
   }
 
+  /** Runs every account's searches now (scopes just changed) rather than on the next pass. */
+  searchNow(): void {
+    for (const account of this.ports().keys()) {
+      this.searchAll(account).catch((error: unknown) =>
+        this.errors.set(`search:${account}`, describe("search", error)),
+      );
+    }
+  }
+
   private async searchAll(account: string): Promise<void> {
     const port = this.ports().get(account);
-    if (!port) return;
-    this.status.state = "syncing";
-    for (const scope of this.scopesFor(account)) await this.search(port, scope);
-    this.status = { state: "idle", lastSyncAt: new Date().toISOString(), message: null };
+    // One pass per account at a time: the loop and searchNow can land together.
+    if (!port || this.searching.has(account)) return;
+    this.searching.add(account);
+    try {
+      this.status.state = "syncing";
+      for (const scope of this.scopesFor(account)) await this.search(port, scope);
+      this.status = { state: "idle", lastSyncAt: new Date().toISOString(), message: null };
+    } finally {
+      this.searching.delete(account);
+    }
   }
 
   private async search(port: GitHubPort, scope: Scope): Promise<void> {
@@ -202,6 +225,7 @@ export class SyncEngine {
     }
 
     if (full) {
+      this.found.set(`${scope.account}:${scope.id}`, hits.length);
       // Tracked PRs this scope no longer returns have probably closed; the sweep will confirm.
       const seen = new Set(hits.map((h) => h.id));
       for (const record of this.model.all()) {

@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as FlightRouteImport } from './routes/flight'
 import { Route as LogRouteImport } from './routes/log'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TokensRouteImport } from './routes/tokens'
 import { Route as DepsSplatRouteImport } from './routes/deps.$'
 import { Route as InboxSplitRouteImport } from './routes/inbox.$split'
@@ -39,6 +40,11 @@ const LogRoute = LogRouteImport.update({
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TokensRoute = TokensRouteImport.update({
@@ -83,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/tokens': typeof TokensRoute
   '/deps/$': typeof DepsSplatRoute
   '/inbox/$split': typeof InboxSplitRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByTo {
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/tokens': typeof TokensRoute
   '/deps/$': typeof DepsSplatRoute
   '/inbox/$split': typeof InboxSplitRoute
@@ -110,6 +118,7 @@ export interface FileRoutesById {
   '/flight': typeof FlightRoute
   '/log': typeof LogRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/tokens': typeof TokensRoute
   '/deps/$': typeof DepsSplatRoute
   '/inbox/$split': typeof InboxSplitRoute
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
     | '/flight'
     | '/log'
     | '/search'
+    | '/settings'
     | '/tokens'
     | '/deps/$'
     | '/inbox/$split'
@@ -138,6 +148,7 @@ export interface FileRouteTypes {
     | '/flight'
     | '/log'
     | '/search'
+    | '/settings'
     | '/tokens'
     | '/deps/$'
     | '/inbox/$split'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/flight'
     | '/log'
     | '/search'
+    | '/settings'
     | '/tokens'
     | '/deps/$'
     | '/inbox/$split'
@@ -165,6 +177,7 @@ export interface RootRouteChildren {
   FlightRoute: typeof FlightRoute
   LogRoute: typeof LogRoute
   SearchRoute: typeof SearchRoute
+  SettingsRoute: typeof SettingsRoute
   TokensRoute: typeof TokensRoute
   DepsSplatRoute: typeof DepsSplatRoute
   InboxSplitRoute: typeof InboxSplitRoute
@@ -202,6 +215,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tokens': {
@@ -261,6 +281,7 @@ const rootRouteChildren: RootRouteChildren = {
   FlightRoute: FlightRoute,
   LogRoute: LogRoute,
   SearchRoute: SearchRoute,
+  SettingsRoute: SettingsRoute,
   TokensRoute: TokensRoute,
   DepsSplatRoute: DepsSplatRoute,
   InboxSplitRoute: InboxSplitRoute,

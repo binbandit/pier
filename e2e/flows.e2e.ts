@@ -425,3 +425,54 @@ test("a saved reply goes in where the cursor is", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(box).toHaveValue("Nice. Thanks for this! Merging once checks are green.");
 });
+
+test("the deps policy changes what's Clear as soon as it's saved", async ({ page }) => {
+  const group = "/deps/gomod:github.com/stretchr/testify@1.11.1";
+  const releaseAge = page.getByRole("listitem").filter({ hasText: "Release age" });
+  const minimum = page.getByLabel("Minimum release age in days");
+  await page.goto(group);
+  await expect(releaseAge).toContainText("Older than 3 days", { timeout: 30_000 });
+
+  await page.goto("/settings");
+  await minimum.fill("30");
+  await page.keyboard.press("Meta+s");
+  await expect(toast(page, "Saved; bump groups are sorted again")).toBeVisible();
+  await page.goto(group);
+  await expect(releaseAge).toContainText("testify 1.11.1 published");
+
+  await page.goto("/settings");
+  await minimum.fill("3");
+  await page.keyboard.press("Meta+s");
+  await expect(toast(page, "Saved; bump groups are sorted again")).toBeVisible();
+});
+
+test("an owner's bot PRs can be dropped, then watched again from a suggestion", async ({
+  page,
+}) => {
+  await page.goto("/settings");
+  const bots = page.getByRole("list", { name: "Bot PRs" });
+  const sandbox = bots.getByRole("listitem").filter({ hasText: "PRs in WastedHippie" });
+  await expect(sandbox.first()).toBeVisible();
+  while ((await sandbox.count()) > 0) {
+    const before = await sandbox.count();
+    await sandbox.first().getByRole("button", { name: "Remove" }).click();
+    await expect(sandbox).toHaveCount(before - 1);
+  }
+
+  await page.goto("/inbox/deps");
+  await expect(page.getByText("No dependency bumps need you.")).toBeVisible();
+
+  // pier still sees your reviews there, so it suggests the owner back.
+  await page.goto("/settings");
+  const suggested = page.getByRole("list", { name: "Suggested owners" }).getByRole("listitem");
+  await suggested
+    .filter({ hasText: "WastedHippie" })
+    .getByRole("button", { name: /^Watch bot PRs as/ })
+    .click();
+  await expect(sandbox).toHaveCount(1);
+
+  await page.goto("/inbox/deps");
+  await expect(page.getByRole("list", { name: "Deps" }).getByRole("listitem").first()).toBeVisible({
+    timeout: 30_000,
+  });
+});

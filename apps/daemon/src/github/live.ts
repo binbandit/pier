@@ -1,5 +1,6 @@
 import type { components } from "@octokit/openapi-types";
 
+import { scopeFix } from "@pier/core/accounts";
 import type {
   Annotation,
   CheckLog,
@@ -260,7 +261,7 @@ export class LiveGitHub implements GitHubPort {
     } catch (error) {
       if (error instanceof GitHubError && error.message.includes("'notifications'")) {
         throw new GitHubError(
-          `GitHub hasn't notified ${this.login} about this PR, and changing that needs the notifications scope: gh auth refresh -h github.com -u ${this.login} -s notifications`,
+          `GitHub hasn't notified ${this.login} about this PR, and changing that needs the notifications scope: ${scopeFix(this.login, ["notifications"])}`,
           "forbidden",
           error.status,
         );
@@ -394,7 +395,7 @@ export class LiveGitHub implements GitHubPort {
       ) {
         return {
           state: "no-scope",
-          fix: `gh auth refresh -h github.com -u ${this.login} -s project`,
+          fix: scopeFix(this.login, ["project"]),
         };
       }
       throw error;
@@ -425,7 +426,7 @@ export class LiveGitHub implements GitHubPort {
     } catch (error) {
       if (error instanceof GitHubError && /read:user|scope/i.test(error.message)) {
         throw new GitHubError(
-          `Reading ${this.login}'s saved replies needs the read:user scope: gh auth refresh -h github.com -u ${this.login} -s read:user`,
+          `Reading ${this.login}'s saved replies needs the read:user scope: ${scopeFix(this.login, ["read:user"])}`,
           "forbidden",
           error.status,
         );

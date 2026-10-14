@@ -2,35 +2,17 @@ import type { Database } from "bun:sqlite";
 
 import { type } from "arktype";
 
+import {
+  type DepsPolicy,
+  PERSONAL_QUERY,
+  type Scope,
+  botsQuery,
+  depsPolicySchema,
+  scopeSchema,
+} from "@pier/core/settings";
+
 // Settings live in state.db as one JSON row per key, validated on read so a hand-edited or
 // older value can never crash the daemon; anything invalid falls back to its default.
-
-const scope = type({
-  id: "string",
-  account: "string",
-  query: "string",
-  kind: "'personal' | 'bots'",
-});
-
-const botPolicy = type({
-  /** Commit author names (or logins) allowed on a bot branch. */
-  authors: "string[]",
-  requireSigned: "boolean",
-  /** Allow "Merge branch 'main' into …" commits that only bring in the base. */
-  allowBaseMerges: "boolean",
-});
-
-const policy = type({
-  minReleaseAgeDays: "number >= 0",
-  allowedSemver: "('major' | 'minor' | 'patch')[]",
-  /** Brayden's repos merge on approval, so approving is useful even where rules don't require it. */
-  approveWhenNotRequired: "boolean",
-  staleAfterDays: "number > 0",
-  verdictTtlDays: "number > 0",
-  /** npm scopes (e.g. "@acme") that must never be looked up in public registries. */
-  privateScopes: "string[]",
-  bots: { dependabot: botPolicy, renovate: botPolicy },
-});
 
 const identity = type({
   /** All gh accounts belong to one person: no alt-account approvals of your own PRs. */
@@ -43,8 +25,8 @@ const sandbox = type({
 });
 
 export const settingSchemas = {
-  scopes: scope.array(),
-  policy,
+  scopes: scopeSchema.array(),
+  policy: depsPolicySchema,
   identity,
   sandbox,
   /** When the Log was last looked at; failed writes after it are the ones still to see. */
@@ -55,8 +37,7 @@ export const settingSchemas = {
   views: type({ id: "string", name: "string", query: "string" }).array(),
 } as const;
 
-export type Scope = typeof scope.infer;
-export type DepsPolicy = typeof policy.infer;
+export type { DepsPolicy, Scope };
 export type SettingKey = keyof typeof settingSchemas;
 export type Settings = { [K in SettingKey]: (typeof settingSchemas)[K]["infer"] };
 
@@ -84,19 +65,21 @@ export function defaultScopes(accounts: string[]): Scope[] {
       id: `${account}:involved`,
       account,
       kind: "personal" as const,
-      query:
-        "is:pr is:open archived:false (involves:@me OR review-requested:@me OR reviewed-by:@me)",
+      query: PERSONAL_QUERY,
     },
     {
       id: `${account}:bots`,
       account,
       kind: "bots" as const,
-      query: `is:pr is:open archived:false (author:app/dependabot OR author:app/renovate) user:${account}`,
+      query: botsQuery(account),
     },
   ]);
 }
 
 export class SettingsStore {
+  /** Bumped on every change, so views built from settings know to rebuild. */
+  version = 0;
+
   constructor(
     private readonly db: Database,
     private readonly defaults: Settings,
@@ -123,5 +106,6 @@ export class SettingsStore {
         "INSERT INTO setting (key, json) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET json = excluded.json",
       )
       .run(key, JSON.stringify(value));
+    this.version++;
   }
 }

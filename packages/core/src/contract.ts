@@ -1,5 +1,6 @@
 import { type } from "arktype";
 
+import { depsPolicySchema, scopeSchema } from "./settings";
 import type {
   Annotation,
   AppStatus,
@@ -26,6 +27,7 @@ import type {
   SavedReply,
   SavedView,
   SearchResult,
+  SettingsView,
   SplitCounts,
 } from "./wire";
 
@@ -208,6 +210,9 @@ export const inputs = {
   }),
   /** The Log was looked at, so its failures stop showing in the status line. */
   seenLog: type({}),
+  settings: type({}),
+  saveScopes: type({ scopes: scopeSchema.array() }),
+  savePolicy: type({ policy: depsPolicySchema }),
   /** Verdicts an advisory withdrew, whose notices haven't been dismissed. */
   revocations: type({}),
   dismissRevocation: type({ key: "string" }),
@@ -228,6 +233,9 @@ export type Outputs = {
   inbox: QueueItem[];
   counts: SplitCounts;
   group: GroupView | null;
+  settings: SettingsView;
+  saveScopes: { ok: true };
+  savePolicy: { ok: true };
   revocations: Revocation[];
   dismissRevocation: { ok: true };
   pr: PrView | null;

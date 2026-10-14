@@ -83,6 +83,14 @@ export function Shell({ children }: { children: ReactNode }) {
       run: () => void navigate({ to: "/log" }),
     },
     {
+      id: "go.settings",
+      title: "Settings",
+      keys: ["mod+,"],
+      scope: "global",
+      group: "Go to",
+      run: () => void navigate({ to: "/settings" }),
+    },
+    {
       id: "palette",
       title: "Command palette",
       keys: ["mod+k"],
@@ -194,6 +202,9 @@ function Rail() {
         <RailItem to="/flight" label="In flight" active={pathname === "/flight"} />
         <RailItem to="/log" label="Log" active={pathname === "/log"} />
         <RailItem to="/search" label="Search" active={pathname === "/search"} />
+      </ul>
+      <ul className="mt-auto space-y-0.5">
+        <RailItem to="/settings" label="Settings" active={pathname === "/settings"} />
       </ul>
     </nav>
   );
