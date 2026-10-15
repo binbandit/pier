@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { spawnGit } from "@/git/exec";
+import { gitEnv, spawnGit } from "@/git/exec";
 import { GitStore, type Spawn, gitVersionOk } from "@/git/store";
 
 // A throwaway "GitHub": a working repo where history is written, published to a bare repo that
@@ -18,7 +18,8 @@ function sh(cwd: string, ...args: string[]): string {
   const result = Bun.spawnSync(["git", ...args], {
     cwd,
     env: {
-      ...process.env,
+      // Hooks export the parent worktree's GIT_DIR; keep every fixture command in its own repo.
+      ...gitEnv(null, null),
       GIT_AUTHOR_NAME: "t",
       GIT_AUTHOR_EMAIL: "t@example.com",
       GIT_COMMITTER_NAME: "t",
