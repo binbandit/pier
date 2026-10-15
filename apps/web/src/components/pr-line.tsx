@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 
+import { PrActivityLabel } from "@/components/pr-activity";
 import { formatNumber, shortRepo } from "@/lib/format";
 import { Avatar } from "@/ui/avatar";
 import { DiffStat } from "@/ui/diff-stat";
@@ -29,9 +30,12 @@ export function PrLine({ item, statCharacters }: { item: PrItem; statCharacters:
   return (
     <div className="grid w-full max-w-[1320px] grid-cols-[16px_minmax(0,2fr)_minmax(120px,0.8fr)_minmax(0,1.2fr)_minmax(88px,max-content)_48px_20px] items-center gap-x-4">
       <Dot tone={CHECK_TONE[item.checks.state]} label={`checks ${item.checks.state}`} />
-      <span className={clsx("truncate", item.isDraft || finished ? "text-muted" : "text-strong")}>
-        {item.isDraft && <span className="mr-2 text-faint">Draft</span>}
-        {item.title}
+      <span className="flex min-w-0 items-center gap-2">
+        <span className={clsx("truncate", item.isDraft || finished ? "text-muted" : "text-strong")}>
+          {item.isDraft && <span className="mr-2 text-faint">Draft</span>}
+          {item.title}
+        </span>
+        <PrActivityLabel activity={item.activity} />
       </span>
       <span title={item.repo} className="truncate font-code text-meta text-faint">
         {shortRepo(item.repo)}#{item.number}

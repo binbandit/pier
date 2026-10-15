@@ -23,6 +23,23 @@ export function createHandlers(app: App): Handlers {
       return { ok: true as const };
     },
     pr: ({ repo, number }) => app.review.view(repo, number),
+    markPrRead({ prId, account, cursor }) {
+      const record = app.model.get(prId);
+      if (!record || record.reader !== account)
+        throw new Refusal("PR is no longer tracked by this account");
+      if (app.reads.mark(record.doc, account, cursor)) {
+        app.events.emit([
+          "inbox",
+          "counts",
+          "flight",
+          "mergeQueue",
+          "search",
+          "searchGitHub",
+          "views",
+        ]);
+      }
+      return { ok: true };
+    },
     prDiff: ({ repo, number, ignoreWhitespace, ...view }) =>
       app.review.diff(repo, number, view, ignoreWhitespace ?? false),
     saveDraft(input) {
@@ -177,7 +194,7 @@ export function createHandlers(app: App): Handlers {
       app.events.emit(["pr"]);
       return { commandIds };
     },
-    searchGitHub: ({ q }) => searchGitHub(q, app.ports, app.model),
+    searchGitHub: ({ q }) => searchGitHub(q, app.ports, app.model, app.reads),
     settings: () => app.views.settings(),
     saveScopes({ scopes }) {
       const logins = new Set(app.accounts.map((a) => a.login));

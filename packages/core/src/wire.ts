@@ -168,8 +168,11 @@ export type GroupItem = {
   accounts: string[];
 };
 
+export type PrActivity = "new" | "read" | "updated";
+
 export type PrItem = {
   kind: "pr";
+  activity: PrActivity;
   id: string;
   repo: string;
   number: number;
@@ -515,6 +518,8 @@ export type PendingReview = {
 };
 
 export type PrView = {
+  /** Acknowledged after display; null if the latest conversation could not be loaded. */
+  activityCursor: string | null;
   id: string;
   repo: string;
   number: number;
@@ -757,6 +762,7 @@ export type CheckLog = {
 // In flight
 
 export type FlightItem = {
+  activity: PrActivity;
   prId: string;
   repo: string;
   number: number;

@@ -33,12 +33,12 @@ test("large additions and deletions stay grouped on one line in PR lists", async
     expect(addBox!.y).toBe(deleteBox!.y);
     expect(addBox!.x + addBox!.width).toBeLessThan(deleteBox!.x);
     expect(deleteBox!.x + deleteBox!.width).toBeLessThan(width);
-    const repository = row.locator("span[title]");
+    const repository = row.locator("span.font-code[title]");
     const nextRepository = page
       .getByRole("list", { name: "Review" })
       .getByRole("listitem")
       .nth(1)
-      .locator("span[title]");
+      .locator("span.font-code[title]");
     expect((await repository.boundingBox())!.x).toBe((await nextRepository.boundingBox())!.x);
   }
 });

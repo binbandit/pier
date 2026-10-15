@@ -39,6 +39,7 @@ import type { Details } from "./details";
 import type { Drafts } from "./drafts";
 import { overlayMetadata, type RepoKnown } from "./metadata";
 import type { Model, PrRecord } from "./model";
+import { prActivityCursor } from "./pr-reads";
 import { Refusal } from "./refusal";
 import { buildRunway } from "./runway";
 import { SuggestionError, applySplices, hunkLines } from "./suggestions";
@@ -201,6 +202,10 @@ export class ReviewService {
       owning.has(`@${login}`.toLowerCase()) ||
       doc.reviewRequests.some((r) => r.asCodeOwner && r.login === login);
     const view: PrView = {
+      activityCursor:
+        detail && this.deps.details.isFresh(doc.id, account, doc.updatedAt)
+          ? prActivityCursor(doc)
+          : null,
       id: doc.id,
       repo: doc.repo,
       number: doc.number,

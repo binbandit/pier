@@ -32,6 +32,11 @@ If the machine won't run an unsigned binary, run pier from the checkout instead:
 
 `g r` / `g d` / `g m` go to Review, Deps and Mine; `Tab` moves between them. `j`/`k` move, `Enter` opens, `e` marks done, `a` approves (a whole Clear bump group at once), `r` writes a review, `z` takes back anything still in its few seconds. `⌘K` finds any command or opens a pasted GitHub link, and `?` lists every key on the screen you're on.
 
+PR rows show **New** until you open them in pier, then **Updated** when activity, commits, CI,
+or merge state changes. Opening the PR clears the indicator, and pier remembers it across
+restarts. Updates to previously viewed PRs return to Review or Mine, including approved PRs
+and your own PRs waiting on others. In flight opens PRs in pier too; `Shift+O` opens GitHub.
+
 In a PR, use the section bar to jump past the description to Changes. `h` toggles history
 updates in Activity and remembers your choice. Click a commit in Activity, or use the Commits
 button beside Changes, to read its full message and see only that commit's changes. Show all

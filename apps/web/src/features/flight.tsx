@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 
+import { PrActivityLabel } from "@/components/pr-activity";
 import { VirtualRows } from "@/components/rows";
 import { openOnGitHub } from "@/features/actions";
 import { shortRepo } from "@/lib/format";
@@ -16,13 +18,31 @@ import type { FlightItem } from "@pier/core/wire";
 const ROW = 40;
 
 export function Flight() {
+  const navigate = useNavigate();
+  const open = (item: FlightItem) => {
+    const [owner = "", repo = ""] = item.repo.split("/");
+    void navigate({
+      to: "/$owner/$repo/pull/$number",
+      params: { owner, repo, number: item.number },
+    });
+  };
   const { data: items = [], isPending } = useQuery(q("flight", {}));
   const list = useList<FlightItem>({
     id: "flight",
     items,
     keyOf: (i) => i.prId,
     rowHeight: ROW,
-    onOpen: (item) => openOnGitHub(item.url),
+    onOpen: open,
+    commands: (current) => [
+      {
+        id: "flight.github",
+        title: "Open on github.com",
+        keys: ["shift+o"],
+        scope: "surface",
+        group: "Go to",
+        run: () => current && openOnGitHub(current.url),
+      },
+    ],
   });
 
   return (
@@ -44,11 +64,14 @@ export function Flight() {
           cursor={list.index}
           selectedKeys={list.selectedKeys}
           onSelect={list.move}
-          onOpen={(item) => openOnGitHub(item.url)}
+          onOpen={open}
           render={(item) => (
             <div className="grid w-full max-w-[1320px] grid-cols-[16px_minmax(0,2fr)_minmax(120px,0.8fr)_minmax(0,1.4fr)_48px_20px] items-center gap-x-4">
               <Dot tone={CHECK_TONE[item.checks.state]} />
-              <span className="truncate text-fg">{item.title}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-fg">{item.title}</span>
+                <PrActivityLabel activity={item.activity} />
+              </span>
               <span title={item.repo} className="truncate font-code text-meta text-faint">
                 {shortRepo(item.repo)}#{item.number}
               </span>

@@ -4,6 +4,7 @@ import { parseQuery, toGitHubQuery } from "@pier/core/query";
 import type { RemoteSearch } from "@pier/core/wire";
 
 import type { Model } from "./model";
+import type { PrReads } from "./pr-reads";
 import { Refusal } from "./refusal";
 import { prItemBase, standing } from "./views";
 
@@ -17,6 +18,7 @@ export async function searchGitHub(
   text: string,
   ports: Map<string, GitHubPort>,
   model: Model,
+  reads: PrReads,
 ): Promise<RemoteSearch> {
   const { text: query, dropped } = toGitHubQuery(parseQuery(text), Date.now());
   const asked = await Promise.allSettled(
@@ -47,7 +49,7 @@ export async function searchGitHub(
       const doc = record?.doc ?? docs.get(hit.id);
       if (!doc) continue;
       items.set(hit.id, {
-        ...prItemBase(doc, record?.reader ?? account),
+        ...prItemBase(doc, record?.reader ?? account, reads),
         reason: `On GitHub: ${standing(doc)}`,
       });
     }

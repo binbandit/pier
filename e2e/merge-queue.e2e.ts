@@ -4,6 +4,7 @@ import type { MergeQueueItem } from "../packages/core/src/wire";
 
 const PR: MergeQueueItem = {
   kind: "pr",
+  activity: "updated",
   id: "queue-web-8",
   repo: "WastedHippie/sandbox-web",
   number: 8,
@@ -78,6 +79,9 @@ test("the sidebar opens a merge queue grouped by repository and ordered by posit
   await expect(webQueue.getByRole("listitem").nth(1)).toContainText(
     "Document local setup and tests",
   );
+  await expect(
+    webQueue.getByRole("listitem").nth(1).getByText("Updated", { exact: true }),
+  ).toBeVisible();
   await expect(webQueue.getByRole("listitem").nth(2)).toContainText("Merge when ready");
   await expect(webQueue).toContainText("+1,234,567");
   await expect(

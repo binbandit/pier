@@ -44,6 +44,7 @@ export const inputs = {
   mergeQueue: type({}),
   group: type({ key: "string" }),
   pr: type({ repo: "string", number: "number.integer > 0" }),
+  markPrRead: type({ prId: "string", account: "string", cursor: "string" }),
   prDiff: type({
     repo: "string",
     number: "number.integer > 0",
@@ -244,6 +245,7 @@ export type Outputs = {
   revocations: Revocation[];
   dismissRevocation: { ok: true };
   pr: PrView | null;
+  markPrRead: { ok: true };
   prDiff: PrDiff | null;
   saveDraft: { id: string };
   deleteDraft: { ok: true };

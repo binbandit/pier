@@ -29,6 +29,7 @@ import { bumpKey, isManifestOf } from "./bumps";
 import type { DoneItems, Revocations, StoredRevocation, Verdicts } from "./decisions";
 import { evaluateGates, type Placement, place, summarizeGates } from "./gates";
 import type { Model, PrRecord } from "./model";
+import { type PrReads, prActivityCursor } from "./pr-reads";
 import { checksFailing } from "./runway";
 import { searchRecords } from "./search";
 import type { Scope, SettingsStore } from "./settings";
@@ -42,6 +43,7 @@ export type ViewContext = {
   verdicts: Verdicts;
   revocations: Revocations;
   done: DoneItems;
+  reads: PrReads;
   registry: ReleaseRegistry;
   settings: SettingsStore;
   /** Logins of every linked account. */
@@ -159,7 +161,7 @@ export class Views {
     return [...this.ctx.model.all()]
       .filter(({ doc }) => doc.state === "OPEN" && Boolean(doc.mergeQueue || doc.autoMerge))
       .map(({ doc, reader }) => ({
-        ...prItemBase(doc, reader),
+        ...prItemBase(doc, reader, this.ctx.reads),
         baseRefName: doc.baseRefName,
         position: doc.mergeQueue?.position ?? null,
         queueState: doc.mergeQueue?.state ?? null,
@@ -201,7 +203,7 @@ export class Views {
     });
     return {
       items: found.slice(0, limit).map((record) => ({
-        ...prItemBase(record.doc, record.reader),
+        ...prItemBase(record.doc, record.reader, this.ctx.reads),
         reason: snapshot.turn.get(record.doc.id) ?? standing(record.doc),
       })),
       total: found.length,
@@ -290,6 +292,7 @@ export class Views {
       outbox.version,
       verdicts.version,
       done.version,
+      this.ctx.reads.version,
       registry.version,
       settings.version,
       Math.floor(now() / 60_000),
@@ -476,10 +479,13 @@ export class Views {
     const doc = record.doc;
     const mineAuthor = doc.author ? accounts.has(doc.author.login) : false;
     const personal = [...record.scopes].some((s) => s.endsWith(":involved"));
-    if (!personal && !mineAuthor) return null;
-
-    const base = prItemBase(doc, record.reader);
-    const isDone = this.ctx.done.isDone(`pr:${doc.id}`, prCursor(record));
+    const base = prItemBase(doc, record.reader, this.ctx.reads);
+    if (!personal && !mineAuthor && base.activity !== "updated") return null;
+    const updateReason = base.activity === "updated" ? "Updated since you last viewed" : null;
+    const isDone =
+      this.ctx.done.isDone(`pr:${doc.id}`, prCursor(record)) ||
+      // Preserve decisions made before done cursors included CI and merge state.
+      this.ctx.done.isDone(`pr:${doc.id}`, `${doc.updatedAt}:${doc.headRefOid}`);
 
     if (mineAuthor) {
       const reason =
@@ -494,7 +500,7 @@ export class Views {
                   !doc.autoMerge &&
                   !doc.mergeQueue
                 ? "Approved and green; nothing is merging it"
-                : null;
+                : updateReason;
       if (reason && !isDone) return { split: "mine", item: { ...base, reason } };
       const waiting = doc.reviewRequests.map((r) => r.login);
       return {
@@ -503,7 +509,7 @@ export class Views {
       };
     }
 
-    if (doc.isDraft) return null;
+    if (doc.isDraft && !updateReason) return null;
     const requested = doc.reviewRequests.filter(
       (r) => (r.kind === "user" && accounts.has(r.login)) || r.kind === "team",
     );
@@ -517,6 +523,7 @@ export class Views {
     } else if (viewer && !reviewedAtHead && viewer.state !== "APPROVED") {
       reason = "New commits since your review";
     }
+    reason ??= updateReason;
     if (reason && !isDone) return { split: "review", item: { ...base, reason } };
     if (viewer?.state === "APPROVED")
       return { item: { ...base, reason: "" }, flight: "You approved; waiting to merge" };
@@ -527,6 +534,7 @@ export class Views {
     const doc = record.doc;
     return {
       prId: doc.id,
+      activity: this.ctx.reads.activity(doc, record.reader),
       repo: doc.repo,
       number: doc.number,
       title: doc.title,
@@ -560,7 +568,7 @@ function groupCursor(actionable: BotEval[]): string {
 }
 
 function prCursor(record: PrRecord): string {
-  return `${record.doc.updatedAt}:${record.doc.headRefOid}`;
+  return prActivityCursor(record.doc);
 }
 
 function byRecent(a: PrItem, b: PrItem): number {
@@ -619,9 +627,10 @@ function cohortOrder(cohort: Cohort): number {
 }
 
 /** A PR as a list row, before saying why it's on the list. */
-export function prItemBase(doc: PrDoc, account: string): Omit<PrItem, "reason"> {
+export function prItemBase(doc: PrDoc, account: string, reads: PrReads): Omit<PrItem, "reason"> {
   return {
     kind: "pr",
+    activity: reads.activity(doc, account),
     id: doc.id,
     repo: doc.repo,
     number: doc.number,

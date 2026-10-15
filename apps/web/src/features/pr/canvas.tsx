@@ -42,6 +42,7 @@ import { RunwayPanel } from "./runway";
 import { StackStrip } from "./stack";
 import { SuggestionsPanel, applicableSuggestions } from "./suggestions";
 import { TitlePanel } from "./title";
+import { useMarkPrRead } from "./use-mark-read";
 import { Writing } from "./writing";
 
 // One PR on one page. The stream reads top to bottom: what this is, whose turn it is, then the
@@ -108,6 +109,7 @@ function Untracked({ repo, number }: { repo: string; number: number }) {
 }
 
 function Loaded({ pr }: { pr: PrView }) {
+  useMarkPrRead(pr);
   const client = useQueryClient();
   const navigate = useNavigate();
   const router = useRouter();

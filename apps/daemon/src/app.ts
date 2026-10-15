@@ -8,6 +8,7 @@ import { Details } from "@/domain/details";
 import { Drafts } from "@/domain/drafts";
 import { provenanceGate } from "@/domain/gates";
 import { Model } from "@/domain/model";
+import { PrReads } from "@/domain/pr-reads";
 import { type InterdiffSource, ReviewService } from "@/domain/review";
 import { SettingsStore, type Settings, defaultPolicy, defaultScopes } from "@/domain/settings";
 import { Views } from "@/domain/views";
@@ -81,6 +82,7 @@ export function createApp(options: AppOptions) {
   const verdicts = new Verdicts(stores.state);
   const revocations = new Revocations(stores.state);
   const done = new DoneItems(stores.state);
+  const reads = new PrReads(stores.state);
 
   let planner: Planner;
   // Re-checked right before each send, with whatever the sync engine knows by then.
@@ -191,6 +193,7 @@ export function createApp(options: AppOptions) {
     verdicts,
     revocations,
     done,
+    reads,
     registry,
     settings,
     accounts: logins,
@@ -302,6 +305,7 @@ export function createApp(options: AppOptions) {
     revocations,
     advisoryWatch,
     done,
+    reads,
     stores,
     accounts,
     ports,

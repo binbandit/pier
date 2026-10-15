@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { clsx } from "clsx";
 import { GitBranch, RefreshCw } from "lucide-react";
 
+import { PrActivityLabel } from "@/components/pr-activity";
 import { errorText } from "@/features/actions";
 import { formatNumber } from "@/lib/format";
 import { q } from "@/lib/rpc";
@@ -150,8 +151,11 @@ export function MergeQueue() {
                             {item.position === null ? "·" : formatNumber(item.position)}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-ui text-strong" title={item.title}>
-                              {item.title}
+                            <p className="flex min-w-0 items-center gap-2 text-ui text-strong">
+                              <span className="truncate" title={item.title}>
+                                {item.title}
+                              </span>
+                              <PrActivityLabel activity={item.activity} />
                             </p>
                             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-faint">
                               <span className="font-code">#{item.number}</span>

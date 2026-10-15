@@ -15,11 +15,12 @@ import state003 from "./migrations/state/003-waiting.sql" with { type: "text" };
 import state004 from "./migrations/state/004-file-drafts.sql" with { type: "text" };
 import state005 from "./migrations/state/005-revocations.sql" with { type: "text" };
 import state006 from "./migrations/state/006-advisory-baseline.sql" with { type: "text" };
+import state007 from "./migrations/state/007-pr-reads.sql" with { type: "text" };
 
 // Migrations are applied in order; `PRAGMA user_version` records how many have run.
 // Append new files to these lists, never edit or reorder existing ones.
 const CACHE_MIGRATIONS = [cache001, cache002, cache003, cache004, cache005];
-const STATE_MIGRATIONS = [state001, state002, state003, state004, state005, state006];
+const STATE_MIGRATIONS = [state001, state002, state003, state004, state005, state006, state007];
 
 export type Stores = { cache: Database; state: Database };
 
