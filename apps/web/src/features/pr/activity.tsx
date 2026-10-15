@@ -27,7 +27,15 @@ const REVIEW_STATE: Record<string, { text: string; tone: Tone }> = {
   DISMISSED: { text: "review dismissed", tone: "faint" },
 };
 
-export function ActivityRail({ pr }: { pr: PrView }) {
+export function ActivityRail({
+  pr,
+  selectedCommit,
+  onCommit,
+}: {
+  pr: PrView;
+  selectedCommit: string | null;
+  onCommit: (oid: string) => void;
+}) {
   const client = useQueryClient();
   const toast = useUi((s) => s.toast);
   const showUpdates = usePrefs((s) => s.showHistoryUpdates);
@@ -89,7 +97,7 @@ export function ActivityRail({ pr }: { pr: PrView }) {
         )}
         {timeline.map((entry) => (
           <li key={entryKey(entry)}>
-            <Entry prId={pr.id} entry={entry} />
+            <Entry prId={pr.id} entry={entry} selectedCommit={selectedCommit} onCommit={onCommit} />
           </li>
         ))}
       </ol>
@@ -113,7 +121,17 @@ export function ActivityRail({ pr }: { pr: PrView }) {
   );
 }
 
-function Entry({ prId, entry }: { prId: string; entry: TimelineEntry }) {
+function Entry({
+  prId,
+  entry,
+  selectedCommit,
+  onCommit,
+}: {
+  prId: string;
+  entry: TimelineEntry;
+  selectedCommit: string | null;
+  onCommit: (oid: string) => void;
+}) {
   switch (entry.kind) {
     case "comment":
       return (
@@ -164,10 +182,16 @@ function Entry({ prId, entry }: { prId: string; entry: TimelineEntry }) {
     }
     case "commit":
       return (
-        <p className="flex items-baseline gap-2 text-meta">
-          <span className="font-code text-faint">{entry.oid.slice(0, 7)}</span>
-          <span className="truncate text-muted">{entry.headline}</span>
-        </p>
+        <button
+          type="button"
+          aria-pressed={selectedCommit === entry.oid}
+          onClick={() => onCommit(entry.oid)}
+          title={`View commit ${entry.oid.slice(0, 7)}: ${entry.headline}`}
+          className="-mx-2 flex w-[calc(100%+16px)] items-baseline gap-2 rounded-sm px-2 py-1 text-left text-meta text-muted hover:bg-hover hover:text-strong focus-visible:outline-2 focus-visible:outline-accent aria-pressed:bg-selected aria-pressed:text-strong"
+        >
+          <span className="shrink-0 font-code text-faint">{entry.oid.slice(0, 7)}</span>
+          <span className="min-w-0 truncate">{entry.headline}</span>
+        </button>
       );
     case "force-push":
       return (

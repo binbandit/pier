@@ -1179,6 +1179,7 @@ export class FakeGitHub implements GitHubPort {
       commits: pr.commits.slice(-100).map((c) => ({
         oid: c.oid,
         headline: c.message.split("\n")[0] ?? "",
+        body: c.message.split("\n").slice(1).join("\n").trim(),
         author: c.authorLogin ?? c.authorName,
         at: c.committedDate,
         checks: world.rollup(pr, c.oid),

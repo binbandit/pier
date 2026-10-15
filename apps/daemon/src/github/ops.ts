@@ -494,6 +494,7 @@ export const PrDetailQuery = graphql(`
             commit {
               oid
               messageHeadline
+              messageBody
               committedDate
               signature {
                 isValid

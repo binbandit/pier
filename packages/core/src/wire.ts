@@ -624,6 +624,7 @@ export type Subscription = "SUBSCRIBED" | "UNSUBSCRIBED" | "IGNORED";
 export type CommitView = {
   oid: string;
   headline: string;
+  body: string;
   author: string | null;
   at: string;
   /** Its checks' overall state. */

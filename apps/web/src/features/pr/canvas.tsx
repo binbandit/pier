@@ -22,7 +22,7 @@ import type { DiffView, PrView, QueueItem } from "@pier/core/wire";
 
 import { ActivityRail } from "./activity";
 import { Checks } from "./checks";
-import { CommitPicker, describeView } from "./commits";
+import { CommitDetails, CommitPicker, describeView } from "./commits";
 import {
   type FileFilter,
   FileFilterPicker,
@@ -131,10 +131,14 @@ function Loaded({ pr }: { pr: PrView }) {
   }));
   // Commits a force-push took away can't be shown any more; everything can.
   const view: DiffView =
-    picked.range === "commits" && !pr.commits.some((c) => c.oid === picked.from)
+    picked.range === "commits" &&
+    (!pr.commits.some((c) => c.oid === picked.from) || !pr.commits.some((c) => c.oid === picked.to))
       ? { range: "all" }
       : picked;
-  const anchors = anchorsOf(view, pr.headRefOid);
+  const selectedCommit =
+    view.range === "commits" && view.from === view.to
+      ? pr.commits.find((commit) => commit.oid === view.to)
+      : undefined;
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [filter, setFilter] = useState<FileFilter>(NO_FILTER);
   const split = usePrefs((s) => s.split);
@@ -166,13 +170,20 @@ function Loaded({ pr }: { pr: PrView }) {
   // Past 3,000 files GitHub's list stops short, and the git store has the whole diff.
   const truncated = pr.files !== null && pr.files.length < pr.changedFiles;
   const fromGitHub = view.range === "all" && !ignoreWhitespace && !truncated;
-  const { data: diff } = useQuery({
+  const {
+    data: diff,
+    isPending: diffPending,
+    error: diffError,
+    refetch: retryDiff,
+  } = useQuery({
     ...q("prDiff", { repo: pr.repo, number: pr.number, ...view, ignoreWhitespace }),
     enabled: !fromGitHub,
   });
   const files = fromGitHub ? (pr.files ?? []) : (diff?.files ?? []);
   // What's on screen: the daemon sends everything when it can't narrow to what was asked for.
   const shown: DiffView = diff?.range === "all" && view.range !== "all" ? { range: "all" } : view;
+  const anchors = anchorsOf(shown, pr.headRefOid);
+  const loadingDiff = !fromGitHub && diffPending;
   // GitHub's own patches run from where the PR branched to its head.
   const range = fromGitHub
     ? { from: null, to: pr.headRefOid }
@@ -247,6 +258,16 @@ function Loaded({ pr }: { pr: PrView }) {
     streamRef.current
       ?.querySelector(`[data-file="${CSS.escape(path)}"]`)
       ?.scrollIntoView({ block: "start" });
+  };
+  const pickView = (next: DiffView) => {
+    setPicked(next);
+    setComposing(null);
+    setSelection(null);
+    setCurrent(null);
+    setFilter(NO_FILTER);
+    jumping.current = null;
+    lower();
+    requestAnimationFrame(() => jumpToSection(changesRef.current));
   };
   // A link to lines (copied with `y`, or from github.com) opens with them selected, in view.
   const linked = useRef(false);
@@ -902,35 +923,89 @@ function Loaded({ pr }: { pr: PrView }) {
                 {!pr.body.trim() && <p className="text-meta text-faint">No description.</p>}
               </section>
 
-              <section ref={changesRef} tabIndex={-1} aria-label="Changes" className="mt-10">
-                <h2 className="mb-3 flex items-baseline gap-3">
-                  <span className="text-section font-semibold text-strong">
-                    {describeView(shown, pr)}
-                  </span>
-                  {shown.range === "commits" && shown.from === shown.to && (
-                    <span className="min-w-0 truncate text-ui text-muted">
-                      {pr.commits.find((c) => c.oid === shown.to)?.headline}
+              <section
+                ref={changesRef}
+                tabIndex={-1}
+                aria-label="Changes"
+                className={clsx("mt-10", selectedCommit && "min-h-[calc(100dvh-72px)]")}
+              >
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <h2 className="flex flex-wrap items-baseline gap-3">
+                    <span className="text-section font-semibold text-strong">
+                      {describeView(shown, pr)}
                     </span>
-                  )}
-                  <span className="shrink-0 text-ui text-faint">
-                    {filtered
-                      ? `${ordered.length} of ${plural(listed.length, "file")}`
-                      : plural(listed.length, "file")}
-                    {viewedCount > 0 && `, ${viewedCount} viewed`}
-                  </span>
-                  {filtered && (
+                    {!loadingDiff && !diffError && (
+                      <span className="shrink-0 text-ui text-faint">
+                        {filtered
+                          ? `${ordered.length} of ${plural(listed.length, "file")}`
+                          : plural(listed.length, "file")}
+                        {viewedCount > 0 && `, ${viewedCount} viewed`}
+                      </span>
+                    )}
+                    {filtered && (
+                      <button
+                        type="button"
+                        onClick={() => setRaised({ kind: "filter" })}
+                        className="flex shrink-0 items-center gap-1.5 text-meta text-faint hover:text-fg"
+                      >
+                        filtered <Keys sequence="d f" />
+                      </button>
+                    )}
+                    {ignoreWhitespace && (
+                      <span className="text-meta text-faint">whitespace hidden</span>
+                    )}
+                  </h2>
+                  <div className="ml-auto flex items-center gap-3 text-meta">
+                    {view.range !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => pickView({ range: "all" })}
+                        className="rounded-sm px-2 py-1 text-muted hover:bg-hover hover:text-strong"
+                      >
+                        Show all changes
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => setRaised({ kind: "filter" })}
-                      className="flex shrink-0 items-center gap-1.5 text-meta text-faint hover:text-fg"
+                      aria-label="Choose commits"
+                      aria-expanded={raised?.kind === "commits"}
+                      onClick={() => setRaised({ kind: "commits" })}
+                      className="flex items-center gap-2 rounded-sm border border-line-strong px-2 py-1 text-muted hover:bg-hover hover:text-strong"
                     >
-                      filtered <Keys sequence="d f" />
+                      Commits <Keys sequence="p" />
                     </button>
-                  )}
-                  {ignoreWhitespace && (
-                    <span className="text-meta text-faint">whitespace hidden</span>
-                  )}
-                </h2>
+                  </div>
+                </div>
+                {selectedCommit && <CommitDetails commit={selectedCommit} />}
+                {loadingDiff && (
+                  <p role="status" className="text-ui text-faint">
+                    Loading changes…
+                  </p>
+                )}
+                {!fromGitHub && diffError && (
+                  <div role="alert" className="mb-4 text-ui text-warn">
+                    <p>Couldn't load these changes: {errorText(diffError)}</p>
+                    <button
+                      type="button"
+                      onClick={() => void retryDiff()}
+                      className="mt-2 rounded-sm border border-line-strong px-2 py-1 text-fg hover:bg-hover"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
+                {diff?.fallback && !fromGitHub && (
+                  <p className="mb-4 text-ui text-warn">
+                    {diff.fallback}. Showing all pull request changes.
+                  </p>
+                )}
+                {shown.range === "commits" && diff && !diffError && listed.length === 0 && (
+                  <p className="text-ui text-muted">
+                    {selectedCommit
+                      ? "This commit has no file changes."
+                      : "These commits have no file changes."}
+                  </p>
+                )}
                 {filtered && ordered.length === 0 && (
                   <p className="text-ui text-muted">
                     No files match the filter. <Keys sequence="d f" /> changes it.
@@ -975,7 +1050,13 @@ function Loaded({ pr }: { pr: PrView }) {
             </div>
           </div>
         </div>
-        {rail && <ActivityRail pr={pr} />}
+        {rail && (
+          <ActivityRail
+            pr={pr}
+            selectedCommit={selectedCommit?.oid ?? null}
+            onCommit={(oid) => pickView({ range: "commits", from: oid, to: oid })}
+          />
+        )}
       </div>
       {raised?.kind === "review" && (
         <ReviewPanel pr={pr} initial={raised.event} onClose={lower} onSent={advance} />
@@ -1002,17 +1083,7 @@ function Loaded({ pr }: { pr: PrView }) {
         />
       )}
       {raised?.kind === "commits" && (
-        <CommitPicker
-          pr={pr}
-          view={view}
-          onPick={(next) => {
-            setPicked(next);
-            setComposing(null);
-            setSelection(null);
-            lower();
-          }}
-          onClose={lower}
-        />
+        <CommitPicker pr={pr} view={view} onPick={pickView} onClose={lower} />
       )}
     </div>
   );

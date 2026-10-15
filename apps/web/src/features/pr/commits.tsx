@@ -216,6 +216,38 @@ function CommitRow({ commit }: { commit: CommitView }) {
   );
 }
 
+export function CommitDetails({ commit }: { commit: CommitView }) {
+  return (
+    <section aria-label="Commit message" className="mb-6 border-y border-line py-4">
+      <h3 className="text-prose font-medium break-words text-strong">{commit.headline}</h3>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-meta text-faint">
+        <span className="font-code" title={commit.oid}>
+          {commit.oid.slice(0, 7)}
+        </span>
+        <span>
+          {commit.author ?? "unknown"} committed <When at={commit.at} suffix />
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Dot tone={CHECK_TONE[commit.checks]} /> Checks: {commit.checks}
+        </span>
+        {commit.verified !== null && (
+          <span
+            className={clsx("flex items-center gap-1.5", commit.verified ? "text-ok" : "text-warn")}
+          >
+            {commit.verified ? <BadgeCheck size={14} /> : <BadgeX size={14} />}
+            {commit.verified ? "Verified" : "Signature didn't verify"}
+          </span>
+        )}
+      </div>
+      {commit.body && (
+        <p className="mt-4 max-w-[80ch] text-ui break-words whitespace-pre-wrap text-muted">
+          {commit.body}
+        </p>
+      )}
+    </section>
+  );
+}
+
 /** What the Changes heading says about the view, and the commits it covers. */
 export function describeView(view: DiffView, pr: Pick<PrView, "commits" | "commitsTotal">): string {
   if (view.range === "all") return "Changes";

@@ -8,6 +8,7 @@ import cache001 from "./migrations/cache/001-init.sql" with { type: "text" };
 import cache002 from "./migrations/cache/002-detail.sql" with { type: "text" };
 import cache003 from "./migrations/cache/003-notifications.sql" with { type: "text" };
 import cache004 from "./migrations/cache/004-reread-docs.sql" with { type: "text" };
+import cache005 from "./migrations/cache/005-commit-messages.sql" with { type: "text" };
 import state001 from "./migrations/state/001-init.sql" with { type: "text" };
 import state002 from "./migrations/state/002-drafts.sql" with { type: "text" };
 import state003 from "./migrations/state/003-waiting.sql" with { type: "text" };
@@ -17,7 +18,7 @@ import state006 from "./migrations/state/006-advisory-baseline.sql" with { type:
 
 // Migrations are applied in order; `PRAGMA user_version` records how many have run.
 // Append new files to these lists, never edit or reorder existing ones.
-const CACHE_MIGRATIONS = [cache001, cache002, cache003, cache004];
+const CACHE_MIGRATIONS = [cache001, cache002, cache003, cache004, cache005];
 const STATE_MIGRATIONS = [state001, state002, state003, state004, state005, state006];
 
 export type Stores = { cache: Database; state: Database };

@@ -201,6 +201,7 @@ export function toPrDetail(node: Node, stack: PrStack | null): PrDetail {
     commits.push({
       oid: c.oid,
       headline: c.messageHeadline,
+      body: c.messageBody,
       author: c.author?.user?.login ?? c.author?.name ?? null,
       at: c.committedDate,
       checks: rollupState(c.statusCheckRollup?.state ?? null),

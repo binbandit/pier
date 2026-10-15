@@ -612,7 +612,7 @@ export type PrDetailQuery = { node:
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
             | { login: string, avatarUrl: string }
-           | null } | null> | null }, allCommits: { totalCount: number, nodes: Array<{ commit: { oid: string, messageHeadline: string, committedDate: string, signature:
+           | null } | null> | null }, allCommits: { totalCount: number, nodes: Array<{ commit: { oid: string, messageHeadline: string, messageBody: string, committedDate: string, signature:
               | { isValid: boolean }
               | { isValid: boolean }
               | { isValid: boolean }
@@ -1928,6 +1928,7 @@ export const PrDetailDocument = new TypedDocumentString(`
           commit {
             oid
             messageHeadline
+            messageBody
             committedDate
             signature {
               isValid

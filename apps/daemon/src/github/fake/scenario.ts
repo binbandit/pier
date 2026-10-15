@@ -937,7 +937,11 @@ class Builder {
         if (variant === "force-pushed")
           world.forcePush(pr.id, { files: change.followUp, actor: author });
         else
-          world.pushCommit(pr.id, { message: "Address review feedback", files: change.followUp });
+          world.pushCommit(pr.id, {
+            message:
+              "Address review feedback\n\nApply the requested follow-up changes.\n\nKeep the rest of the pull request unchanged.",
+            files: change.followUp,
+          });
         world.requestReview(pr.id, you, author);
       });
     }
