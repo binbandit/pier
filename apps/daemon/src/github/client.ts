@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
 
+import { type } from "arktype";
+
 import { VERSION } from "@/config";
 
 import type { TypedDocumentString } from "./gql/graphql";
@@ -15,6 +17,15 @@ import { Lane, type Priority } from "./lane";
 
 const API = "https://api.github.com";
 const REST_CONCURRENCY = 4;
+
+const graphqlResponse = type({
+  "data?": type({ "[string]": "unknown" }).or("null"),
+  "errors?": type({
+    message: "string",
+    "type?": "string",
+    "path?": "(string | number)[]",
+  }).array(),
+});
 
 export type RateWindow = { limit: number; remaining: number; used: number; resetAt: number };
 
@@ -113,12 +124,9 @@ export class GitHubClient implements GitHubTransport {
         body: JSON.stringify({ query, variables }),
         timeoutMs: 30_000,
       });
-      let payload: {
-        data?: R | null;
-        errors?: { message: string; type?: string }[];
-      };
+      let raw: unknown;
       try {
-        payload = (await response.json()) as typeof payload;
+        raw = await response.json();
       } catch (error) {
         // Headers can succeed before a large response is cut off. Keep body failures in the
         // transport error path so read batches can be split and retried by LiveGitHub.
@@ -131,6 +139,14 @@ export class GitHubClient implements GitHubTransport {
           response.status,
         );
       }
+      const payload = graphqlResponse(raw);
+      if (payload instanceof type.errors || Array.isArray(payload) || Array.isArray(payload.data)) {
+        throw new GitHubError(
+          "GitHub returned an invalid GraphQL response",
+          "server",
+          response.status,
+        );
+      }
       if (payload.errors?.length) {
         const rateLimited = payload.errors.some((e) => e.type === "RATE_LIMITED");
         if (rateLimited)
@@ -138,19 +154,41 @@ export class GitHubClient implements GitHubTransport {
             this.pausedUntil,
             this.windows.graphql?.resetAt ?? Date.now() + 60_000,
           );
-        // Partial results (one node in a batch was deleted) are still useful to a read; a write
-        // with errors didn't happen, and GitHub's reason is the one to report.
-        if (!payload.data || rateLimited || /^\s*mutation\b/.test(query)) {
+        // Only missing top-level nodes are safe partial reads. Other errors can null fields
+        // the generated types promise exist, or silently drop PRs that still need a retry.
+        const missingNodes = payload.errors.every((error) => {
+          if (error.type !== "NOT_FOUND" || !payload.data) return false;
+          const path = error.path;
+          if (path?.length === 1 && path[0] === "node") return payload.data.node === null;
+          return (
+            path?.length === 2 &&
+            path[0] === "nodes" &&
+            typeof path[1] === "number" &&
+            Array.isArray(payload.data.nodes) &&
+            payload.data.nodes[path[1]] === null
+          );
+        });
+        // Mutations surface every error, even when GitHub also returned data.
+        if (!missingNodes || /^\s*mutation\b/.test(query)) {
+          const serverError = payload.errors.some(
+            (error) =>
+              error.type === "INTERNAL" ||
+              error.type === "SERVICE_UNAVAILABLE" ||
+              error.type === "MAX_NODE_LIMIT_EXCEEDED" ||
+              /resource limits? (?:were )?exceeded|timed? out|couldn't respond.*in time/i.test(
+                error.message,
+              ),
+          );
           throw new GitHubError(
             payload.errors.map((e) => e.message).join("; "),
-            rateLimited ? "rate-limit" : "graphql",
+            rateLimited ? "rate-limit" : serverError ? "server" : "graphql",
             response.status,
           );
         }
       }
       if (!payload.data)
         throw new GitHubError("GraphQL response had no data", "graphql", response.status);
-      return payload.data;
+      return payload.data as R;
     };
     return this.graphqlLane.run(priority, run);
   }

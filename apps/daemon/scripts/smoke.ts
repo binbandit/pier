@@ -28,17 +28,21 @@ console.log(
   Object.groupBy(swept, (s) => s.rollup),
 );
 const hydrated = await time("hydrate x25", () => gh.hydrate(ids.slice(0, 25)));
-const sample = hydrated[0]!.doc;
-console.log(
-  `  ${hydrated.length} docs; e.g. ${sample.repo}#${sample.number} ${sample.title}; body ${sample.body.length}B; files ${sample.files.length}; commits ${sample.commits.length}; checks`,
-  sample.checks.state,
-);
-const files = await time("files", () => gh.files(sample.repo, sample.number));
-console.log(
-  `  ${files.length} files: ${files.map((f) => `${f.path} (${f.patch?.length ?? "no"} patch)`).join(", ")}`,
-);
-const again = await time("files (etag)", () => gh.files(sample.repo, sample.number));
-console.log(`  ${again.length} files again`);
+const sample = hydrated[0]?.doc;
+if (sample) {
+  console.log(
+    `  ${hydrated.length} docs; e.g. ${sample.repo}#${sample.number} ${sample.title}; body ${sample.body.length}B; files ${sample.files.length}; commits ${sample.commits.length}; checks`,
+    sample.checks.state,
+  );
+  const files = await time("files", () => gh.files(sample.repo, sample.number));
+  console.log(
+    `  ${files.length} files: ${files.map((f) => `${f.path} (${f.patch?.length ?? "no"} patch)`).join(", ")}`,
+  );
+  const again = await time("files (etag)", () => gh.files(sample.repo, sample.number));
+  console.log(`  ${again.length} files again`);
+} else {
+  console.log("  No readable PRs matched; skipping file checks.");
+}
 const notes = await time("notifications", () => gh.notifications());
 console.log(
   `  changed=${notes.changed} poll=${notes.pollIntervalSec}s ${notes.changed ? notes.threads.length + " threads" : ""}`,
